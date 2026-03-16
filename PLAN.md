@@ -23,24 +23,25 @@
 
 ### OpenClaw 的 Workspace 文件（参考）
 
-| 文件 | 作用 | WillClaw 取舍 |
-|------|------|--------------|
-| `AGENTS.md` | 行为规则、boot sequence、安全策略 | ✅ 保留 |
-| `SOUL.md` | 人格、语气、价值观 | ❌ 合并进 IDENTITY.md |
-| `IDENTITY.md` | 名字、emoji、avatar | ✅ 保留（扩展，吸收 SOUL） |
-| `USER.md` | 用户信息、偏好 | ❌ 合并进 RULES.md 或独立 |
-| `TOOLS.md` | 环境相关工具声明 | ❌ 改为自动生成 |
-| `HEARTBEAT.md` | 定期任务指令 | ✅ 保留，默认1小时 |
-| `BOOTSTRAP.md` | 首次引导（用完删除） | ❌ 不需要，`willclaw init` 处理 |
-| `BOOT.md` | 启动钩子 | ❌ 不需要，config.yaml 处理 |
-| `MEMORY.md` | 长期记忆 | ✅ 保留 |
-| `GOALS.md` | 目标模板 | ❌ 不需要 |
-| `SOUVENIR.md` | 纪念模板 | ❌ 不需要 |
-| `memory/*.md` | 每日笔记（按需读取） | ✅ 保留 |
+| 文件           | 作用                              | WillClaw 取舍                   |
+| -------------- | --------------------------------- | ------------------------------- |
+| `AGENTS.md`    | 行为规则、boot sequence、安全策略 | ✅ 保留                         |
+| `SOUL.md`      | 人格、语气、价值观                | ❌ 合并进 IDENTITY.md           |
+| `IDENTITY.md`  | 名字、emoji、avatar               | ✅ 保留（扩展，吸收 SOUL）      |
+| `USER.md`      | 用户信息、偏好                    | ❌ 合并进 RULES.md 或独立       |
+| `TOOLS.md`     | 环境相关工具声明                  | ❌ 改为自动生成                 |
+| `HEARTBEAT.md` | 定期任务指令                      | ✅ 保留，默认1小时              |
+| `BOOTSTRAP.md` | 首次引导（用完删除）              | ❌ 不需要，`willclaw init` 处理 |
+| `BOOT.md`      | 启动钩子                          | ❌ 不需要，config.yaml 处理     |
+| `MEMORY.md`    | 长期记忆                          | ✅ 保留                         |
+| `GOALS.md`     | 目标模板                          | ❌ 不需要                       |
+| `SOUVENIR.md`  | 纪念模板                          | ❌ 不需要                       |
+| `memory/*.md`  | 每日笔记（按需读取）              | ✅ 保留                         |
 
 ### WillClaw 的目标
 
 用 **< 5000 行 TypeScript** 实现 OpenClaw **80% 的核心能力**，做到：
+
 1. 安装简单（`npm install -g willclaw`）
 2. 代码可读（一个人能完全理解和维护）
 3. 运行稳定（不依赖庞大的插件生态）
@@ -56,44 +57,45 @@
 
 ### 各 Agent 已有能力（WillClaw 不重复实现）
 
-| 能力 | Claude Code | Codex | OpenCode | Gemini CLI |
-|------|:-----------:|:-----:|:--------:|:----------:|
-| 文件读写 | ✅ | ✅ | ✅ | ✅ |
-| Shell 执行 | ✅ | ✅ | ✅ | ✅ |
-| Git 操作 | ✅ | ✅ | ✅ | ✅ |
-| 代码搜索 | ✅ | ✅ | ✅ | ✅ |
-| Web 搜索 | ✅ (tool) | ✅ | ✅ | ✅ (google_web_search) |
-| 会话内上下文 | ✅ (/compact) | ✅ | ✅ | ✅ |
-| 自身 session 管理 | ✅ (/resume, /fork) | ✅ | ✅ (sessions) | ✅ (checkpointing) |
-| MCP 支持 | ✅ | ✅ | ✅ | ✅ |
-| 权限控制 | ✅ (permissions) | ✅ | ✅ (tool policy) | ✅ (yolo mode) |
+| 能力              |     Claude Code     | Codex |     OpenCode     |       Gemini CLI       |
+| ----------------- | :-----------------: | :---: | :--------------: | :--------------------: |
+| 文件读写          |         ✅          |  ✅   |        ✅        |           ✅           |
+| Shell 执行        |         ✅          |  ✅   |        ✅        |           ✅           |
+| Git 操作          |         ✅          |  ✅   |        ✅        |           ✅           |
+| 代码搜索          |         ✅          |  ✅   |        ✅        |           ✅           |
+| Web 搜索          |      ✅ (tool)      |  ✅   |        ✅        | ✅ (google_web_search) |
+| 会话内上下文      |    ✅ (/compact)    |  ✅   |        ✅        |           ✅           |
+| 自身 session 管理 | ✅ (/resume, /fork) |  ✅   |  ✅ (sessions)   |   ✅ (checkpointing)   |
+| MCP 支持          |         ✅          |  ✅   |        ✅        |           ✅           |
+| 权限控制          |  ✅ (permissions)   |  ✅   | ✅ (tool policy) |     ✅ (yolo mode)     |
+
 | CLAUDE
 
-| 决策 | 选择 | 理由 |
-|------|------|------|
-| 语言 | TypeScript | 最熟悉；生态丰富 |
-| 运行时 | Node.js ≥ 20 | 原生 fetch、稳定的 subprocess |
-| 包管理 | pnpm | 快、磁盘省 |
-| 项目结构 | monorepo (pnpm workspace) | core / web-ui / cli 分包 |
-| HTTP 框架 | Hono | 比 Express 轻量，类型安全，原生 WebSocket |
-| 数据库 | SQLite (better-sqlite3) | 零运维，单文件 |
-| Scheduler | node-cron | 轻量，够用 |
-| Telegram | grammy | 最现代的 TS Telegram 库 |
-| Discord | discord.js | 生态最大 |
-| 飞书 | @larksuiteoapi/node-sdk | 官方 SDK |
-| Browser | Playwright | 比 CDP 更稳定 |
-| macOS 控制 | AppleScript + cliclick + screencapture | 原生 |
-| Web UI | React + Vite | 轻量 SPA |
-| ACP Client | HTTP (fetch) | ACP 就是 REST，不需要 SDK |
+| 决策       | 选择                                   | 理由                                      |
+| ---------- | -------------------------------------- | ----------------------------------------- |
+| 语言       | TypeScript                             | 最熟悉；生态丰富                          |
+| 运行时     | Node.js ≥ 20                           | 原生 fetch、稳定的 subprocess             |
+| 包管理     | pnpm                                   | 快、磁盘省                                |
+| 项目结构   | monorepo (pnpm workspace)              | core / web-ui / cli 分包                  |
+| HTTP 框架  | Hono                                   | 比 Express 轻量，类型安全，原生 WebSocket |
+| 数据库     | SQLite (better-sqlite3)                | 零运维，单文件                            |
+| Scheduler  | node-cron                              | 轻量，够用                                |
+| Telegram   | grammy                                 | 最现代的 TS Telegram 库                   |
+| Discord    | discord.js                             | 生态最大                                  |
+| 飞书       | @larksuiteoapi/node-sdk                | 官方 SDK                                  |
+| Browser    | Playwright                             | 比 CDP 更稳定                             |
+| macOS 控制 | AppleScript + cliclick + screencapture | 原生                                      |
+| Web UI     | React + Vite                           | 轻量 SPA                                  |
+| ACP Client | HTTP (fetch)                           | ACP 就是 REST，不需要 SDK                 |
 
 ### 不用的技术
 
-| 不用 | 为什么 |
-|------|--------|
-| OpenClaw 代码 | 从零写 |
-| Redis / PostgreSQL | SQLite 够用 |
-| Docker | 直接跑 macOS，需要系统级 API |
-| Electron | 浏览器访问就够 |
+| 不用               | 为什么                       |
+| ------------------ | ---------------------------- |
+| OpenClaw 代码      | 从零写                       |
+| Redis / PostgreSQL | SQLite 够用                  |
+| Docker             | 直接跑 macOS，需要系统级 API |
+| Electron           | 浏览器访问就够               |
 
 ---
 
@@ -215,6 +217,7 @@
 ```
 
 **文件限制**：
+
 - 单文件上限：20,000 chars（`bootstrapMaxChars`）
 - 总注入上限：100,000 chars（`bootstrapTotalMaxChars`）
 - 超出截断，附截断标记
@@ -223,15 +226,15 @@
 
 ### 与 OpenClaw 的区别
 
-| | OpenClaw | WillClaw |
-|---|---|---|
-| SOUL.md | 独立文件 | 合并进 IDENTITY.md |
-| USER.md | 独立文件 | 合并进 RULES.md（用户上下文作为规则的一部分） |
-| TOOLS.md | 手动维护 | 自动生成（基于 config.yaml 中启用的工具） |
-| BOOTSTRAP.md | 首次引导，用完删 | 不需要，`willclaw init` 搞定 |
-| BOOT.md | 启动钩子 | 不需要，config.yaml |
-| HEARTBEAT.md | 被 heartbeat 触发读取 | 同，但默认1小时（OpenClaw 是30分钟） |
-| memory/*.md | 按需读取（memory_search 工具） | 同，不自动注入 |
+|              | OpenClaw                       | WillClaw                                      |
+| ------------ | ------------------------------ | --------------------------------------------- |
+| SOUL.md      | 独立文件                       | 合并进 IDENTITY.md                            |
+| USER.md      | 独立文件                       | 合并进 RULES.md（用户上下文作为规则的一部分） |
+| TOOLS.md     | 手动维护                       | 自动生成（基于 config.yaml 中启用的工具）     |
+| BOOTSTRAP.md | 首次引导，用完删               | 不需要，`willclaw init` 搞定                  |
+| BOOT.md      | 启动钩子                       | 不需要，config.yaml                           |
+| HEARTBEAT.md | 被 heartbeat 触发读取          | 同，但默认1小时（OpenClaw 是30分钟）          |
+| memory/\*.md | 按需读取（memory_search 工具） | 同，不自动注入                                |
 
 ---
 
@@ -239,12 +242,12 @@
 
 ### 4.1 CLI Agents（子进程调用）
 
-| Agent | CLI 调用 | auto-permission | 输出格式 |
-|-------|---------|-----------------|---------|
-| Claude Code | `claude -p "<prompt>" --dangerously-skip-permissions` | ✅ skip | 纯文本 (stdout) |
-| Codex | `codex --full-auto "<prompt>"` | ✅ full-auto | 纯文本 |
-| OpenCode | `opencode run "<prompt>" --format json` | 需配置 permission policy | JSON |
-| Gemini CLI | `gemini -p "<prompt>" --output-format json` | `--yolo` 可选 | JSON |
+| Agent       | CLI 调用                                              | auto-permission          | 输出格式        |
+| ----------- | ----------------------------------------------------- | ------------------------ | --------------- |
+| Claude Code | `claude -p "<prompt>" --dangerously-skip-permissions` | ✅ skip                  | 纯文本 (stdout) |
+| Codex       | `codex --full-auto "<prompt>"`                        | ✅ full-auto             | 纯文本          |
+| OpenCode    | `opencode run "<prompt>" --format json`               | 需配置 permission policy | JSON            |
+| Gemini CLI  | `gemini -p "<prompt>" --output-format json`           | `--yolo` 可选            | JSON            |
 
 ### 4.2 Direct API Agent
 
@@ -257,11 +260,13 @@ WillClaw 同时作为 **ACP Client**（调用外部 Agent）和可选的 **ACP S
 **ACP 是什么**：Agent Communication Protocol，IBM BeeAI 主导的开源协议（已与 Google A2A 合并到 Linux Foundation）。核心是 REST API — 不需要 SDK，普通 HTTP 请求即可。
 
 **为什么要 ACP**：
+
 - 让 WillClaw 能调用其他 ACP-compatible agent（比如 OpenCode 的 ACP server、JetBrains AI 中的 ACP agent）
 - 让其他工具能调用 WillClaw 作为 agent
 - 标准化接口，不用为每个 agent 写自定义集成
 
 **ACP 核心概念**：
+
 ```
 Agent Discovery:  GET  /agents              → 列出可用 agent
 Agent Detail:     GET  /agents/{id}         → agent 元数据和能力
@@ -272,6 +277,7 @@ Run Cancel:       POST /agents/{id}/runs/{run_id}/cancel
 ```
 
 **WillClaw 作为 ACP Client**：
+
 ```typescript
 // config.yaml 中配置外部 ACP agents
 acp:
@@ -291,12 +297,14 @@ acp:
 ```
 
 用户在聊天中调用：
+
 ```
 @research-bot 帮我调研 2026 年 AI agent 框架对比
 @opencode-server 用 Gemini 2.5 Pro 重构这个函数
 ```
 
 **WillClaw 作为 ACP Server**（可选）：
+
 - 在 config.yaml 中开启 `acp.server.enabled: true`
 - 暴露标准 ACP 端点，让 JetBrains、其他 agent 能调用 WillClaw
 - 路径：`/acp/agents`, `/acp/agents/{id}/run` 等
@@ -320,6 +328,7 @@ acp:
 ```
 
 **Fallback Chain**：
+
 ```
 claude-code → codex → opencode → gemini → direct-api
 ```
@@ -339,19 +348,20 @@ OpenClaw 没有很好地解决这个问题。
 
 ```typescript
 interface CommandCompletionMessage {
-  type: "system"
-  subtype: "command_completion"
-  agent: string                    // 哪个 agent
-  exitCode: number                 // 退出码
-  duration: number                 // 耗时（秒）
-  outputPreview: string            // stdout 前 500 字符
-  outputFull?: string              // 完整输出（存 SQLite，可查询）
-  error?: string                   // stderr（如果有）
-  timestamp: string
+  type: 'system';
+  subtype: 'command_completion';
+  agent: string; // 哪个 agent
+  exitCode: number; // 退出码
+  duration: number; // 耗时（秒）
+  outputPreview: string; // stdout 前 500 字符
+  outputFull?: string; // 完整输出（存 SQLite，可查询）
+  error?: string; // stderr（如果有）
+  timestamp: string;
 }
 ```
 
 **注入逻辑**：
+
 ```
 CLI Agent 子进程退出
   │
@@ -365,6 +375,7 @@ CLI Agent 子进程退出
 **关键点：后台任务通知，不是前台聊天重复回执**
 
 前台聊天任务已经会直接返回 assistant 回复，因此：
+
 - **前台聊天**：更新“正在执行中”状态，不额外插入 `command_completion`
 - **后台任务**：写入 `command_completion`，用于离线提醒、失败通知、审计
 
@@ -391,6 +402,7 @@ agents:
 初期：子进程退出时一次性通知。
 
 后期可选增强：
+
 - 实时 stream CLI agent 的 stdout → WebSocket → Web UI
 - 定期发送"仍在执行中... (45s)" 心跳到 Telegram
 - 支持 `/cancel` 命令终止正在执行的 agent
@@ -436,7 +448,7 @@ agents:
   - `/search`
   - Agent `memory_search`
   - Web UI 默认消息流
-  中消失
+    中消失
 
 ### Web UI 实现
 
@@ -451,6 +463,7 @@ agents:
 ```
 
 **Telegram / Discord 的撤回**：
+
 - Telegram：bot 收到用户编辑消息的事件 → 触发重新处理
 - Discord：监听 messageUpdate 事件
 - 主动撤回在 Telegram/Discord 中不直接支持（bot 无法删用户消息），但可以通过 `/undo` 命令实现逻辑撤回
@@ -470,12 +483,12 @@ ALTER TABLE messages ADD COLUMN run_id TEXT;   -- 关联执行中的 agent run
 
 ### 与 OpenClaw 的对比
 
-| | OpenClaw | WillClaw |
-|---|---|---|
-| 频率 | 固定 30 分钟 | 默认 1 小时（可配置） |
-| 机制 | heartbeat prompt 注入 | 读取 HEARTBEAT.md → 执行 → 推送结果 |
-| 项目级 | 无 | PROJECT_HEARTBEAT.md 独立配置 |
-| 响应 | HEARTBEAT_OK 或执行动作 | 同，但可配置静默模式 |
+|        | OpenClaw                | WillClaw                            |
+| ------ | ----------------------- | ----------------------------------- |
+| 频率   | 固定 30 分钟            | 默认 1 小时（可配置）               |
+| 机制   | heartbeat prompt 注入   | 读取 HEARTBEAT.md → 执行 → 推送结果 |
+| 项目级 | 无                      | PROJECT_HEARTBEAT.md 独立配置       |
+| 响应   | HEARTBEAT_OK 或执行动作 | 同，但可配置静默模式                |
 
 ### 执行流程
 
@@ -503,26 +516,26 @@ ALTER TABLE messages ADD COLUMN run_id TEXT;   -- 关联执行中的 agent run
 ```yaml
 heartbeat:
   enabled: true
-  interval: "0 * * * *"            # 每小时整点（cron 表达式）
+  interval: '0 * * * *' # 每小时整点（cron 表达式）
   agent: direct-api
-  notify: telegram                  # 有内容时推送到哪
-  silent_ok: true                   # HEARTBEAT_OK 时不推送
-  inject_files:                     # 心跳时额外注入的文件
+  notify: telegram # 有内容时推送到哪
+  silent_ok: true # HEARTBEAT_OK 时不推送
+  inject_files: # 心跳时额外注入的文件
     - HEARTBEAT.md
     - PROJECT_HEARTBEAT.md
 
 # Cron 任务与 heartbeat 并存
 cron:
   daily_briefing:
-    schedule: "0 8 * * *"
+    schedule: '0 8 * * *'
     agent: direct-api
-    prompt: "生成今日简报"
+    prompt: '生成今日简报'
     notify: telegram
 
   memory_compact:
-    schedule: "0 2 * * *"
+    schedule: '0 2 * * *'
     agent: direct-api
-    prompt: "总结今天对话，更新 MEMORY.md"
+    prompt: '总结今天对话，更新 MEMORY.md'
     notify: null
 ```
 
@@ -534,66 +547,67 @@ cron:
 
 ```typescript
 interface ChannelAdapter {
-  readonly name: string
-  start(): Promise<void>
-  stop(): Promise<void>
-  send(chatId: string, message: string, options?: SendOptions): Promise<void>
-  onMessage(handler: MessageHandler): void
+  readonly name: string;
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  send(chatId: string, message: string, options?: SendOptions): Promise<void>;
+  onMessage(handler: MessageHandler): void;
 }
 
 interface IncomingMessage {
-  channel: string
-  chatId: string
-  userId: string
-  text: string
-  replyTo?: string
-  attachments?: Attachment[]
-  isGroup: boolean
-  isMentioned: boolean
-  isEdit: boolean                  // 消息被编辑（触发 redo）
-  editedMessageId?: string         // 被编辑的原消息 ID
+  channel: string;
+  chatId: string;
+  userId: string;
+  text: string;
+  replyTo?: string;
+  attachments?: Attachment[];
+  isGroup: boolean;
+  isMentioned: boolean;
+  isEdit: boolean; // 消息被编辑（触发 redo）
+  editedMessageId?: string; // 被编辑的原消息 ID
 }
 ```
 
-| 渠道 | 库 | 备注 |
-|------|----|------|
-| Telegram | grammy | 支持 inline keyboard, 文件传输, 消息编辑事件 |
-| Discord | discord.js | slash commands + messageUpdate 事件 |
-| 飞书 | @larksuiteoapi/node-sdk | 事件订阅 |
-| Web UI | Hono WebSocket + React | 自带，始终开启，支持撤回/编辑 |
+| 渠道     | 库                      | 备注                                         |
+| -------- | ----------------------- | -------------------------------------------- |
+| Telegram | grammy                  | 支持 inline keyboard, 文件传输, 消息编辑事件 |
+| Discord  | discord.js              | slash commands + messageUpdate 事件          |
+| 飞书     | @larksuiteoapi/node-sdk | 事件订阅                                     |
+| Web UI   | Hono WebSocket + React  | 自带，始终开启，支持撤回/编辑                |
 
 ### 8.2 Agent 接口
 
 ```typescript
 interface AgentBackend {
-  readonly name: string
-  readonly type: "cli" | "api" | "acp"
+  readonly name: string;
+  readonly type: 'cli' | 'api' | 'acp';
 
-  execute(request: AgentRequest): Promise<AgentResponse>
-  cancel(runId: string): Promise<void>  // 取消指定任务
-  isAvailable(): Promise<boolean>
+  execute(request: AgentRequest): Promise<AgentResponse>;
+  cancel(runId: string): Promise<void>; // 取消指定任务
+  isAvailable(): Promise<boolean>;
 }
 
 interface AgentRequest {
-  runId: string
-  text: string
-  systemPrompt: string
-  history: Message[]
-  attachments?: Attachment[]
-  workingDirectory?: string
-  executionMode?: "foreground" | "background"
+  runId: string;
+  text: string;
+  systemPrompt: string;
+  history: Message[];
+  attachments?: Attachment[];
+  workingDirectory?: string;
+  executionMode?: 'foreground' | 'background';
 }
 
 interface AgentResponse {
-  content: string
-  exitCode?: number                // CLI agent 退出码
-  duration: number                 // 执行耗时(ms)
-  agent: string                    // 实际执行的 agent 名
-  metadata?: Record<string, unknown>
+  content: string;
+  exitCode?: number; // CLI agent 退出码
+  duration: number; // 执行耗时(ms)
+  agent: string; // 实际执行的 agent 名
+  metadata?: Record<string, unknown>;
 }
 ```
 
 **取消模型**：
+
 - CLI agent 以独立 **process group** 启动
 - Orchestrator 维护 `runId -> { pid, pgid, agent, chatId }`
 - `/cancel`、撤回、超时 都按 `runId` kill 整个 process group，而不是只杀父进程
@@ -603,16 +617,28 @@ interface AgentResponse {
 ```typescript
 interface ACPClient {
   // 发现
-  listAgents(serverUrl: string): Promise<ACPAgentInfo[]>
-  getAgent(serverUrl: string, agentId: string): Promise<ACPAgentInfo>
+  listAgents(serverUrl: string): Promise<ACPAgentInfo[]>;
+  getAgent(serverUrl: string, agentId: string): Promise<ACPAgentInfo>;
 
   // 同步执行
-  runSync(serverUrl: string, agentId: string, messages: ACPMessage[]): Promise<ACPRunResult>
+  runSync(
+    serverUrl: string,
+    agentId: string,
+    messages: ACPMessage[],
+  ): Promise<ACPRunResult>;
 
   // 异步执行
-  runAsync(serverUrl: string, agentId: string, messages: ACPMessage[]): Promise<string>  // returns run_id
-  getRunStatus(serverUrl: string, agentId: string, runId: string): Promise<ACPRunStatus>
-  cancelRun(serverUrl: string, agentId: string, runId: string): Promise<void>
+  runAsync(
+    serverUrl: string,
+    agentId: string,
+    messages: ACPMessage[],
+  ): Promise<string>; // returns run_id
+  getRunStatus(
+    serverUrl: string,
+    agentId: string,
+    runId: string,
+  ): Promise<ACPRunStatus>;
+  cancelRun(serverUrl: string, agentId: string, runId: string): Promise<void>;
 }
 
 // ACP Agent 在 Agent Pool 中和 CLI/API agent 统一调度
@@ -697,30 +723,30 @@ CREATE TABLE command_runs (
 
 ### 8.5 macOS 深度集成
 
-| 能力 | 实现 |
-|------|------|
-| 截屏 | `screencapture -x /tmp/ss.png` |
-| OCR | screencapture → Direct API (vision) |
-| 鼠标 | `cliclick c:x,y` |
-| 键盘 | `cliclick t:"text"` / AppleScript |
-| 快捷键 | AppleScript `key code` |
-| 窗口信息 | AppleScript frontmost process |
-| 打开应用 | `open -a "AppName"` |
-| 剪贴板 | `pbcopy` / `pbpaste` |
-| 通知 | `osascript display notification` |
+| 能力     | 实现                                |
+| -------- | ----------------------------------- |
+| 截屏     | `screencapture -x /tmp/ss.png`      |
+| OCR      | screencapture → Direct API (vision) |
+| 鼠标     | `cliclick c:x,y`                    |
+| 键盘     | `cliclick t:"text"` / AppleScript   |
+| 快捷键   | AppleScript `key code`              |
+| 窗口信息 | AppleScript frontmost process       |
+| 打开应用 | `open -a "AppName"`                 |
+| 剪贴板   | `pbcopy` / `pbpaste`                |
+| 通知     | `osascript display notification`    |
 
 ### 8.6 Browser 控制 (Playwright)
 
 ```typescript
 interface BrowserController {
-  launch(): Promise<void>
-  navigate(url: string): Promise<void>
-  screenshot(): Promise<Buffer>
-  click(selector: string): Promise<void>
-  type(selector: string, text: string): Promise<void>
-  evaluate(script: string): Promise<unknown>
-  extractText(selector?: string): Promise<string>
-  close(): Promise<void>
+  launch(): Promise<void>;
+  navigate(url: string): Promise<void>;
+  screenshot(): Promise<Buffer>;
+  click(selector: string): Promise<void>;
+  type(selector: string, text: string): Promise<void>;
+  evaluate(script: string): Promise<unknown>;
+  extractText(selector?: string): Promise<string>;
+  close(): Promise<void>;
 }
 ```
 
@@ -829,28 +855,34 @@ willclaw logs --tool       # tail -f tool execution log
 ---
 
 ## 09:15 — User
+
 帮我写一个快速排序
 
 ## 09:15 — WillClaw [claude-code] (12.3s, exit=0)
+
 这是一个 Python 快速排序实现：
 ...
 
 ---
 
 ## 10:30 — User
+
 @gemini 总结这篇论文
 
 ## 10:31 — WillClaw [gemini] (45.2s, exit=0)
+
 这篇论文的主要贡献是...
 
 ---
 
 ## 11:00 — System (command_completion)
+
 ✅ [claude-code] 完成 (12.3s) — 重构 router.ts
 
 ---
 
 ## 14:00 — System (heartbeat)
+
 HEARTBEAT_OK
 ```
 
@@ -859,11 +891,11 @@ HEARTBEAT_OK
 ```typescript
 class HistoryExporter {
   // 每条消息写入时同步 append 到对应的 md 文件
-  async append(message: IncomingMessage | OutgoingMessage): Promise<void>
+  async append(message: IncomingMessage | OutgoingMessage): Promise<void>;
 
   // 文件名 = {date}_{chatId}.md
   // 路径 = historyMessages/{channel}/{filename}
-  private getFilePath(channel: string, chatId: string, date: string): string
+  private getFilePath(channel: string, chatId: string, date: string): string;
 
   // 在消息写入 SQLite 的同时调用（不是异步 batch，是实时写入）
   // 这样即使 SQLite 坏了，md 文件还在
@@ -871,6 +903,7 @@ class HistoryExporter {
 ```
 
 **撤回在导出层的语义**：
+
 - 导出文件默认 append-only，不回头物理删改旧内容
 - 撤回/编辑时追加一条 tombstone system note，标明哪条消息已 revoked / superseded
 - 搜索、prompt、memory_search 一律以 SQLite 真相源为准，不从导出文件回流已撤回内容
@@ -889,16 +922,17 @@ class HistoryExporter {
 像 OpenClaw 的 `memory_search` 和 `memory_get` 一样，让 Agent 和用户都能搜索历史。
 
 **真相源约定**：
+
 - 对话消息搜索以 SQLite `messages` / `messages_fts` 为准
 - `historyMessages/*.md` 只是导出备份，不作为撤回后的权威索引来源
 
 **搜索范围**：
 
-| 数据源 | 存储位置 | 搜索方式 |
-|--------|---------|---------|
+| 数据源   | 存储位置                       | 搜索方式             |
+| -------- | ------------------------------ | -------------------- |
 | 对话消息 | `data/willclaw.db` messages 表 | SQLite FTS5 全文搜索 |
-| 每日笔记 | `workspace/memory/*.md` | 文件内容索引到 FTS5 |
-| 长期记忆 | `workspace/MEMORY.md` | 直接 FTS5 |
+| 每日笔记 | `workspace/memory/*.md`        | 文件内容索引到 FTS5  |
+| 长期记忆 | `workspace/MEMORY.md`          | 直接 FTS5            |
 
 **SQLite FTS5 全文索引**：
 
@@ -934,44 +968,50 @@ END;
 ```typescript
 interface MemorySearchEngine {
   // 搜索消息
-  searchMessages(query: string, options?: {
-    channel?: string
-    dateFrom?: string
-    dateTo?: string
-    role?: 'user' | 'assistant'
-    limit?: number
-  }): Promise<SearchResult[]>
+  searchMessages(
+    query: string,
+    options?: {
+      channel?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      role?: 'user' | 'assistant';
+      limit?: number;
+    },
+  ): Promise<SearchResult[]>;
 
   // 搜索文件（daily notes + MEMORY.md）
-  searchFiles(query: string, options?: {
-    fileType?: 'daily_note' | 'memory'
-    limit?: number
-  }): Promise<FileSearchResult[]>
+  searchFiles(
+    query: string,
+    options?: {
+      fileType?: 'daily_note' | 'memory';
+      limit?: number;
+    },
+  ): Promise<FileSearchResult[]>;
 
   // 统一搜索（消息 + 文件，按相关度排序）
-  search(query: string, limit?: number): Promise<UnifiedSearchResult[]>
+  search(query: string, limit?: number): Promise<UnifiedSearchResult[]>;
 
   // 重建索引（文件有变化时）
-  reindex(): Promise<void>
+  reindex(): Promise<void>;
 }
 
 interface SearchResult {
-  id: number
-  content: string                  // 匹配的消息内容
-  snippet: string                  // FTS5 高亮片段
-  channel: string
-  chatId: string
-  role: string
-  timestamp: string
-  rank: number                     // FTS5 相关度分数
+  id: number;
+  content: string; // 匹配的消息内容
+  snippet: string; // FTS5 高亮片段
+  channel: string;
+  chatId: string;
+  role: string;
+  timestamp: string;
+  rank: number; // FTS5 相关度分数
 }
 
 interface FileSearchResult {
-  filepath: string
-  content: string
-  snippet: string
-  fileType: string
-  rank: number
+  filepath: string;
+  content: string;
+  snippet: string;
+  fileType: string;
+  rank: number;
 }
 ```
 
@@ -1077,12 +1117,12 @@ export async function exec(command: string, options: ExecOptions): Promise<ExecR
 
 **每个工具模块都有相同的模式**：
 
-| 工具 | 记录的 action |
-|------|-------------|
-| `shell` | `exec` — 命令、退出码、stdout/stderr |
-| `filesystem` | `read`, `write`, `trash`, `archive`, `mkdir`, `copy` — 路径、大小 |
-| `screen` | `screenshot`, `click`, `type`, `hotkey` — 坐标、文本 |
-| `browser` | `navigate`, `click`, `type`, `screenshot`, `evaluate` — URL、selector |
+| 工具         | 记录的 action                                                         |
+| ------------ | --------------------------------------------------------------------- |
+| `shell`      | `exec` — 命令、退出码、stdout/stderr                                  |
+| `filesystem` | `read`, `write`, `trash`, `archive`, `mkdir`, `copy` — 路径、大小     |
+| `screen`     | `screenshot`, `click`, `type`, `hotkey` — 坐标、文本                  |
+| `browser`    | `navigate`, `click`, `type`, `screenshot`, `evaluate` — URL、selector |
 
 **文本日志**（同时写入，供 tail -f）：
 
@@ -1214,14 +1254,14 @@ willclaw/
 # ~/.willclaw/config.yaml
 
 server:
-  host: "127.0.0.1"
+  host: '127.0.0.1'
   port: 8420
-  auth_token: "${WILLCLAW_AUTH_TOKEN}"
+  auth_token: '${WILLCLAW_AUTH_TOKEN}'
 
 # ── Workspace Bootstrap ─────────────
 workspace:
-  bootstrapMaxChars: 20000         # 单文件上限
-  bootstrapTotalMaxChars: 100000   # 总注入上限
+  bootstrapMaxChars: 20000 # 单文件上限
+  bootstrapTotalMaxChars: 100000 # 总注入上限
   # 注入顺序和条件由 Prompt Assembler 硬编码（见第3节）
   # 文件内容由用户自行编写
 
@@ -1235,39 +1275,39 @@ agents:
     system: claude-code
 
   safety:
-    prompt_transport: stdin        # 不把完整 prompt 直接拼进 argv
-    mutating_fallback: false       # 写操作失败后不自动切下一个 agent
+    prompt_transport: stdin # 不把完整 prompt 直接拼进 argv
+    mutating_fallback: false # 写操作失败后不自动切下一个 agent
 
   pool:
     claude-code:
       enabled: true
       type: cli
-      command: "claude"
-      args: ["-p", "--dangerously-skip-permissions"]
+      command: 'claude'
+      args: ['-p', '--dangerously-skip-permissions']
       timeout: 300
       completion_notify: background_only
 
     codex:
       enabled: true
       type: cli
-      command: "codex"
-      args: ["--full-auto"]
+      command: 'codex'
+      args: ['--full-auto']
       timeout: 300
       completion_notify: background_only
 
     opencode:
       enabled: true
       type: cli
-      command: "opencode"
-      args: ["run", "--format", "json"]
+      command: 'opencode'
+      args: ['run', '--format', 'json']
       timeout: 300
       completion_notify: background_only
 
     gemini:
       enabled: true
       type: cli
-      command: "gemini"
-      args: ["-p", "--output-format", "json"]
+      command: 'gemini'
+      args: ['-p', '--output-format', 'json']
       timeout: 300
       completion_notify: background_only
 
@@ -1278,7 +1318,7 @@ agents:
       model: claude-sonnet-4-20250514
       api_key_env: ANTHROPIC_API_KEY
       max_tokens: 8192
-      completion_notify: false     # 同步调用，不需要
+      completion_notify: false # 同步调用，不需要
 
 # ── ACP ──────────────────────────────
 acp:
@@ -1319,7 +1359,7 @@ channels:
 # ── Heartbeat ────────────────────────
 heartbeat:
   enabled: true
-  interval: "0 * * * *"           # 每小时整点
+  interval: '0 * * * *' # 每小时整点
   agent: direct-api
   notify: telegram
   silent_ok: true
@@ -1330,25 +1370,25 @@ heartbeat:
 # ── Cron ─────────────────────────────
 cron:
   daily_briefing:
-    schedule: "0 8 * * *"
+    schedule: '0 8 * * *'
     agent: direct-api
-    prompt: "生成今日简报"
+    prompt: '生成今日简报'
     notify: telegram
 
   memory_compact:
-    schedule: "0 2 * * *"
+    schedule: '0 2 * * *'
     agent: direct-api
-    prompt: "总结今天对话，更新 MEMORY.md"
+    prompt: '总结今天对话，更新 MEMORY.md'
     notify: null
 
 # ── Tools ────────────────────────────
 tools:
   shell:
     confirm_destructive: true
-    blocked_commands: ["rm", "rmdir"]
+    blocked_commands: ['rm', 'rmdir']
   filesystem:
-    delete_mode: "trash"           # 不提供物理删除
-    archive_dir: "~/.willclaw/archive"
+    delete_mode: 'trash' # 不提供物理删除
+    archive_dir: '~/.willclaw/archive'
   browser:
     headless: true
   screen:
@@ -1358,60 +1398,61 @@ tools:
 memory:
   context_window_days: 3
   max_history_messages: 20
-  search_reindex_on_start: true    # 启动时重建文件搜索索引
-  exclude_revoked: true            # 默认不返回已撤回消息
+  search_reindex_on_start: true # 启动时重建文件搜索索引
+  exclude_revoked: true # 默认不返回已撤回消息
 
 # ── History Export ───────────────────
 history:
   enabled: true
-  dir: "~/.willclaw/historyMessages"
-  include_system: true             # 记录 system 消息（heartbeat/completion）
-  git_auto_commit: false           # 定期 git commit（需手动 git init）
-  index_exports: false             # 导出文件不参与权威搜索索引
+  dir: '~/.willclaw/historyMessages'
+  include_system: true # 记录 system 消息（heartbeat/completion）
+  git_auto_commit: false # 定期 git commit（需手动 git init）
+  index_exports: false # 导出文件不参与权威搜索索引
 
 # ── Tool Logging ─────────────────────
 logging:
-  tool_log_db: "~/.willclaw/logs/tool-executions.db"
-  app_log: "~/.willclaw/logs/willclaw.log"
-  max_output_chars: 2000           # stdout/output 截断长度
-  retain_days: 90                  # 日志保留天数
+  tool_log_db: '~/.willclaw/logs/tool-executions.db'
+  app_log: '~/.willclaw/logs/willclaw.log'
+  max_output_chars: 2000 # stdout/output 截断长度
+  retain_days: 90 # 日志保留天数
 
 # ── Daemon ───────────────────────────
 daemon:
-  plist_label: "com.willclaw.agent"
+  plist_label: 'com.willclaw.agent'
   # node_path: "/opt/homebrew/bin/node"  # 自动检测，可手动指定
-  env_file: "~/.willclaw/.env"
+  env_file: '~/.willclaw/.env'
 ```
 
 ---
 
 ## 11. 内置命令
 
-| 命令 | 功能 |
-|------|------|
-| `/status` | Agent 可用性、Channel 状态、Heartbeat、Cron、daemon 状态 |
-| `/agent <n>` | 切换默认 Agent |
-| `/agent` | 列出所有可用 Agent（CLI + API + ACP） |
-| `/mode <n>` | 切换工作模式（读取 WORK_MODES.md） |
-| `/memory` | 记忆统计 |
-| `/search <keyword>` | 统一搜索（消息 + daily notes + MEMORY.md） |
-| `/search --channel <ch> <keyword>` | 搜索特定渠道 |
-| `/search --files <keyword>` | 只搜文件 |
-| `/search --date <date> <keyword>` | 搜索特定日期 |
-| `/reindex` | 重建 FTS5 搜索索引 |
-| `/reload` | 重新加载 workspace .md 文件 |
-| `/undo` | 撤回上一条消息（所有渠道通用） |
-| `/cron` | 列出定时任务 + 下次执行时间 |
-| `/cron run <n>` | 手动触发 cron 任务 |
-| `/heartbeat` | 立即触发一次心跳 |
-| `/screenshot` | 截取当前屏幕 |
-| `/cancel` | 按 runId 取消正在执行的 Agent 任务 |
-| `/acp` | 列出已配置的 ACP agents |
-| `/logs` | 最近 20 条工具执行日志 |
-| `/logs <tool>` | 过滤特定工具的日志（shell/filesystem/screen/browser）|
-| `/help` | 显示帮助 |
+| 命令                               | 功能                                                     |
+| ---------------------------------- | -------------------------------------------------------- |
+| `/status`                          | Agent 可用性、Channel 状态、Heartbeat、Cron、daemon 状态 |
+| `/agent <n>`                       | 切换默认 Agent                                           |
+| `/agent`                           | 列出所有可用 Agent（CLI + API + ACP）                    |
+| `/mode <n>`                        | 切换工作模式（读取 WORK_MODES.md）                       |
+| `/memory`                          | 记忆统计                                                 |
+| `/search <keyword>`                | 统一搜索（消息 + daily notes + MEMORY.md）               |
+| `/search --channel <ch> <keyword>` | 搜索特定渠道                                             |
+| `/search --files <keyword>`        | 只搜文件                                                 |
+| `/search --date <date> <keyword>`  | 搜索特定日期                                             |
+| `/reindex`                         | 重建 FTS5 搜索索引                                       |
+| `/reload`                          | 重新加载 workspace .md 文件                              |
+| `/undo`                            | 撤回上一条消息（所有渠道通用）                           |
+| `/cron`                            | 列出定时任务 + 下次执行时间                              |
+| `/cron run <n>`                    | 手动触发 cron 任务                                       |
+| `/heartbeat`                       | 立即触发一次心跳                                         |
+| `/screenshot`                      | 截取当前屏幕                                             |
+| `/cancel`                          | 按 runId 取消正在执行的 Agent 任务                       |
+| `/acp`                             | 列出已配置的 ACP agents                                  |
+| `/logs`                            | 最近 20 条工具执行日志                                   |
+| `/logs <tool>`                     | 过滤特定工具的日志（shell/filesystem/screen/browser）    |
+| `/help`                            | 显示帮助                                                 |
 
 `@agent-name` 前缀指定 Agent：
+
 ```
 @claude-code 重构 ~/projects/myapp 的路由层
 @gemini 这篇论文 50 页，帮我总结
@@ -1423,31 +1464,58 @@ daemon:
 
 ## 12. 开发路线图
 
+### Progress Snapshot（2026-03-16）
+
+已落地：
+
+- `Phase 0` 已完成：monorepo、TS/ESLint/Prettier、config schema、CLI 骨架、日志、workspace 初始化
+- `Phase 1` 已完成：Prompt Assembler、Agent 接口与多 backend、Orchestrator、SQLite memory、FTS5 搜索、History Exporter、Command Completion Monitor、Tool Execution Logger、Hono REST API
+- 多 agent 已接入：`claude-code`、`codex`、`opencode`、`gemini`、`direct-api`、`acp`
+- Host tools 已接入分类：`native | hosted | disabled`
+- Host browser / screen 已改为 provider 优先级：
+  - browser: `agent-browser -> system-open`
+  - screen: `peekaboo -> screencapture`
+- workspace 现在会自动生成 `SKILLS.md`、`SKILLS_INDEX.md` 和 `skills/*`
+- CLI 新增 `sync-skills`，可将生成的 skills 刷到任意 workspace 目录
+- 已有聊天渠道骨架：`ChannelManager + Telegram polling adapter`
+- 已有 macOS 登录自启：`launch-agent install / uninstall / status / print`
+
+尚未完成：
+
+- Heartbeat / cron 真正执行引擎
+- Web UI 前端与消息撤回
+- Discord / Feishu 渠道
+- 完整 macOS GUI 自动化、OCR
+- 将 provider 安装与健康检查做成正式 setup 流程
+
 ### Phase 0 — 脚手架（1-2 天）
-- [ ] pnpm monorepo 初始化
-- [ ] TypeScript + ESLint + Prettier
-- [ ] config.yaml zod schema + 加载 + 验证
-- [ ] CLI 骨架（`willclaw init` / `willclaw start` / `willclaw status`）
-- [ ] workspace 目录初始化（创建空目录结构，不写 .md 内容）
-- [ ] 日志系统（pino → `~/.willclaw/logs/willclaw.log`）
+
+- [x] pnpm monorepo 初始化
+- [x] TypeScript + ESLint + Prettier
+- [x] config.yaml zod schema + 加载 + 验证
+- [x] CLI 骨架（`willclaw init` / `willclaw start` / `willclaw status`）
+- [x] workspace 目录初始化（目录结构 + 生成 workspace skills）
+- [x] 日志系统（pino → `~/.willclaw/logs/willclaw.log`）
 
 ### Phase 1 — 核心循环（3-5 天）
-- [ ] Prompt Assembler：加载所有 workspace .md → 拼装 system prompt
-- [ ] Agent 接口 + CLI Agent 封装（通用子进程管理）
-- [ ] Claude Code agent 实现
-- [ ] Direct API agent 实现
-- [ ] Orchestrator：消息路由 + agent 选择 + 只读 fallback
-- [ ] Memory Store：SQLite + CRUD + FTS5 全文索引
-- [ ] **Tool Execution Logger**：硬编码在每个工具模块中
-- [ ] **Command Completion Monitor**：后台子进程退出 → 系统消息注入
-- [ ] **History Exporter**：消息实时 append 到 historyMessages/*.md（撤回追加 tombstone）
-- [ ] Hono 服务器 + REST API（含 `/api/logs/tools`）
+
+- [x] Prompt Assembler：加载所有 workspace .md → 拼装 system prompt
+- [x] Agent 接口 + CLI Agent 封装（通用子进程管理）
+- [x] Claude Code agent 实现
+- [x] Direct API agent 实现
+- [x] Orchestrator：消息路由 + agent 选择 + 只读 fallback
+- [x] Memory Store：SQLite + CRUD + FTS5 全文索引
+- [x] **Tool Execution Logger**：硬编码在每个工具模块中
+- [x] **Command Completion Monitor**：后台子进程退出 → 系统消息注入
+- [x] **History Exporter**：消息实时 append 到 historyMessages/\*.md（撤回追加 tombstone）
+- [x] Hono 服务器 + REST API（含 `/api/logs/tools`）
 
 **交付**：REST API 可用，工具日志可查，后台任务自动通知，对话自动保存 md。
 
 ### Phase 2 — 聊天渠道 + Web UI（3-5 天）
-- [ ] Channel 接口
-- [ ] Telegram 适配器
+
+- [x] Channel 接口
+- [x] Telegram 适配器
 - [ ] Web UI WebSocket handler
 - [ ] Web UI 前端（React）
 - [ ] **消息撤回 / 编辑 / 重发**（撤回后从搜索和 memory_search 中消失）
@@ -1459,6 +1527,7 @@ daemon:
 **交付**：Telegram + Web UI 聊天可用，支持撤回、日志查看、记忆搜索。
 
 ### Phase 3 — Heartbeat + Cron + Memory（2-3 天）
+
 - [ ] Heartbeat 引擎（默认1小时）
 - [ ] HEARTBEAT.md + PROJECT_HEARTBEAT.md 加载
 - [ ] node-cron 调度器
@@ -1471,16 +1540,18 @@ daemon:
 **交付**：Agent 主动执行、维护记忆、可搜索全部历史。
 
 ### Phase 4 — 更多 Agents + ACP（3-5 天）
-- [ ] Codex CLI agent
-- [ ] OpenCode CLI agent
-- [ ] Gemini CLI agent
-- [ ] **ACP Client 实现**
-- [ ] ACP agent 配置 + 调用
+
+- [x] Codex CLI agent
+- [x] OpenCode CLI agent
+- [x] Gemini CLI agent
+- [x] **ACP Client 实现**
+- [x] ACP agent 配置 + 调用
 - [ ] Agent Router 智能路由
 
 **交付**：5 个 CLI/API agent + ACP agent 全部可用。
 
 ### Phase 5 — macOS + Browser + Daemon（2-3 天）
+
 - [ ] 屏幕截图 + OCR
 - [ ] 鼠标键盘模拟
 - [ ] 应用控制
@@ -1489,9 +1560,17 @@ daemon:
 - [ ] **`willclaw uninstall-daemon`** / **`restart-daemon`** / **`daemon-status`**
 - [ ] **`willclaw logs`** — tail 日志
 
+补充进度：
+
+- [x] Browser host tool provider 顺序（`agent-browser -> system-open`）
+- [x] Screen host tool provider 顺序（`peekaboo -> screencapture`）
+- [x] 最小 browser open / screen capture 宿主工具封装
+- [x] `launch-agent install / uninstall / status / print`（登录自启，不走 daemon 命名）
+
 **交付**：开机自启、崩溃自动恢复、macOS 完整控制。
 
 ### Phase 6 — 打磨（持续）
+
 - [ ] WillClaw 作为 ACP Server
 - [ ] Discord + 飞书适配器
 - [ ] Web UI 美化
