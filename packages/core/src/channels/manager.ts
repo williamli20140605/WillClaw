@@ -2,6 +2,9 @@ import type { Logger } from 'pino';
 
 import type { ChatService } from '../chat-service.js';
 import type { WillClawConfig } from '../config.js';
+import type { MemoryStore } from '../memory.js';
+import type { Orchestrator } from '../orchestrator.js';
+import type { WillClawScheduler } from '../scheduler.js';
 
 import { TelegramChannel } from './telegram.js';
 import type { ChannelAdapter, ChannelNotifier } from './types.js';
@@ -12,6 +15,9 @@ export class ChannelManager implements ChannelNotifier {
     constructor(
         private readonly config: WillClawConfig,
         private readonly chatService: ChatService,
+        private readonly orchestrator: Orchestrator,
+        private readonly scheduler: WillClawScheduler,
+        private readonly memoryStore: MemoryStore,
         private readonly logger: Logger,
         private readonly workingDirectory: string,
     ) {
@@ -19,6 +25,9 @@ export class ChannelManager implements ChannelNotifier {
             const adapter = new TelegramChannel(
                 this.config.channels.telegram,
                 this.chatService,
+                this.orchestrator,
+                this.scheduler,
+                this.memoryStore,
                 this.logger,
                 this.workingDirectory,
             );

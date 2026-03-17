@@ -83,6 +83,7 @@ export {
 } from './tool-catalog.js';
 export {
     Orchestrator,
+    type RoutePlan,
     type RunChatRequest,
     type RunChatResult,
 } from './orchestrator.js';
@@ -91,6 +92,10 @@ export {
     getWillClawPaths,
     type WillClawPaths,
 } from './paths.js';
+export {
+    getProviderHealth,
+    type ProviderHealthEntry,
+} from './provider-health.js';
 export {
     PromptAssembler,
     type AssemblePromptOptions,

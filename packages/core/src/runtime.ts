@@ -88,6 +88,7 @@ export async function createWillClawRuntime(options?: {
         agents,
         memorySearchService,
         logger,
+        eventHub,
     );
     const chatService = new ChatService(
         config,

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Logger } from 'pino';
 
 import type { WillClawConfig } from './config.js';
+import type { WillClawEventHub } from './events.js';
 import {
     renderMemorySearchBridgeInstructions,
     type MemorySearchService,
@@ -20,6 +21,7 @@ import type {
     AgentAvailability,
     AgentBackend,
     AgentRequest,
+    AgentTextStreamUpdate,
     ChatMessage,
     ExecutionMode,
 } from './agents/types.js';
@@ -86,7 +88,14 @@ export interface RunChatRequest {
     workingDirectory?: string;
     executionMode?: ExecutionMode;
     currentMode?: string;
+    channel?: string;
+    chatId?: string;
     runId?: string;
+    onTextStream?: (
+        update: AgentTextStreamUpdate & {
+            agent: string;
+        },
+    ) => void;
 }
 
 export interface RunChatResult {
@@ -100,6 +109,19 @@ export interface RunChatResult {
     exitCode?: number;
     rawOutput?: string;
     metadata?: Record<string, unknown>;
+}
+
+export interface RoutePlan {
+    text: string;
+    strippedText: string;
+    selectedAgent: string;
+    explicitAgent?: string;
+    fallbackChain: string[];
+    allowFallback: boolean;
+    reason: 'explicit' | 'long_context' | 'coding' | 'simple_qa';
+    looksLikeCoding: boolean;
+    looksLikeLongContext: boolean;
+    looksLikeMutating: boolean;
 }
 
 export class Orchestrator {
@@ -119,6 +141,7 @@ export class Orchestrator {
         private readonly agents: Map<string, AgentBackend>,
         private readonly memorySearchService: MemorySearchService,
         private readonly logger: Logger,
+        private readonly eventHub: WillClawEventHub,
     ) { }
 
     async listAgents(): Promise<AgentAvailability[]> {
@@ -148,15 +171,7 @@ export class Orchestrator {
             throw new Error('Chat text cannot be empty.');
         }
 
-        const explicit = stripExplicitAgent(trimmedText, this.agents.keys());
-        const userText = explicit.text || trimmedText;
-        const selectedAgent = explicit.explicitAgent
-            ? explicit.explicitAgent
-            : this.selectAgent(userText);
-        const allowFallback =
-            !explicit.explicitAgent &&
-            (!looksLikeMutatingRequest(userText) ||
-                this.config.agents.safety.mutating_fallback);
+        const routePlan = this.inspectRoute(trimmedText);
         const attemptedAgents: string[] = [];
         const attemptedErrors: string[] = [];
         const promptOptions: NonNullable<
@@ -177,7 +192,7 @@ export class Orchestrator {
             await this.promptAssembler.assembleSystemPrompt(promptOptions);
         const agentRequest: AgentRequest = {
             runId: request.runId ?? randomUUID(),
-            text: userText,
+            text: routePlan.strippedText,
             systemPrompt,
             history: request.history ?? [],
             executionMode: request.executionMode ?? 'foreground',
@@ -187,16 +202,37 @@ export class Orchestrator {
             agentRequest.workingDirectory = request.workingDirectory;
         }
 
-        for (const agentName of this.buildFallbackChain(
-            selectedAgent,
-            allowFallback,
-        )) {
+        this.eventHub.publish('chat.route.selected', {
+            runId: agentRequest.runId,
+            channel: request.channel ?? null,
+            chatId: request.chatId ?? null,
+            selectedAgent: routePlan.selectedAgent,
+            explicitAgent: routePlan.explicitAgent ?? null,
+            allowFallback: routePlan.allowFallback,
+            fallbackChain: routePlan.fallbackChain,
+            reason: routePlan.reason,
+            looksLikeCoding: routePlan.looksLikeCoding,
+            looksLikeLongContext: routePlan.looksLikeLongContext,
+            looksLikeMutating: routePlan.looksLikeMutating,
+            executionMode: agentRequest.executionMode ?? 'foreground',
+        });
+
+        for (const [attemptIndex, agentName] of routePlan.fallbackChain.entries()) {
             const backend = this.agents.get(agentName);
             attemptedAgents.push(agentName);
 
             if (!backend) {
                 attemptedErrors.push(`${agentName}: backend not configured`);
-                if (explicit.explicitAgent) {
+                this.eventHub.publish('chat.agent.skipped', {
+                    runId: agentRequest.runId,
+                    channel: request.channel ?? null,
+                    chatId: request.chatId ?? null,
+                    agent: agentName,
+                    reason: 'backend_not_configured',
+                    attemptIndex,
+                    attemptCount: routePlan.fallbackChain.length,
+                });
+                if (routePlan.explicitAgent) {
                     break;
                 }
                 continue;
@@ -204,7 +240,16 @@ export class Orchestrator {
 
             if (!(await backend.isAvailable())) {
                 attemptedErrors.push(`${agentName}: unavailable`);
-                if (explicit.explicitAgent) {
+                this.eventHub.publish('chat.agent.skipped', {
+                    runId: agentRequest.runId,
+                    channel: request.channel ?? null,
+                    chatId: request.chatId ?? null,
+                    agent: agentName,
+                    reason: 'unavailable',
+                    attemptIndex,
+                    attemptCount: routePlan.fallbackChain.length,
+                });
+                if (routePlan.explicitAgent) {
                     break;
                 }
                 continue;
@@ -214,7 +259,7 @@ export class Orchestrator {
                 {
                     runId: agentRequest.runId,
                     selectedAgent: agentName,
-                    requestedAgent: explicit.explicitAgent,
+                    requestedAgent: routePlan.explicitAgent,
                     workingDirectory: request.workingDirectory ?? this.paths.homeDir,
                 },
                 'Dispatching chat request to agent',
@@ -230,8 +275,27 @@ export class Orchestrator {
                     backend,
                     startedAt: Date.now(),
                 });
+                this.eventHub.publish('chat.agent.started', {
+                    runId: agentRequest.runId,
+                    channel: request.channel ?? null,
+                    chatId: request.chatId ?? null,
+                    agent: agentName,
+                    attemptIndex,
+                    attemptCount: routePlan.fallbackChain.length,
+                    allowFallback: routePlan.allowFallback,
+                });
                 const response = await this.executeAgent(agentName, backend, {
                     ...agentRequest,
+                    ...(request.onTextStream
+                        ? {
+                            onTextStream: (update: AgentTextStreamUpdate) => {
+                                request.onTextStream?.({
+                                    agent: agentName,
+                                    ...update,
+                                });
+                            },
+                        }
+                        : {}),
                     systemPrompt: memorySearchEnabled
                         ? `${agentRequest.systemPrompt}\n\n## Hosted Memory Search\n${renderMemorySearchBridgeInstructions()}`
                         : agentRequest.systemPrompt,
@@ -262,6 +326,17 @@ export class Orchestrator {
                     result.metadata = response.metadata;
                 }
 
+                result.metadata = {
+                    ...(result.metadata ?? {}),
+                    route: {
+                        selectedAgent: routePlan.selectedAgent,
+                        explicitAgent: routePlan.explicitAgent ?? null,
+                        allowFallback: routePlan.allowFallback,
+                        fallbackChain: routePlan.fallbackChain,
+                        reason: routePlan.reason,
+                    },
+                };
+
                 return result;
             } catch (error) {
                 const detail =
@@ -279,8 +354,17 @@ export class Orchestrator {
                     },
                     'Agent execution failed',
                 );
+                this.eventHub.publish('chat.agent.failed', {
+                    runId: agentRequest.runId,
+                    channel: request.channel ?? null,
+                    chatId: request.chatId ?? null,
+                    agent: agentName,
+                    error: detail,
+                    attemptIndex,
+                    attemptCount: routePlan.fallbackChain.length,
+                });
 
-                if (!allowFallback || explicit.explicitAgent) {
+                if (!routePlan.allowFallback || routePlan.explicitAgent) {
                     throw error;
                 }
             } finally {
@@ -291,6 +375,44 @@ export class Orchestrator {
         throw new Error(
             `All agent attempts failed: ${attemptedErrors.join('; ') || 'no available agents'}`,
         );
+    }
+
+    inspectRoute(text: string): RoutePlan {
+        const trimmedText = text.trim();
+        const explicit = stripExplicitAgent(trimmedText, this.agents.keys());
+        const strippedText = explicit.text || trimmedText;
+        const looksLikeLongContext = looksLikeLongContextRequest(strippedText);
+        const looksLikeCoding = looksLikeCodingRequest(strippedText);
+        const looksLikeMutating = looksLikeMutatingRequest(strippedText);
+        const selectedAgent = explicit.explicitAgent
+            ? explicit.explicitAgent
+            : this.selectAgent(strippedText);
+        const allowFallback =
+            !explicit.explicitAgent &&
+            (!looksLikeMutating ||
+                this.config.agents.safety.mutating_fallback);
+        const reason = explicit.explicitAgent
+            ? 'explicit'
+            : looksLikeLongContext
+                ? 'long_context'
+                : looksLikeCoding
+                    ? 'coding'
+                    : 'simple_qa';
+
+        return {
+            text: trimmedText,
+            strippedText,
+            selectedAgent,
+            ...(explicit.explicitAgent
+                ? { explicitAgent: explicit.explicitAgent }
+                : {}),
+            fallbackChain: this.buildFallbackChain(selectedAgent, allowFallback),
+            allowFallback,
+            reason,
+            looksLikeCoding,
+            looksLikeLongContext,
+            looksLikeMutating,
+        };
     }
 
     private async executeAgent(

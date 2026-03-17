@@ -56,6 +56,246 @@ function readAnthropicText(payload: unknown): string {
         .trim();
 }
 
+interface AnthropicStreamEvent {
+    event: string;
+    data: string;
+}
+
+function emitTextStreamUpdate(
+    request: AgentRequest,
+    currentContent: string,
+    previousContent: string,
+): string {
+    if (!request.onTextStream || !currentContent || currentContent === previousContent) {
+        return previousContent;
+    }
+
+    const mode = currentContent.startsWith(previousContent) ? 'delta' : 'snapshot';
+    const delta =
+        mode === 'delta'
+            ? currentContent.slice(previousContent.length)
+            : currentContent;
+
+    request.onTextStream({
+        content: currentContent,
+        delta,
+        mode,
+        parser: 'anthropic_sse',
+    });
+    return currentContent;
+}
+
+function parseSseEvents(buffer: string): {
+    events: AnthropicStreamEvent[];
+    rest: string;
+} {
+    const chunks = buffer.split(/\n\n/);
+    const rest = chunks.pop() ?? '';
+    const events: AnthropicStreamEvent[] = [];
+
+    for (const chunk of chunks) {
+        const lines = chunk
+            .split('\n')
+            .map((line) => line.trimEnd())
+            .filter((line) => line.length > 0 && !line.startsWith(':'));
+        if (lines.length === 0) {
+            continue;
+        }
+
+        let eventName = 'message';
+        const dataLines: string[] = [];
+
+        for (const line of lines) {
+            if (line.startsWith('event:')) {
+                eventName = line.slice(6).trim();
+                continue;
+            }
+
+            if (line.startsWith('data:')) {
+                dataLines.push(line.slice(5).trimStart());
+            }
+        }
+
+        if (dataLines.length === 0) {
+            continue;
+        }
+
+        events.push({
+            event: eventName,
+            data: dataLines.join('\n'),
+        });
+    }
+
+    return {
+        events,
+        rest,
+    };
+}
+
+async function readAnthropicStreamingResponse(
+    response: Response,
+    request: AgentRequest,
+): Promise<{
+    content: string;
+    rawOutput: string;
+    metadata: Record<string, unknown>;
+}> {
+    if (!response.body) {
+        const rawText = await response.text();
+        const payload = JSON.parse(rawText) as unknown;
+
+        return {
+            content: readAnthropicText(payload),
+            rawOutput: rawText,
+            metadata:
+                payload && typeof payload === 'object'
+                    ? (payload as Record<string, unknown>)
+                    : {},
+        };
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let rawOutput = '';
+    let content = '';
+    let streamedContent = '';
+    let finalMessage: Record<string, unknown> | null = null;
+    let finalDelta: Record<string, unknown> | null = null;
+    let usage: Record<string, unknown> | null = null;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+            break;
+        }
+
+        const chunk = decoder.decode(value, { stream: true });
+        rawOutput += chunk;
+        buffer += chunk;
+
+        const parsed = parseSseEvents(buffer);
+        buffer = parsed.rest;
+
+        for (const event of parsed.events) {
+            if (event.data === '[DONE]') {
+                continue;
+            }
+
+            const payload = JSON.parse(event.data) as Record<string, unknown>;
+            const type =
+                typeof payload.type === 'string' ? payload.type : event.event;
+
+            if (type === 'content_block_delta') {
+                const delta =
+                    payload.delta &&
+                    typeof payload.delta === 'object' &&
+                    !Array.isArray(payload.delta)
+                        ? (payload.delta as Record<string, unknown>)
+                        : null;
+                const text =
+                    delta &&
+                    delta.type === 'text_delta' &&
+                    typeof delta.text === 'string'
+                        ? delta.text
+                        : '';
+                if (text) {
+                    content += text;
+                    streamedContent = emitTextStreamUpdate(
+                        request,
+                        content,
+                        streamedContent,
+                    );
+                }
+                continue;
+            }
+
+            if (type === 'message_start') {
+                const message =
+                    payload.message &&
+                    typeof payload.message === 'object' &&
+                    !Array.isArray(payload.message)
+                        ? (payload.message as Record<string, unknown>)
+                        : null;
+                if (message) {
+                    finalMessage = message;
+                    const messageUsage =
+                        message.usage &&
+                        typeof message.usage === 'object' &&
+                        !Array.isArray(message.usage)
+                            ? (message.usage as Record<string, unknown>)
+                            : null;
+                    if (messageUsage) {
+                        usage = messageUsage;
+                    }
+                }
+                continue;
+            }
+
+            if (type === 'message_delta') {
+                const delta =
+                    payload.delta &&
+                    typeof payload.delta === 'object' &&
+                    !Array.isArray(payload.delta)
+                        ? (payload.delta as Record<string, unknown>)
+                        : null;
+                if (delta) {
+                    finalDelta = delta;
+                }
+
+                const payloadUsage =
+                    payload.usage &&
+                    typeof payload.usage === 'object' &&
+                    !Array.isArray(payload.usage)
+                        ? (payload.usage as Record<string, unknown>)
+                        : null;
+                if (payloadUsage) {
+                    usage = payloadUsage;
+                }
+                continue;
+            }
+
+            if (type === 'error') {
+                const errorPayload =
+                    payload.error &&
+                    typeof payload.error === 'object' &&
+                    !Array.isArray(payload.error)
+                        ? (payload.error as Record<string, unknown>)
+                        : null;
+                const message =
+                    errorPayload && typeof errorPayload.message === 'string'
+                        ? errorPayload.message
+                        : 'Anthropic streaming request failed';
+                throw new AgentExecutionError(message, {
+                    agent: 'direct-api',
+                    stderr: rawOutput,
+                });
+            }
+        }
+    }
+
+    if (buffer.trim()) {
+        rawOutput += decoder.decode();
+        const parsed = parseSseEvents(buffer);
+        for (const event of parsed.events) {
+            if (event.data === '[DONE]') {
+                continue;
+            }
+        }
+    }
+
+    return {
+        content: content.trim(),
+        rawOutput,
+        metadata: {
+            transport: 'anthropic_sse',
+            ...(finalMessage ? { message: finalMessage } : {}),
+            ...(finalDelta ? { delta: finalDelta } : {}),
+            ...(usage ? { usage } : {}),
+        },
+    };
+}
+
 export class DirectApiAgentBackend implements AgentBackend {
     readonly type = 'api' as const;
     private readonly activeRuns = new Map<string, AbortController>();
@@ -91,14 +331,14 @@ export class DirectApiAgentBackend implements AgentBackend {
                 body: JSON.stringify({
                     model: this.config.model,
                     max_tokens: this.config.max_tokens,
+                    stream: true,
                     system: request.systemPrompt,
                     messages: toAnthropicMessages(request.history, request.text),
                 }),
                 signal: controller.signal,
             });
-
-            const rawText = await response.text();
             if (!response.ok) {
+                const rawText = await response.text();
                 throw new AgentExecutionError(
                     `Anthropic API returned ${response.status}`,
                     {
@@ -108,18 +348,20 @@ export class DirectApiAgentBackend implements AgentBackend {
                     },
                 );
             }
-
-            const payload = JSON.parse(rawText) as unknown;
+            const streamedResponse = await readAnthropicStreamingResponse(
+                response,
+                request,
+            );
 
             const responsePayload: AgentResponse = {
-                content: readAnthropicText(payload),
+                content: streamedResponse.content,
                 agent: this.name,
                 duration: Date.now() - startedAt,
-                rawOutput: rawText,
+                rawOutput: streamedResponse.rawOutput,
             };
 
-            if (payload && typeof payload === 'object') {
-                responsePayload.metadata = payload as Record<string, unknown>;
+            if (Object.keys(streamedResponse.metadata).length > 0) {
+                responsePayload.metadata = streamedResponse.metadata;
             }
 
             return responsePayload;

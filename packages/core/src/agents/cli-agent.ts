@@ -5,8 +5,32 @@ import type { CliAgentPoolEntry } from '../config.js';
 
 import { AgentExecutionError } from './errors.js';
 import { renderExecutionPrompt } from './prompt-renderer.js';
-import { extractTextFromStructuredOutput } from './structured-output.js';
+import { normalizeCliAgentOutput } from './structured-output.js';
 import type { AgentBackend, AgentRequest, AgentResponse } from './types.js';
+
+function emitStreamUpdate(
+    request: AgentRequest,
+    content: string,
+    metadata: ReturnType<typeof normalizeCliAgentOutput>['metadata'],
+    previousContent: string,
+): string {
+    if (!request.onTextStream || !content || content === previousContent) {
+        return previousContent;
+    }
+
+    const mode = content.startsWith(previousContent) ? 'delta' : 'snapshot';
+    const delta =
+        mode === 'delta' ? content.slice(previousContent.length) : content;
+
+    request.onTextStream({
+        content,
+        delta,
+        mode,
+        parser: metadata.parser,
+        ...(metadata.eventTypes ? { eventTypes: metadata.eventTypes } : {}),
+    });
+    return content;
+}
 
 export class CliAgentBackend implements AgentBackend {
     readonly type = 'cli' as const;
@@ -39,6 +63,7 @@ export class CliAgentBackend implements AgentBackend {
             this.activeRuns.set(request.runId, child);
             let stdout = '';
             let stderr = '';
+            let streamedContent = '';
             let settled = false;
             const timeout = setTimeout(() => {
                 child.kill('SIGTERM');
@@ -48,6 +73,16 @@ export class CliAgentBackend implements AgentBackend {
             child.stderr.setEncoding('utf8');
             child.stdout.on('data', (chunk: string) => {
                 stdout += chunk;
+                const normalizedOutput = normalizeCliAgentOutput(
+                    stdout,
+                    this.config.output_format,
+                );
+                streamedContent = emitStreamUpdate(
+                    request,
+                    normalizedOutput.content,
+                    normalizedOutput.metadata,
+                    streamedContent,
+                );
             });
             child.stderr.on('data', (chunk: string) => {
                 stderr += chunk;
@@ -83,22 +118,28 @@ export class CliAgentBackend implements AgentBackend {
                 clearTimeout(timeout);
                 this.activeRuns.delete(request.runId);
                 const duration = Date.now() - startedAt;
-                const content =
-                    this.config.output_format === 'json'
-                        ? extractTextFromStructuredOutput(stdout)
-                        : stdout.trim();
+                const normalizedOutput = normalizeCliAgentOutput(
+                    stdout,
+                    this.config.output_format,
+                );
 
                 if (code === 0) {
                     const response: AgentResponse = {
-                        content,
+                        content: normalizedOutput.content,
                         agent: this.name,
                         duration,
                         exitCode: code ?? 0,
                         rawOutput: stdout,
+                        metadata: {
+                            normalizedOutput: normalizedOutput.metadata,
+                        },
                     };
 
                     if (signal) {
-                        response.metadata = { signal };
+                        response.metadata = {
+                            ...(response.metadata ?? {}),
+                            signal,
+                        };
                     }
 
                     resolve({

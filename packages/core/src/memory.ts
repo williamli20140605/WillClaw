@@ -52,6 +52,17 @@ export interface SearchFileResult {
     updatedAt: string;
 }
 
+export interface ChatSummary {
+    channel: string;
+    chatId: string;
+    updatedAt: string;
+    messageCount: number;
+    preview: string;
+    role: MessageRole;
+    agent?: string;
+    runId?: string;
+}
+
 export interface SaveMessageInput {
     timestamp?: string;
     channel: string;
@@ -153,6 +164,10 @@ function parseMetadata(
     }
 
     return undefined;
+}
+
+function collapseWhitespace(value: string): string {
+    return value.replace(/\s+/g, ' ').trim();
 }
 
 function hydrateMessage(row: MessageRow): StoredMessage {
@@ -383,6 +398,83 @@ export class MemoryStore {
         }).map((message) => ({
             role: message.role,
             content: message.content,
+        }));
+    }
+
+    listChats(options?: {
+        channel?: string;
+        limit?: number;
+        includeRevoked?: boolean;
+    }): ChatSummary[] {
+        const clauses = ['1 = 1'];
+        const params: Record<string, unknown> = {
+            limit: options?.limit ?? 24,
+        };
+
+        if (!options?.includeRevoked) {
+            clauses.push("status = 'active'");
+        }
+
+        if (options?.channel) {
+            clauses.push('channel = @channel');
+            params.channel = options.channel;
+        }
+
+        const statement = this.db.prepare(`
+      WITH ranked AS (
+        SELECT
+          channel,
+          chat_id,
+          timestamp,
+          role,
+          content,
+          agent,
+          run_id,
+          ROW_NUMBER() OVER (
+            PARTITION BY channel, chat_id
+            ORDER BY timestamp DESC, id DESC
+          ) AS rank_in_chat,
+          COUNT(*) OVER (
+            PARTITION BY channel, chat_id
+          ) AS message_count
+        FROM messages
+        WHERE ${clauses.join(' AND ')}
+      )
+      SELECT
+        channel,
+        chat_id,
+        timestamp,
+        role,
+        content,
+        agent,
+        run_id,
+        message_count
+      FROM ranked
+      WHERE rank_in_chat = 1
+      ORDER BY timestamp DESC
+      LIMIT @limit
+    `);
+
+        return (
+            statement.all(params) as Array<{
+                channel: string;
+                chat_id: string;
+                timestamp: string;
+                role: MessageRole;
+                content: string;
+                agent: string | null;
+                run_id: string | null;
+                message_count: number;
+            }>
+        ).map((row) => ({
+            channel: row.channel,
+            chatId: row.chat_id,
+            updatedAt: row.timestamp,
+            messageCount: row.message_count,
+            preview: collapseWhitespace(row.content),
+            role: row.role,
+            ...(row.agent ? { agent: row.agent } : {}),
+            ...(row.run_id ? { runId: row.run_id } : {}),
         }));
     }
 

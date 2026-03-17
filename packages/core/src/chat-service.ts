@@ -162,6 +162,24 @@ export class ChatService {
                 ...request,
                 history,
                 runId,
+                onTextStream: (update) => {
+                    if (!update.content) {
+                        return;
+                    }
+
+                    this.eventHub.publish('chat.run.stream.delta', {
+                        runId,
+                        channel,
+                        chatId,
+                        agent: update.agent,
+                        content: update.content,
+                        delta: update.delta,
+                        mode: update.mode,
+                        parser: update.parser,
+                        eventTypes: update.eventTypes ?? [],
+                        executionMode: request.executionMode ?? 'foreground',
+                    });
+                },
             });
             if (this.isRunCancelled(runId)) {
                 throw new RunCancelledError(runId);
@@ -179,6 +197,7 @@ export class ChatService {
                 metadata: {
                     attemptedAgents: result.attemptedAgents,
                     promptSections: result.promptSections,
+                    ...(result.metadata ?? {}),
                 },
                 runId: result.runId,
             } satisfies Omit<Parameters<MemoryStore['saveMessage']>[0], 'exitCode'>;
@@ -254,6 +273,8 @@ export class ChatService {
                 channel,
                 chatId,
                 agent: result.agent,
+                attemptedAgents: result.attemptedAgents,
+                route: result.metadata?.route ?? null,
                 durationMs: result.duration,
                 assistantMessageId: assistantMessage.id,
                 completionMessageId,

@@ -4,6 +4,7 @@ import { Command } from 'commander';
 
 import {
     ChannelManager,
+    getProviderHealth,
     getWillClawStatus,
     initWillClaw,
     listenWithRuntime,
@@ -92,6 +93,9 @@ program
         const channelManager = new ChannelManager(
             runtime.config,
             runtime.chatService,
+            runtime.orchestrator,
+            runtime.scheduler,
+            runtime.memoryStore,
             runtime.logger,
             runtime.paths.homeDir,
         );
@@ -318,6 +322,43 @@ program
             console.log(
                 `${agent.name}\t${agent.type}\t${agent.available ? 'available' : 'unavailable'}\t${formatToolPolicies(agent.toolPolicies)}`,
             );
+        }
+    });
+
+program
+    .command('doctor')
+    .description('Show host provider health for browser and screen integrations.')
+    .option('--home <path>', 'override the default ~/.willclaw home directory')
+    .action(async (options: { home?: string }) => {
+        const status = await getWillClawStatus(
+            options.home ? { homeDir: options.home } : undefined,
+        );
+
+        if (!('config' in status) || !status.config) {
+            console.log('No valid config loaded.');
+            if ('message' in status && status.message) {
+                console.log(`Note: ${status.message}`);
+            }
+            return;
+        }
+
+        const health = await getProviderHealth(status.config);
+
+        for (const entry of health) {
+            const configured = entry.configured ? 'configured' : 'inactive';
+            const state = entry.healthy
+                ? 'healthy'
+                : entry.available
+                    ? 'degraded'
+                    : 'missing';
+
+            console.log(
+                `${entry.tool}\t${entry.provider}\t${configured}\t${state}\t${entry.detail}`,
+            );
+
+            if (entry.installHint) {
+                console.log(`  hint: ${entry.installHint}`);
+            }
         }
     });
 

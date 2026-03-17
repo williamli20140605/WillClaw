@@ -16,6 +16,7 @@ import type { BackgroundTaskEngine } from './heartbeat.js';
 import type { MemoryStore } from './memory.js';
 import type { Orchestrator } from './orchestrator.js';
 import type { WillClawPaths } from './paths.js';
+import { getProviderHealth } from './provider-health.js';
 import type { PromptAssembler } from './prompt.js';
 import type { WillClawScheduler } from './scheduler.js';
 import { listHostTools } from './tool-catalog.js';
@@ -259,6 +260,19 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
         return c.json(await runtime.orchestrator.listAgents());
     });
 
+    app.get('/api/providers/health', async (c) => {
+        return c.json(await getProviderHealth(runtime.config));
+    });
+
+    app.get('/api/route-preview', (c) => {
+        const text = c.req.query('text') ?? '';
+        if (!text.trim()) {
+            return c.json({ error: 'Route preview text is required' }, 400);
+        }
+
+        return c.json(runtime.orchestrator.inspectRoute(text));
+    });
+
     app.get('/api/events', (c) => {
         const encoder = new TextEncoder();
         let closed = false;
@@ -349,6 +363,20 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
                 channel,
                 chatId,
                 limit: Number.isFinite(limit) ? limit : 50,
+                includeRevoked,
+            }),
+        );
+    });
+
+    app.get('/api/chats', (c) => {
+        const channel = c.req.query('channel');
+        const limit = Number(c.req.query('limit') ?? '24');
+        const includeRevoked = c.req.query('includeRevoked') === 'true';
+
+        return c.json(
+            runtime.memoryStore.listChats({
+                ...(channel ? { channel } : {}),
+                limit: Number.isFinite(limit) ? limit : 24,
                 includeRevoked,
             }),
         );

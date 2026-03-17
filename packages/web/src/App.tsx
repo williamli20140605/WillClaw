@@ -1,8 +1,11 @@
 import { startTransition, useDeferredValue, useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 type MessageRole = 'user' | 'assistant' | 'system';
 type SchedulerResult = 'completed' | 'failed' | 'suppressed';
 type SearchScope = 'all' | 'messages' | 'files' | 'memory' | 'daily_note';
+type InspectorTab = 'search' | 'activity' | 'runtime';
 
 interface AgentAvailability {
     name: string;
@@ -34,6 +37,17 @@ interface StatusPayload {
     agents: AgentAvailability[];
 }
 
+interface ChatSummary {
+    channel: string;
+    chatId: string;
+    updatedAt: string;
+    messageCount: number;
+    preview: string;
+    role: MessageRole;
+    agent?: string;
+    runId?: string;
+}
+
 interface StoredMessage {
     id: number;
     timestamp: string;
@@ -44,6 +58,7 @@ interface StoredMessage {
     content: string;
     agent?: string;
     durationMs?: number;
+    metadata?: Record<string, unknown>;
     status: 'active' | 'revoked';
     revokedAt?: string;
     editOf?: number;
@@ -130,13 +145,63 @@ interface ActiveRun {
     chatId: string;
     startedAt: string;
     status: 'running' | 'completed' | 'failed' | 'cancelled';
+    phase: string;
     agent?: string;
     executionMode?: string;
+    explicitAgent?: string;
+    fallbackChain?: string[];
+    reason?: string;
+    latestError?: string;
+    streamContent?: string;
+    streamParser?: string;
+    streamUpdatedAt?: string;
+}
+
+interface RoutePlan {
+    text: string;
+    strippedText: string;
+    selectedAgent: string;
+    explicitAgent?: string;
+    fallbackChain: string[];
+    allowFallback: boolean;
+    reason: 'explicit' | 'long_context' | 'coding' | 'simple_qa';
+    looksLikeCoding: boolean;
+    looksLikeLongContext: boolean;
+    looksLikeMutating: boolean;
+}
+
+interface AssistantRouteMetadata {
+    selectedAgent?: string;
+    explicitAgent?: string;
+    fallbackChain: string[];
+    reason?: string;
+    attemptedAgents: string[];
 }
 
 const WEB_CHANNEL = 'web';
-const WEB_CHAT = 'default';
+const DEFAULT_CHAT = 'default';
 const WEB_USER = 'web-ui';
+
+function collapseWhitespace(value: string): string {
+    return value.replace(/\s+/g, ' ').trim();
+}
+
+function stripMarkdown(value: string): string {
+    return collapseWhitespace(value.replace(/[`*_>#~-]+/g, ' '));
+}
+
+function summarizeText(value: string, limit = 92): string {
+    const normalized = stripMarkdown(value);
+    if (normalized.length <= limit) {
+        return normalized;
+    }
+
+    return `${normalized.slice(0, Math.max(0, limit - 1)).trim()}…`;
+}
+
+function createDraftChatId(): string {
+    return `chat-${Date.now().toString(36)}`;
+}
 
 function formatTimestamp(value?: string): string {
     if (!value) {
@@ -144,6 +209,34 @@ function formatTimestamp(value?: string): string {
     }
 
     return new Date(value).toLocaleString();
+}
+
+function formatRelativeTime(value?: string): string {
+    if (!value) {
+        return 'new';
+    }
+
+    const deltaMs = new Date(value).getTime() - Date.now();
+    const deltaMinutes = Math.round(deltaMs / 60_000);
+    const formatter = new Intl.RelativeTimeFormat(undefined, {
+        numeric: 'auto',
+    });
+
+    if (Math.abs(deltaMinutes) < 1) {
+        return 'just now';
+    }
+
+    if (Math.abs(deltaMinutes) < 60) {
+        return formatter.format(deltaMinutes, 'minute');
+    }
+
+    const deltaHours = Math.round(deltaMinutes / 60);
+    if (Math.abs(deltaHours) < 24) {
+        return formatter.format(deltaHours, 'hour');
+    }
+
+    const deltaDays = Math.round(deltaHours / 24);
+    return formatter.format(deltaDays, 'day');
 }
 
 function formatDuration(value?: number): string {
@@ -170,24 +263,30 @@ function messageLabel(message: StoredMessage): string {
     return 'You';
 }
 
-async function readJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-    const response = await fetch(input, init);
-    if (!response.ok) {
-        let detail = response.statusText;
-
-        try {
-            const payload = (await response.json()) as { error?: string };
-            if (payload.error) {
-                detail = payload.error;
-            }
-        } catch {
-            // ignore parse failures
-        }
-
-        throw new Error(detail);
+function conversationTitle(chat: ChatSummary | null, fallbackChatId: string): string {
+    const preview = chat ? summarizeText(chat.preview, 42) : '';
+    if (preview) {
+        return preview;
     }
 
-    return (await response.json()) as T;
+    if (fallbackChatId === DEFAULT_CHAT) {
+        return 'General shell';
+    }
+
+    return `Conversation ${fallbackChatId.slice(0, 8)}`;
+}
+
+function conversationSubtitle(chat: ChatSummary | null): string {
+    if (!chat) {
+        return 'Fresh conversation. Route a prompt to any coding agent shell-side.';
+    }
+
+    const preview = summarizeText(chat.preview, 120);
+    if (preview) {
+        return preview;
+    }
+
+    return `${chat.messageCount} messages in this thread`;
 }
 
 function toolPolicySummary(agent: AgentAvailability): string {
@@ -216,14 +315,221 @@ function readPayloadString(
     return typeof value === 'string' ? value : undefined;
 }
 
+function readPayloadStringArray(
+    payload: Record<string, unknown>,
+    key: string,
+): string[] | undefined {
+    const value = payload[key];
+    if (!Array.isArray(value)) {
+        return undefined;
+    }
+
+    return value.filter((entry): entry is string => typeof entry === 'string');
+}
+
+function cleanSnippet(value: string): string {
+    return collapseWhitespace(value.replace(/\[|\]/g, ''));
+}
+
 function upsertActiveRun(current: ActiveRun[], incoming: ActiveRun): ActiveRun[] {
     const next = current.filter((entry) => entry.runId !== incoming.runId);
     next.unshift(incoming);
-    return next.slice(0, 6);
+    return next.slice(0, 8);
+}
+
+function isSearchCommand(text: string): boolean {
+    return text.trim().startsWith('/search');
+}
+
+function routeReasonLabel(reason?: RoutePlan['reason'] | string): string {
+    switch (reason) {
+        case 'explicit':
+            return 'explicit target';
+        case 'long_context':
+            return 'long context';
+        case 'coding':
+            return 'coding intent';
+        case 'simple_qa':
+            return 'simple qa';
+        default:
+            return 'route';
+    }
+}
+
+function extractAssistantRouteMetadata(
+    message: StoredMessage,
+): AssistantRouteMetadata | null {
+    if (!message.metadata) {
+        return null;
+    }
+
+    const attemptedAgents = Array.isArray(message.metadata.attemptedAgents)
+        ? message.metadata.attemptedAgents.filter(
+            (entry): entry is string => typeof entry === 'string',
+        )
+        : [];
+    const routeValue = message.metadata.route;
+    const route =
+        routeValue && typeof routeValue === 'object' && !Array.isArray(routeValue)
+            ? (routeValue as Record<string, unknown>)
+            : null;
+
+    if (!route && attemptedAgents.length === 0) {
+        return null;
+    }
+
+    return {
+        ...(route && typeof route.selectedAgent === 'string'
+            ? { selectedAgent: route.selectedAgent }
+            : {}),
+        ...(route && typeof route.explicitAgent === 'string'
+            ? { explicitAgent: route.explicitAgent }
+            : {}),
+        fallbackChain:
+            route && Array.isArray(route.fallbackChain)
+                ? route.fallbackChain.filter(
+                    (entry): entry is string => typeof entry === 'string',
+                )
+                : [],
+        ...(route && typeof route.reason === 'string'
+            ? { reason: route.reason }
+            : {}),
+        attemptedAgents,
+    };
+}
+
+function describeRealtimeEvent(event: RealtimeEvent): {
+    title: string;
+    detail: string;
+} {
+    switch (event.type) {
+        case 'chat.run.stream.delta': {
+            const agent = readPayloadString(event.payload, 'agent');
+            const parser = readPayloadString(event.payload, 'parser');
+            return {
+                title: `Streaming${agent ? ` · ${agent}` : ''}`,
+                detail: parser ? `parser ${parser}` : 'Live output update',
+            };
+        }
+        case 'chat.route.selected': {
+            const selectedAgent = readPayloadString(event.payload, 'selectedAgent');
+            const reason = readPayloadString(event.payload, 'reason');
+            return {
+                title: `Route selected${selectedAgent ? ` · ${selectedAgent}` : ''}`,
+                detail: routeReasonLabel(reason),
+            };
+        }
+        case 'chat.agent.started': {
+            const agent = readPayloadString(event.payload, 'agent');
+            return {
+                title: `Agent started${agent ? ` · ${agent}` : ''}`,
+                detail: 'Execution launched',
+            };
+        }
+        case 'chat.agent.failed': {
+            const agent = readPayloadString(event.payload, 'agent');
+            return {
+                title: `Agent failed${agent ? ` · ${agent}` : ''}`,
+                detail: readPayloadString(event.payload, 'error') ?? 'Attempt failed',
+            };
+        }
+        case 'chat.agent.skipped': {
+            const agent = readPayloadString(event.payload, 'agent');
+            return {
+                title: `Agent skipped${agent ? ` · ${agent}` : ''}`,
+                detail: readPayloadString(event.payload, 'reason') ?? 'Skipped',
+            };
+        }
+        case 'chat.run.started':
+            return {
+                title: 'Run started',
+                detail: readPayloadString(event.payload, 'executionMode') ?? 'foreground',
+            };
+        case 'chat.run.completed':
+            return {
+                title: 'Run completed',
+                detail: readPayloadString(event.payload, 'agent') ?? 'completed',
+            };
+        case 'chat.run.failed':
+            return {
+                title: 'Run failed',
+                detail: readPayloadString(event.payload, 'error') ?? 'Unknown failure',
+            };
+        case 'chat.run.cancelled':
+            return {
+                title: 'Run cancelled',
+                detail: readPayloadString(event.payload, 'error') ?? 'Cancelled',
+            };
+        case 'message.created':
+            return {
+                title: 'Message saved',
+                detail: readPayloadString(event.payload, 'role') ?? 'message',
+            };
+        case 'message.revoked':
+            return {
+                title: 'Message revoked',
+                detail: readPayloadString(event.payload, 'subtype') ?? 'revoked',
+            };
+        default:
+            return {
+                title: event.type,
+                detail: formatTimestamp(event.timestamp),
+            };
+    }
+}
+
+function shouldTrackRecentEvent(eventType: string): boolean {
+    return eventType !== 'chat.run.stream.delta';
+}
+
+async function readJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+    const response = await fetch(input, init);
+    if (!response.ok) {
+        let detail = response.statusText;
+
+        try {
+            const payload = (await response.json()) as { error?: string };
+            if (payload.error) {
+                detail = payload.error;
+            }
+        } catch {
+            // ignore parse failures
+        }
+
+        throw new Error(detail);
+    }
+
+    return (await response.json()) as T;
+}
+
+function MessageBody({ message }: { message: StoredMessage }) {
+    if (message.role === 'user') {
+        return (
+            <div className="message-content message-content--plain">
+                {message.content}
+            </div>
+        );
+    }
+
+    return (
+        <div className="message-content message-content--markdown">
+            <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                    a: ({ ...props }) => <a {...props} rel="noreferrer" target="_blank" />,
+                }}
+            >
+                {message.content}
+            </ReactMarkdown>
+        </div>
+    );
 }
 
 export function App() {
     const [status, setStatus] = useState<StatusPayload | null>(null);
+    const [chats, setChats] = useState<ChatSummary[]>([]);
+    const [selectedChatId, setSelectedChatId] = useState(DEFAULT_CHAT);
+    const [draftChatId, setDraftChatId] = useState<string | null>(null);
     const [messages, setMessages] = useState<StoredMessage[]>([]);
     const [toolLogs, setToolLogs] = useState<ToolLogEntry[]>([]);
     const [cronState, setCronState] = useState<CronPayload | null>(null);
@@ -243,11 +549,14 @@ export function App() {
         null,
     );
     const [searchLoading, setSearchLoading] = useState(false);
+    const [routePreview, setRoutePreview] = useState<RoutePlan | null>(null);
     const [realtimeConnected, setRealtimeConnected] = useState(false);
     const [activeRuns, setActiveRuns] = useState<ActiveRun[]>([]);
     const [recentEvents, setRecentEvents] = useState<RealtimeEvent[]>([]);
+    const [inspectorTab, setInspectorTab] = useState<InspectorTab>('search');
 
     const deferredSearchQuery = useDeferredValue(searchQuery.trim());
+    const deferredComposerText = useDeferredValue(composerText.trim());
 
     async function loadStatusPanel(): Promise<void> {
         const payload = await readJson<StatusPayload>('/api/status');
@@ -256,17 +565,51 @@ export function App() {
         });
     }
 
-    async function loadMessagesPanel(): Promise<void> {
+    async function loadChatList(): Promise<void> {
+        const currentDraftId = draftChatId;
+        const payload = await readJson<ChatSummary[]>(
+            `/api/chats?channel=${WEB_CHANNEL}&limit=24`,
+        );
+        const chatIds = new Set(payload.map((chat) => chat.chatId));
+
+        startTransition(() => {
+            setChats(payload);
+            setDraftChatId((current) =>
+                current && chatIds.has(current) ? null : current,
+            );
+            setSelectedChatId((current) => {
+                if (chatIds.has(current) || current === currentDraftId) {
+                    return current;
+                }
+
+                return payload[0]?.chatId ?? current;
+            });
+        });
+    }
+
+    async function loadMessagesPanel(chatId = selectedChatId): Promise<void> {
+        const params = new URLSearchParams({
+            channel: WEB_CHANNEL,
+            chatId,
+            limit: '120',
+            includeRevoked: 'true',
+        });
         const payload = await readJson<StoredMessage[]>(
-            `/api/messages?channel=${WEB_CHANNEL}&chatId=${WEB_CHAT}&limit=80&includeRevoked=true`,
+            `/api/messages?${params.toString()}`,
         );
         startTransition(() => {
             setMessages(payload);
         });
     }
 
-    async function loadToolLogsPanel(): Promise<void> {
-        const payload = await readJson<ToolLogEntry[]>('/api/logs/tools?limit=12');
+    async function loadToolLogsPanel(chatId = selectedChatId): Promise<void> {
+        const params = new URLSearchParams({
+            limit: '16',
+            chatId,
+        });
+        const payload = await readJson<ToolLogEntry[]>(
+            `/api/logs/tools?${params.toString()}`,
+        );
         startTransition(() => {
             setToolLogs(payload);
         });
@@ -279,18 +622,17 @@ export function App() {
         });
     }
 
-    async function loadDashboard(): Promise<void> {
+    async function loadShellPanels(): Promise<void> {
         try {
             await Promise.all([
                 loadStatusPanel(),
-                loadMessagesPanel(),
-                loadToolLogsPanel(),
+                loadChatList(),
                 loadSchedulerPanel(),
             ]);
             setDashboardError('');
         } catch (error) {
             setDashboardError(
-                error instanceof Error ? error.message : 'Failed to load dashboard.',
+                error instanceof Error ? error.message : 'Failed to load shell data.',
             );
         }
     }
@@ -307,7 +649,9 @@ export function App() {
             const params = new URLSearchParams({
                 query,
                 messageLimit:
-                    searchScope === 'files' || searchScope === 'memory' || searchScope === 'daily_note'
+                    searchScope === 'files' ||
+                    searchScope === 'memory' ||
+                    searchScope === 'daily_note'
                         ? '0'
                         : '6',
                 fileLimit: searchScope === 'messages' ? '0' : '6',
@@ -336,11 +680,30 @@ export function App() {
         }
     }
 
+    async function loadRoutePreview(text: string): Promise<void> {
+        if (!text || isSearchCommand(text)) {
+            setRoutePreview(null);
+            return;
+        }
+
+        try {
+            const params = new URLSearchParams({ text });
+            const payload = await readJson<RoutePlan>(
+                `/api/route-preview?${params.toString()}`,
+            );
+            startTransition(() => {
+                setRoutePreview(payload);
+            });
+        } catch {
+            setRoutePreview(null);
+        }
+    }
+
     useEffect(() => {
-        void loadDashboard();
+        void loadShellPanels();
 
         const interval = window.setInterval(() => {
-            void loadDashboard();
+            void loadShellPanels();
         }, 30_000);
 
         return () => {
@@ -349,13 +712,32 @@ export function App() {
     }, []);
 
     useEffect(() => {
+        void loadMessagesPanel(selectedChatId);
+        void loadToolLogsPanel(selectedChatId);
+
+        const interval = window.setInterval(() => {
+            void loadMessagesPanel(selectedChatId);
+            void loadToolLogsPanel(selectedChatId);
+        }, 30_000);
+
+        return () => {
+            window.clearInterval(interval);
+        };
+    }, [selectedChatId]);
+
+    useEffect(() => {
         const source = new EventSource('/api/events');
         const eventTypes = [
             'ready',
             'chat.run.started',
+            'chat.run.stream.delta',
             'chat.run.completed',
             'chat.run.failed',
             'chat.run.cancelled',
+            'chat.route.selected',
+            'chat.agent.started',
+            'chat.agent.failed',
+            'chat.agent.skipped',
             'message.created',
             'message.revoked',
             'background.task.started',
@@ -371,7 +753,9 @@ export function App() {
 
             try {
                 const event = JSON.parse(messageEvent.data) as RealtimeEvent;
-                setRecentEvents((current) => [event, ...current].slice(0, 10));
+                if (shouldTrackRecentEvent(event.type)) {
+                    setRecentEvents((current) => [event, ...current].slice(0, 12));
+                }
 
                 switch (event.type) {
                     case 'ready':
@@ -381,6 +765,10 @@ export function App() {
                         const runId = readPayloadString(event.payload, 'runId');
                         const channel = readPayloadString(event.payload, 'channel');
                         const chatId = readPayloadString(event.payload, 'chatId');
+                        const executionMode = readPayloadString(
+                            event.payload,
+                            'executionMode',
+                        );
                         if (!runId || !channel || !chatId) {
                             break;
                         }
@@ -392,36 +780,192 @@ export function App() {
                                 chatId,
                                 startedAt: event.timestamp,
                                 status: 'running',
-                                executionMode: readPayloadString(
-                                    event.payload,
-                                    'executionMode',
-                                ),
+                                phase: 'queued',
+                                streamContent: '',
+                                ...(executionMode ? { executionMode } : {}),
                             }),
                         );
+
+                        if (channel === WEB_CHANNEL) {
+                            void loadChatList();
+                            if (chatId === selectedChatId) {
+                                void loadMessagesPanel(chatId);
+                            }
+                        }
+                        break;
+                    }
+                    case 'chat.route.selected': {
+                        const runId = readPayloadString(event.payload, 'runId');
+                        const selectedAgent = readPayloadString(
+                            event.payload,
+                            'selectedAgent',
+                        );
+                        if (!runId) {
+                            break;
+                        }
+
+                        setActiveRuns((current) => {
+                            const existing = current.find(
+                                (entry) => entry.runId === runId,
+                            );
+                            if (!existing) {
+                                return current;
+                            }
+
+                            return upsertActiveRun(current, {
+                                ...existing,
+                                ...(selectedAgent ? { agent: selectedAgent } : {}),
+                                ...(() => {
+                                    const reason = readPayloadString(
+                                        event.payload,
+                                        'reason',
+                                    );
+                                    return reason ? { reason } : {};
+                                })(),
+                                ...(() => {
+                                    const explicitAgent = readPayloadString(
+                                        event.payload,
+                                        'explicitAgent',
+                                    );
+                                    return explicitAgent ? { explicitAgent } : {};
+                                })(),
+                                ...(() => {
+                                    const fallbackChain = readPayloadStringArray(
+                                        event.payload,
+                                        'fallbackChain',
+                                    );
+                                    return fallbackChain
+                                        ? { fallbackChain }
+                                        : {};
+                                })(),
+                                phase: selectedAgent
+                                    ? `routing → ${selectedAgent}`
+                                    : 'routing',
+                            });
+                        });
+                        break;
+                    }
+                    case 'chat.agent.started': {
+                        const runId = readPayloadString(event.payload, 'runId');
+                        const agent = readPayloadString(event.payload, 'agent');
+                        if (!runId) {
+                            break;
+                        }
+
+                        setActiveRuns((current) => {
+                            const existing = current.find(
+                                (entry) => entry.runId === runId,
+                            );
+                            if (!existing) {
+                                return current;
+                            }
+
+                            return upsertActiveRun(current, {
+                                ...existing,
+                                ...(agent ? { agent } : {}),
+                                phase: agent ? `running ${agent}` : 'running',
+                                streamContent: '',
+                            });
+                        });
+                        break;
+                    }
+                    case 'chat.run.stream.delta': {
+                        const runId = readPayloadString(event.payload, 'runId');
+                        const agent = readPayloadString(event.payload, 'agent');
+                        const channel = readPayloadString(event.payload, 'channel');
+                        const chatId = readPayloadString(event.payload, 'chatId');
+                        const content = readPayloadString(event.payload, 'content');
+                        const parser = readPayloadString(event.payload, 'parser');
+                        if (!runId || !channel || !chatId || !content) {
+                            break;
+                        }
+
+                        setActiveRuns((current) => {
+                            const existing = current.find(
+                                (entry) => entry.runId === runId,
+                            );
+                            if (!existing) {
+                                return current;
+                            }
+
+                            return upsertActiveRun(current, {
+                                ...existing,
+                                ...(agent ? { agent } : {}),
+                                streamContent: content,
+                                ...(parser ? { streamParser: parser } : {}),
+                                streamUpdatedAt: event.timestamp,
+                                phase: agent ? `streaming ${agent}` : 'streaming',
+                            });
+                        });
+                        break;
+                    }
+                    case 'chat.agent.failed':
+                    case 'chat.agent.skipped': {
+                        const runId = readPayloadString(event.payload, 'runId');
+                        const agent = readPayloadString(event.payload, 'agent');
+                        const detail =
+                            readPayloadString(event.payload, 'error') ??
+                            readPayloadString(event.payload, 'reason');
+                        if (!runId) {
+                            break;
+                        }
+
+                        setActiveRuns((current) => {
+                            const existing = current.find(
+                                (entry) => entry.runId === runId,
+                            );
+                            if (!existing) {
+                                return current;
+                            }
+
+                            return upsertActiveRun(current, {
+                                ...existing,
+                                ...(agent ? { agent } : {}),
+                                ...(detail ? { latestError: detail } : {}),
+                                phase:
+                                    event.type === 'chat.agent.failed'
+                                        ? `retrying after ${agent ?? 'agent'}`
+                                        : `skipping ${agent ?? 'agent'}`,
+                            });
+                        });
                         break;
                     }
                     case 'chat.run.completed':
                     case 'chat.run.failed':
                     case 'chat.run.cancelled': {
                         const runId = readPayloadString(event.payload, 'runId');
+                        const channel = readPayloadString(event.payload, 'channel');
+                        const chatId = readPayloadString(event.payload, 'chatId');
+
                         if (runId) {
                             setActiveRuns((current) =>
                                 current.filter((entry) => entry.runId !== runId),
                             );
                         }
 
-                        void loadMessagesPanel();
-                        void loadToolLogsPanel();
+                        if (channel === WEB_CHANNEL) {
+                            void loadChatList();
+                        }
+
+                        if (channel === WEB_CHANNEL && chatId === selectedChatId) {
+                            void loadMessagesPanel(chatId);
+                            void loadToolLogsPanel(chatId);
+                        }
                         break;
                     }
                     case 'message.created':
                     case 'message.revoked': {
                         const channel = readPayloadString(event.payload, 'channel');
                         const chatId = readPayloadString(event.payload, 'chatId');
-                        if (channel === WEB_CHANNEL && chatId === WEB_CHAT) {
-                            void loadMessagesPanel();
+
+                        if (channel === WEB_CHANNEL) {
+                            void loadChatList();
                         }
-                        void loadToolLogsPanel();
+
+                        if (channel === WEB_CHANNEL && chatId === selectedChatId) {
+                            void loadMessagesPanel(chatId);
+                            void loadToolLogsPanel(chatId);
+                        }
                         break;
                     }
                     case 'background.task.started':
@@ -431,7 +975,7 @@ export function App() {
                     case 'scheduler.task.completed':
                     case 'scheduler.task.failed':
                         void loadSchedulerPanel();
-                        void loadMessagesPanel();
+                        void loadShellPanels();
                         break;
                     default:
                         break;
@@ -458,11 +1002,15 @@ export function App() {
             }
             source.close();
         };
-    }, []);
+    }, [selectedChatId, draftChatId]);
 
     useEffect(() => {
         void loadSearch(deferredSearchQuery);
     }, [deferredSearchQuery, searchScope]);
+
+    useEffect(() => {
+        void loadRoutePreview(deferredComposerText);
+    }, [deferredComposerText]);
 
     async function handleSend(): Promise<void> {
         const text = composerText.trim();
@@ -482,7 +1030,7 @@ export function App() {
                 body: JSON.stringify({
                     text,
                     channel: WEB_CHANNEL,
-                    chatId: WEB_CHAT,
+                    chatId: selectedChatId,
                     userId: WEB_USER,
                     executionMode,
                 }),
@@ -490,11 +1038,36 @@ export function App() {
 
             setLastRun(result);
             setComposerText('');
-            await loadDashboard();
+            await Promise.all([
+                loadChatList(),
+                loadMessagesPanel(result.chatId),
+                loadToolLogsPanel(result.chatId),
+            ]);
         } catch (error) {
             setActionError(error instanceof Error ? error.message : 'Chat failed.');
         } finally {
             setSubmitting(false);
+        }
+    }
+
+    async function handleCancelRun(runId: string): Promise<void> {
+        setActionError('');
+
+        try {
+            await readJson(`/api/runs/${runId}/cancel`, {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                },
+                body: JSON.stringify({
+                    annotate: true,
+                }),
+            });
+            await Promise.all([loadMessagesPanel(selectedChatId), loadChatList()]);
+        } catch (error) {
+            setActionError(
+                error instanceof Error ? error.message : 'Cancel request failed.',
+            );
         }
     }
 
@@ -505,7 +1078,11 @@ export function App() {
             await readJson(`/api/messages/${messageId}/revoke`, {
                 method: 'POST',
             });
-            await loadDashboard();
+            await Promise.all([
+                loadMessagesPanel(selectedChatId),
+                loadChatList(),
+                loadToolLogsPanel(selectedChatId),
+            ]);
         } catch (error) {
             setActionError(
                 error instanceof Error ? error.message : 'Revoke failed.',
@@ -524,12 +1101,16 @@ export function App() {
                 },
                 body: JSON.stringify({
                     channel: WEB_CHANNEL,
-                    chatId: WEB_CHAT,
+                    chatId: selectedChatId,
                     userId: WEB_USER,
                 }),
             });
             setLastRun(result);
-            await loadDashboard();
+            await Promise.all([
+                loadChatList(),
+                loadMessagesPanel(selectedChatId),
+                loadToolLogsPanel(selectedChatId),
+            ]);
         } catch (error) {
             setActionError(
                 error instanceof Error ? error.message : 'Resend failed.',
@@ -561,7 +1142,11 @@ export function App() {
             setEditingMessageId(null);
             setEditingText('');
             setLastRun(result.result);
-            await loadDashboard();
+            await Promise.all([
+                loadChatList(),
+                loadMessagesPanel(selectedChatId),
+                loadToolLogsPanel(selectedChatId),
+            ]);
         } catch (error) {
             setActionError(error instanceof Error ? error.message : 'Edit failed.');
         }
@@ -574,7 +1159,7 @@ export function App() {
             await readJson(endpoint, {
                 method: 'POST',
             });
-            await loadDashboard();
+            await Promise.all([loadSchedulerPanel(), loadChatList()]);
         } catch (error) {
             setActionError(
                 error instanceof Error ? error.message : 'Task trigger failed.',
@@ -582,513 +1167,1170 @@ export function App() {
         }
     }
 
+    function handleCreateChat(): void {
+        const draftId = createDraftChatId();
+        startTransition(() => {
+            setDraftChatId(draftId);
+            setSelectedChatId(draftId);
+            setMessages([]);
+            setLastRun(null);
+            setEditingMessageId(null);
+            setEditingText('');
+            setActionError('');
+        });
+    }
+
+    function handleSelectChat(chatId: string): void {
+        setSelectedChatId(chatId);
+        setEditingMessageId(null);
+        setEditingText('');
+        setActionError('');
+    }
+
+    function handleInjectIntoComposer(content: string): void {
+        setComposerText((current) =>
+            current.trim() ? `${current.trim()}\n\n${content}` : content,
+        );
+    }
+
     const availableAgents = status?.agents.filter((agent) => agent.available) ?? [];
     const totalTasks =
         (cronState?.heartbeat ? 1 : 0) +
         (cronState?.cron.length ?? 0) +
         (cronState?.maintenance.length ?? 0);
+    const chatList =
+        draftChatId && !chats.some((chat) => chat.chatId === draftChatId)
+            ? [
+                {
+                    channel: WEB_CHANNEL,
+                    chatId: draftChatId,
+                    updatedAt: new Date().toISOString(),
+                    messageCount: 0,
+                    preview: 'Fresh conversation',
+                    role: 'user' as const,
+                },
+                ...chats,
+            ]
+            : chats;
+    const selectedChat =
+        chatList.find((chat) => chat.chatId === selectedChatId) ?? null;
+    const currentActiveRun =
+        activeRuns.find(
+            (entry) =>
+                entry.channel === WEB_CHANNEL && entry.chatId === selectedChatId,
+        ) ?? null;
+    const latestAssistantRoute =
+        [...messages]
+            .reverse()
+            .map((message) => extractAssistantRouteMetadata(message))
+            .find((route): route is AssistantRouteMetadata => Boolean(route)) ??
+        null;
+    const currentRecentEvents = recentEvents.filter((event) => {
+        const eventChannel = readPayloadString(event.payload, 'channel');
+        const eventChatId = readPayloadString(event.payload, 'chatId');
+
+        return (
+            !eventChannel ||
+            eventChannel !== WEB_CHANNEL ||
+            eventChatId === selectedChatId
+        );
+    });
+    const schedulerTasks = [
+        ...(cronState?.heartbeat ? [cronState.heartbeat] : []),
+        ...(cronState?.cron ?? []),
+        ...(cronState?.maintenance ?? []),
+    ];
+    const composerShowsSearch = isSearchCommand(deferredComposerText);
 
     return (
-        <main className="shell">
-            <header className="hero">
-                <div className="hero-copy">
-                    <div className="eyebrow">WillClaw Control Room</div>
-                    <h1>Shell the agents. Keep the runtime.</h1>
-                    <p>
-                        WillClaw stays outside the coding agents and gives you one
-                        place to route chats, search memory, inspect tool activity,
-                        and kick background work.
-                    </p>
+        <main className="app-shell">
+            <header className="panel topbar">
+                <div className="brand">
+                    <div className="brand-mark">WC</div>
+                    <div className="brand-copy">
+                        <div className="eyebrow">WillClaw Shell</div>
+                        <h1>One conversation. Many coding agents.</h1>
+                        <p>
+                            Route chats, memory, tools, and background work from
+                            one shell-first interface instead of living inside a
+                            single agent session.
+                        </p>
+                    </div>
                 </div>
-                <aside className="hero-note">
-                    <strong>What this UI is for</strong>
-                    Start from the shell layer: send chats, inspect memory hits,
-                    watch recent tools, and trigger heartbeat or maintenance without
-                    leaving the browser.
-                </aside>
+                <div className="status-cluster">
+                    <div className="status-card">
+                        <label>Realtime</label>
+                        <strong>{realtimeConnected ? 'Live' : 'Retrying'}</strong>
+                    </div>
+                    <div className="status-card">
+                        <label>Agents</label>
+                        <strong>{availableAgents.length}</strong>
+                    </div>
+                    <div className="status-card">
+                        <label>Threads</label>
+                        <strong>{chatList.length}</strong>
+                    </div>
+                    <div className="status-card">
+                        <label>Tasks</label>
+                        <strong>{totalTasks}</strong>
+                    </div>
+                </div>
             </header>
 
-            <div className="layout">
-                <section className="stack">
-                    <div className="panel section">
+            <div className="workspace-grid">
+                <aside className="panel sidebar">
+                    <div className="sidebar-section">
                         <div className="section-header">
-                            <h2>Overview</h2>
-                            <span>{realtimeConnected ? 'Realtime connected' : 'Realtime reconnecting'}</span>
+                            <h2>Conversations</h2>
+                            <span>{chatList.length} tracked</span>
                         </div>
-                        <div className="stats">
-                            <div className="stat-card">
-                                <label>Available Agents</label>
-                                <strong>{availableAgents.length}</strong>
-                            </div>
-                            <div className="stat-card">
-                                <label>Web Messages</label>
-                                <strong>{messages.length}</strong>
-                            </div>
-                            <div className="stat-card">
-                                <label>Scheduled Tasks</label>
-                                <strong>{totalTasks}</strong>
-                            </div>
-                            <div className="stat-card">
-                                <label>Active Runs</label>
-                                <strong>{activeRuns.length}</strong>
-                            </div>
-                        </div>
-                        <div className="hint-strip">
-                            <div className="hint">@claude-code fix the failing test</div>
-                            <div className="hint">/search --memory release plan</div>
-                            <div className="hint">/search incident timeline</div>
-                            <div className="hint">
-                                stream: {realtimeConnected ? 'connected' : 'waiting'}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="panel section">
-                        <div className="section-header">
-                            <h3>Agents</h3>
-                            <span>{status?.server.host ?? '127.0.0.1'}:{status?.server.port ?? 8420}</span>
-                        </div>
-                        <div className="agent-list">
-                            {status?.agents.map((agent) => (
-                                <article className="agent-card" key={agent.name}>
-                                    <div className="status-line">
-                                        <strong>{agent.name}</strong>
-                                        <span
-                                            className="status-pill"
-                                            title={agent.available ? 'available' : 'unavailable'}
-                                        >
-                                            <span
-                                                className="status-dot"
-                                                data-tone={agent.available ? 'teal' : 'danger'}
-                                            />
-                                            {agent.type}
-                                        </span>
-                                    </div>
-                                    <div className="chip-row">
-                                        <span
-                                            className="chip"
-                                            data-tone={agent.available ? 'teal' : 'danger'}
-                                        >
-                                            {agent.available ? 'available' : 'unavailable'}
-                                        </span>
-                                        <span className="chip">{agent.enabled ? 'enabled' : 'disabled'}</span>
-                                    </div>
-                                    <p className="muted">{toolPolicySummary(agent)}</p>
-                                </article>
-                            )) ?? <div className="empty">Loading agent availability…</div>}
-                        </div>
-                    </div>
-
-                    <div className="panel section">
-                        <div className="section-header">
-                            <h3>Realtime</h3>
-                            <span>{recentEvents.length} events tracked</span>
-                        </div>
-                        <div className="task-list">
-                            {activeRuns.length === 0 ? (
-                                <div className="empty">No active runs right now.</div>
-                            ) : (
-                                activeRuns.map((run) => (
-                                    <article className="task-card" key={run.runId}>
-                                        <strong>{run.runId.slice(0, 8)}</strong>
-                                        <div className="chip-row">
-                                            <span className="chip" data-tone="accent">
-                                                {run.status}
-                                            </span>
-                                            <span className="chip">
-                                                {run.channel}/{run.chatId}
-                                            </span>
-                                            {run.executionMode ? (
-                                                <span className="chip">{run.executionMode}</span>
-                                            ) : null}
-                                        </div>
-                                        <p className="muted">
-                                            Started: {formatTimestamp(run.startedAt)}
-                                        </p>
-                                    </article>
-                                ))
-                            )}
-                            {recentEvents.map((event) => (
-                                <article className="task-card" key={event.id}>
-                                    <strong>{event.type}</strong>
-                                    <p className="muted">{formatTimestamp(event.timestamp)}</p>
-                                </article>
+                        <button
+                            className="btn btn-block"
+                            onClick={handleCreateChat}
+                            type="button"
+                        >
+                            New conversation
+                        </button>
+                        <div className="quick-grid">
+                            <button
+                                className="quick-btn"
+                                onClick={() => setComposerText('/search ')}
+                                type="button"
+                            >
+                                Start search
+                            </button>
+                            {availableAgents.slice(0, 3).map((agent) => (
+                                <button
+                                    className="quick-btn"
+                                    key={agent.name}
+                                    onClick={() =>
+                                        setComposerText((current) =>
+                                            current.startsWith(`@${agent.name}`)
+                                                ? current
+                                                : `@${agent.name} ${current}`.trim(),
+                                        )
+                                    }
+                                    type="button"
+                                >
+                                    @{agent.name}
+                                </button>
                             ))}
                         </div>
                     </div>
 
-                    <div className="panel section">
-                        <div className="section-header">
-                            <h3>Scheduler</h3>
-                            <span>Heartbeat, cron, maintenance</span>
-                        </div>
-                        <div className="toolbar">
-                            <button
-                                className="ghost-btn"
-                                onClick={() => void handleTaskRun('/api/heartbeat/run')}
-                                type="button"
-                            >
-                                Run heartbeat
-                            </button>
-                            <button
-                                className="ghost-btn"
-                                onClick={() => void handleTaskRun('/api/cron/daily_briefing/run')}
-                                type="button"
-                            >
-                                Run briefing
-                            </button>
-                            <button
-                                className="ghost-btn"
-                                onClick={() =>
-                                    void handleTaskRun('/api/maintenance/daily_note/run')
-                                }
-                                type="button"
-                            >
-                                Daily note
-                            </button>
-                            <button
-                                className="ghost-btn"
-                                onClick={() => void handleTaskRun('/api/maintenance/compact/run')}
-                                type="button"
-                            >
-                                Compact memory
-                            </button>
-                        </div>
-                        <div className="task-list">
-                            {cronState?.heartbeat ? (
-                                <article className="task-card">
-                                    <strong>{cronState.heartbeat.name}</strong>
-                                    <div className="chip-row">
-                                        <span
-                                            className="chip"
-                                            data-tone={taskTone(cronState.heartbeat.lastResult)}
-                                        >
-                                            {cronState.heartbeat.lastResult ?? 'never run'}
-                                        </span>
-                                        <span className="chip">{cronState.heartbeat.schedule}</span>
-                                    </div>
-                                    <p className="muted">
-                                        Last run: {formatTimestamp(cronState.heartbeat.lastRunAt)}
-                                    </p>
-                                </article>
-                            ) : null}
-
-                            {[...(cronState?.cron ?? []), ...(cronState?.maintenance ?? [])].map(
-                                (task) => (
-                                    <article className="task-card" key={task.id}>
-                                        <strong>{task.name}</strong>
+                    <div className="sidebar-section sidebar-section--scroll">
+                        {chatList.length === 0 ? (
+                            <div className="empty">
+                                No web conversations yet. Start a new thread and route
+                                it through any agent.
+                            </div>
+                        ) : (
+                            <div className="session-list">
+                                {chatList.map((chat) => (
+                                    <button
+                                        className="session-card"
+                                        data-active={chat.chatId === selectedChatId}
+                                        key={chat.chatId}
+                                        onClick={() => handleSelectChat(chat.chatId)}
+                                        type="button"
+                                    >
+                                        <div className="session-card__header">
+                                            <strong>
+                                                {conversationTitle(chat, chat.chatId)}
+                                            </strong>
+                                            <span>{formatRelativeTime(chat.updatedAt)}</span>
+                                        </div>
+                                        <p>{conversationSubtitle(chat)}</p>
                                         <div className="chip-row">
+                                            <span className="chip">
+                                                {chat.messageCount} msgs
+                                            </span>
                                             <span
                                                 className="chip"
-                                                data-tone={taskTone(task.lastResult)}
+                                                data-tone={
+                                                    chat.role === 'assistant'
+                                                        ? 'teal'
+                                                        : chat.role === 'system'
+                                                            ? 'accent'
+                                                            : undefined
+                                                }
                                             >
-                                                {task.lastResult ?? 'never run'}
+                                                {chat.role}
                                             </span>
-                                            <span className="chip">{task.kind}</span>
-                                            <span className="chip">{task.schedule}</span>
+                                            {chat.agent ? (
+                                                <span className="chip">{chat.agent}</span>
+                                            ) : null}
                                         </div>
-                                        <p className="muted">
-                                            Last run: {formatTimestamp(task.lastRunAt)}
-                                        </p>
-                                    </article>
-                                ),
-                            )}
-                        </div>
-                    </div>
-                </section>
-
-                <section className="panel chat-shell">
-                    <div className="chat-header">
-                        <div className="section-header">
-                            <h2>Conversation</h2>
-                            <span>{status?.homeDir ?? 'Loading home…'}</span>
-                        </div>
-                        {dashboardError ? (
-                            <div className="empty">{dashboardError}</div>
-                        ) : (
-                            <p>
-                                The web channel talks to the same orchestrator, memory,
-                                and lifecycle APIs as every other surface.
-                            </p>
+                                    </button>
+                                ))}
+                            </div>
                         )}
                     </div>
 
-                    <div className="message-list">
+                    <div className="sidebar-section">
+                        <div className="section-header">
+                            <h3>Shell View</h3>
+                            <span>{status?.server.host ?? '127.0.0.1'}</span>
+                        </div>
+                        <div className="metric-grid">
+                            <article className="metric-card">
+                                <label>Selected</label>
+                                <strong>{selectedChatId.slice(0, 12)}</strong>
+                                <p>{conversationTitle(selectedChat, selectedChatId)}</p>
+                            </article>
+                            <article className="metric-card">
+                                <label>Run state</label>
+                                <strong>
+                                    {currentActiveRun ? 'Running' : 'Idle'}
+                                </strong>
+                                <p>
+                                    {currentActiveRun
+                                        ? `Started ${formatRelativeTime(currentActiveRun.startedAt)}`
+                                        : 'No active run in this chat'}
+                                </p>
+                            </article>
+                            <article className="metric-card">
+                                <label>Routing</label>
+                                <strong>
+                                    {currentActiveRun?.agent ??
+                                        latestAssistantRoute?.selectedAgent ??
+                                        routePreview?.selectedAgent ??
+                                        'shell'}
+                                </strong>
+                                <p>
+                                    {currentActiveRun?.reason
+                                        ? routeReasonLabel(currentActiveRun.reason)
+                                        : latestAssistantRoute?.reason
+                                            ? routeReasonLabel(
+                                                latestAssistantRoute.reason,
+                                            )
+                                            : routePreview
+                                                ? routeReasonLabel(
+                                                    routePreview.reason,
+                                                )
+                                                : 'Waiting for next prompt'}
+                                </p>
+                            </article>
+                        </div>
+                    </div>
+                </aside>
+
+                <section className="panel conversation-shell">
+                    <div className="conversation-header">
+                        <div className="conversation-copy">
+                            <div className="eyebrow">Web channel</div>
+                            <h2>{conversationTitle(selectedChat, selectedChatId)}</h2>
+                            <p>{conversationSubtitle(selectedChat)}</p>
+                        </div>
+                        <div className="conversation-status">
+                            <span
+                                className="chip"
+                                data-tone={realtimeConnected ? 'teal' : 'accent'}
+                            >
+                                {realtimeConnected ? 'live stream' : 'reconnecting'}
+                            </span>
+                            <span className="chip">{selectedChatId}</span>
+                            {lastRun?.chatId === selectedChatId ? (
+                                <span className="chip" data-tone="teal">
+                                    last: {lastRun.agent}
+                                </span>
+                            ) : null}
+                            {currentActiveRun ? (
+                                <button
+                                    className="danger-btn"
+                                    onClick={() => void handleCancelRun(currentActiveRun.runId)}
+                                    type="button"
+                                >
+                                    Cancel run
+                                </button>
+                            ) : null}
+                        </div>
+                    </div>
+
+                    {dashboardError ? (
+                        <div className="banner banner--danger">{dashboardError}</div>
+                    ) : null}
+                    {actionError ? (
+                        <div className="banner banner--warning">{actionError}</div>
+                    ) : null}
+
+                    <div className="conversation-stream">
                         {messages.length === 0 ? (
-                            <div className="empty">
-                                No web messages yet. Send a prompt or use <code>/search</code>.
+                            <div className="empty empty--hero">
+                                <strong>Nothing in this thread yet.</strong>
+                                <p>
+                                    Start with `@claude-code fix the flaky test`, or use
+                                    `/search release plan` to hit WillClaw memory without
+                                    invoking a coding agent.
+                                </p>
                             </div>
                         ) : (
                             messages.map((message, index) => (
-                                <article
-                                    className="message-card"
+                                <div
+                                    className="message-row"
                                     data-role={message.role}
-                                    data-revoked={message.status === 'revoked'}
                                     key={message.id}
-                                    style={{ animationDelay: `${Math.min(index * 35, 280)}ms` }}
+                                    style={{
+                                        animationDelay: `${Math.min(index * 30, 240)}ms`,
+                                    }}
                                 >
-                                    <div className="message-top">
-                                        <strong>{messageLabel(message)}</strong>
-                                        <span>
-                                            #{message.id} · {formatTimestamp(message.timestamp)}
-                                        </span>
-                                    </div>
-                                    <p className="message-content">{message.content}</p>
-                                    <div className="chip-row">
-                                        <span className="chip">{message.channel}/{message.chatId}</span>
-                                        {message.runId ? <span className="chip">run {message.runId.slice(0, 8)}</span> : null}
-                                        {message.durationMs ? (
-                                            <span className="chip">{formatDuration(message.durationMs)}</span>
-                                        ) : null}
-                                        {message.status === 'revoked' ? (
-                                            <span className="chip" data-tone="danger">revoked</span>
-                                        ) : null}
-                                    </div>
+                                    <article
+                                        className="message-bubble"
+                                        data-role={message.role}
+                                        data-revoked={message.status === 'revoked'}
+                                    >
+                                        <div className="message-top">
+                                            <strong>{messageLabel(message)}</strong>
+                                            <span>
+                                                #{message.id} ·{' '}
+                                                {formatTimestamp(message.timestamp)}
+                                            </span>
+                                        </div>
+                                        <MessageBody message={message} />
+                                        <div className="message-footer">
+                                            <div className="chip-row">
+                                                {message.runId ? (
+                                                    <span className="chip">
+                                                        run {message.runId.slice(0, 8)}
+                                                    </span>
+                                                ) : null}
+                                                {message.durationMs ? (
+                                                    <span className="chip">
+                                                        {formatDuration(message.durationMs)}
+                                                    </span>
+                                                ) : null}
+                                                {message.status === 'revoked' ? (
+                                                    <span
+                                                        className="chip"
+                                                        data-tone="danger"
+                                                    >
+                                                        revoked
+                                                    </span>
+                                                ) : null}
+                                                {(() => {
+                                                    const route = extractAssistantRouteMetadata(
+                                                        message,
+                                                    );
+                                                    if (!route) {
+                                                        return null;
+                                                    }
 
-                                    {message.role === 'user' && message.status === 'active' ? (
-                                        <>
-                                            <div className="message-actions">
-                                                <button
-                                                    className="quiet-btn"
-                                                    onClick={() => {
-                                                        setEditingMessageId(message.id);
-                                                        setEditingText(message.content);
-                                                    }}
-                                                    type="button"
-                                                >
-                                                    Edit
-                                                </button>
-                                                <button
-                                                    className="ghost-btn"
-                                                    onClick={() => void handleResend(message.id)}
-                                                    type="button"
-                                                >
-                                                    Resend
-                                                </button>
-                                                <button
-                                                    className="danger-btn"
-                                                    onClick={() => void handleRevoke(message.id)}
-                                                    type="button"
-                                                >
-                                                    Revoke
-                                                </button>
+                                                    return (
+                                                        <>
+                                                            {route.selectedAgent ? (
+                                                                <span
+                                                                    className="chip"
+                                                                    data-tone="teal"
+                                                                >
+                                                                    route {route.selectedAgent}
+                                                                </span>
+                                                            ) : null}
+                                                            {route.reason ? (
+                                                                <span className="chip">
+                                                                    {routeReasonLabel(
+                                                                        route.reason,
+                                                                    )}
+                                                                </span>
+                                                            ) : null}
+                                                            {route.attemptedAgents.length > 1 ? (
+                                                                <span className="chip">
+                                                                    {route.attemptedAgents.length}{' '}
+                                                                    attempts
+                                                                </span>
+                                                            ) : null}
+                                                        </>
+                                                    );
+                                                })()}
                                             </div>
-                                            {editingMessageId === message.id ? (
-                                                <div className="inline-editor">
-                                                    <textarea
-                                                        value={editingText}
-                                                        onChange={(event) =>
-                                                            setEditingText(event.target.value)
+
+                                            {message.role === 'user' &&
+                                            message.status === 'active' ? (
+                                                <div className="message-actions">
+                                                    <button
+                                                        className="quiet-btn"
+                                                        onClick={() => {
+                                                            setEditingMessageId(message.id);
+                                                            setEditingText(message.content);
+                                                        }}
+                                                        type="button"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        className="ghost-btn"
+                                                        onClick={() =>
+                                                            void handleResend(message.id)
                                                         }
-                                                    />
-                                                    <div className="inline-actions">
-                                                        <button
-                                                            className="btn"
-                                                            onClick={() =>
-                                                                void handleEditSave(message.id)
-                                                            }
-                                                            type="button"
-                                                        >
-                                                            Save edit
-                                                        </button>
-                                                        <button
-                                                            className="ghost-btn"
-                                                            onClick={() => {
-                                                                setEditingMessageId(null);
-                                                                setEditingText('');
-                                                            }}
-                                                            type="button"
-                                                        >
-                                                            Cancel
-                                                        </button>
-                                                    </div>
+                                                        type="button"
+                                                    >
+                                                        Resend
+                                                    </button>
+                                                    <button
+                                                        className="danger-btn"
+                                                        onClick={() =>
+                                                            void handleRevoke(message.id)
+                                                        }
+                                                        type="button"
+                                                    >
+                                                        Revoke
+                                                    </button>
                                                 </div>
                                             ) : null}
-                                        </>
-                                    ) : null}
-                                </article>
+                                        </div>
+
+                                        {editingMessageId === message.id ? (
+                                            <div className="inline-editor">
+                                                <textarea
+                                                    value={editingText}
+                                                    onChange={(event) =>
+                                                        setEditingText(event.target.value)
+                                                    }
+                                                />
+                                                <div className="inline-actions">
+                                                    <button
+                                                        className="btn"
+                                                        onClick={() =>
+                                                            void handleEditSave(message.id)
+                                                        }
+                                                        type="button"
+                                                    >
+                                                        Save edit
+                                                    </button>
+                                                    <button
+                                                        className="ghost-btn"
+                                                        onClick={() => {
+                                                            setEditingMessageId(null);
+                                                            setEditingText('');
+                                                        }}
+                                                        type="button"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : null}
+                                    </article>
+                                </div>
                             ))
                         )}
+                        {currentActiveRun?.streamContent ? (
+                            <div className="message-row" data-role="assistant">
+                                <article
+                                    className="message-bubble"
+                                    data-role="assistant"
+                                    data-streaming="true"
+                                >
+                                    <div className="message-top">
+                                        <strong>
+                                            Assistant
+                                            {currentActiveRun.agent
+                                                ? ` · ${currentActiveRun.agent}`
+                                                : ''}
+                                        </strong>
+                                        <span>
+                                            live preview ·{' '}
+                                            {formatTimestamp(
+                                                currentActiveRun.streamUpdatedAt ??
+                                                    currentActiveRun.startedAt,
+                                            )}
+                                        </span>
+                                    </div>
+                                    <MessageBody
+                                        message={{
+                                            id: -1,
+                                            timestamp:
+                                                currentActiveRun.streamUpdatedAt ??
+                                                currentActiveRun.startedAt,
+                                            channel: currentActiveRun.channel,
+                                            chatId: currentActiveRun.chatId,
+                                            userId: currentActiveRun.agent ?? 'assistant',
+                                            role: 'assistant',
+                                            content: currentActiveRun.streamContent,
+                                            ...(currentActiveRun.agent
+                                                ? { agent: currentActiveRun.agent }
+                                                : {}),
+                                            status: 'active',
+                                        }}
+                                    />
+                                    <div className="message-footer">
+                                        <div className="chip-row">
+                                            <span className="chip" data-tone="teal">
+                                                streaming
+                                            </span>
+                                            <span className="chip">
+                                                run {currentActiveRun.runId.slice(0, 8)}
+                                            </span>
+                                            {currentActiveRun.streamParser ? (
+                                                <span className="chip">
+                                                    {currentActiveRun.streamParser}
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                        <div className="stream-cursor" aria-hidden="true" />
+                                    </div>
+                                </article>
+                            </div>
+                        ) : null}
                     </div>
 
-                    <div className="composer">
-                        <div className="composer-card">
-                            {actionError ? <div className="empty">{actionError}</div> : null}
-                            <textarea
-                                placeholder="Ask a coding agent, or use /search to hit WillClaw memory directly."
-                                value={composerText}
-                                onChange={(event) => setComposerText(event.target.value)}
-                            />
-                            <div className="composer-actions">
-                                <select
-                                    value={executionMode}
-                                    onChange={(event) =>
-                                        setExecutionMode(
-                                            event.target.value as 'foreground' | 'background',
-                                        )
-                                    }
-                                >
-                                    <option value="foreground">foreground</option>
-                                    <option value="background">background</option>
-                                </select>
-                                <button
-                                    className="btn"
-                                    disabled={submitting}
-                                    onClick={() => void handleSend()}
-                                    type="button"
-                                >
-                                    {submitting ? 'Running…' : 'Send'}
-                                </button>
-                                <button
-                                    className="ghost-btn"
-                                    onClick={() => setComposerText('/search ')}
-                                    type="button"
-                                >
-                                    Start search
-                                </button>
-                                <button
-                                    className="ghost-btn"
-                                    onClick={() => setComposerText('@claude-code ')}
-                                    type="button"
-                                >
-                                    Target Claude
-                                </button>
+                    <div className="composer-shell">
+                        {currentActiveRun ? (
+                            <div className="run-banner">
+                                <div>
+                                    <strong>Run in progress</strong>
+                                    <div className="run-banner__meta">
+                                        {currentActiveRun.phase}
+                                        {currentActiveRun.latestError
+                                            ? ` · ${currentActiveRun.latestError}`
+                                            : ''}
+                                    </div>
+                                </div>
+                                <div className="run-banner__aside">
+                                    <span>
+                                        {(currentActiveRun.agent ?? 'orchestrator')} ·{' '}
+                                        {currentActiveRun.executionMode ?? 'foreground'} ·
+                                        started{' '}
+                                        {formatRelativeTime(currentActiveRun.startedAt)}
+                                    </span>
+                                    {currentActiveRun.streamContent ? (
+                                        <span className="run-banner__stream">
+                                            {currentActiveRun.streamContent.length} chars
+                                            streamed
+                                        </span>
+                                    ) : null}
+                                </div>
                             </div>
-                            {lastRun ? (
+                        ) : (
+                            <div className="hint-text">
+                                WillClaw keeps the shell context here. The coding agent
+                                still does the core coding work.
+                            </div>
+                        )}
+
+                        <div className="composer-card">
+                            <div className="composer-preview">
+                                {composerShowsSearch ? (
+                                    <>
+                                        <span className="chip" data-tone="accent">
+                                            shell command
+                                        </span>
+                                        <span className="chip">/search</span>
+                                    </>
+                                ) : routePreview ? (
+                                    <>
+                                        <span className="chip" data-tone="teal">
+                                            route {routePreview.selectedAgent}
+                                        </span>
+                                        <span className="chip">
+                                            {routeReasonLabel(routePreview.reason)}
+                                        </span>
+                                        {routePreview.explicitAgent ? (
+                                            <span className="chip">
+                                                explicit
+                                            </span>
+                                        ) : null}
+                                        {routePreview.allowFallback &&
+                                        routePreview.fallbackChain.length > 1 ? (
+                                            <span className="chip">
+                                                {routePreview.fallbackChain.length} fallback targets
+                                            </span>
+                                        ) : null}
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="chip">shell idle</span>
+                                        <span className="chip">
+                                            type a prompt to preview routing
+                                        </span>
+                                    </>
+                                )}
+                            </div>
+                            <textarea
+                                placeholder="Ask a coding agent, resume a thread, or use /search for shell-side memory."
+                                value={composerText}
+                                onChange={(event) =>
+                                    setComposerText(event.target.value)
+                                }
+                            />
+                            <div className="composer-toolbar">
+                                <div className="composer-shortcuts">
+                                    <button
+                                        className="quiet-btn"
+                                        onClick={() => setComposerText('/search ')}
+                                        type="button"
+                                    >
+                                        /search
+                                    </button>
+                                    {availableAgents.slice(0, 4).map((agent) => (
+                                        <button
+                                            className="quiet-btn"
+                                            key={agent.name}
+                                            onClick={() =>
+                                                setComposerText((current) =>
+                                                    current.startsWith(`@${agent.name}`)
+                                                        ? current
+                                                        : `@${agent.name} ${current}`.trim(),
+                                                )
+                                            }
+                                            type="button"
+                                        >
+                                            @{agent.name}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="composer-controls">
+                                    <select
+                                        value={executionMode}
+                                        onChange={(event) =>
+                                            setExecutionMode(
+                                                event.target
+                                                    .value as 'foreground' | 'background',
+                                            )
+                                        }
+                                    >
+                                        <option value="foreground">
+                                            foreground
+                                        </option>
+                                        <option value="background">
+                                            background
+                                        </option>
+                                    </select>
+                                    <button
+                                        className="btn"
+                                        disabled={submitting}
+                                        onClick={() => void handleSend()}
+                                        type="button"
+                                    >
+                                        {submitting ? 'Running…' : 'Send'}
+                                    </button>
+                                </div>
+                            </div>
+                            {lastRun?.chatId === selectedChatId ? (
                                 <div className="hint-strip">
                                     <div className="hint">
-                                        Last run via {lastRun.agent} · {formatDuration(lastRun.duration)}
+                                        Last run via {lastRun.agent}
                                     </div>
-                                    <div className="hint">run {lastRun.runId.slice(0, 8)}</div>
+                                    <div className="hint">
+                                        {formatDuration(lastRun.duration)}
+                                    </div>
+                                    <div className="hint">
+                                        run {lastRun.runId.slice(0, 8)}
+                                    </div>
                                 </div>
                             ) : null}
                         </div>
                     </div>
                 </section>
 
-                <section className="stack">
-                    <div className="panel section">
-                        <div className="section-header">
-                            <h3>Memory Search</h3>
-                            <span>Messages, MEMORY.md, daily notes</span>
+                <aside className="panel inspector">
+                    <div className="inspector-header">
+                        <div>
+                            <h2>Inspector</h2>
+                            <p>
+                                Debug and shell metadata stay nearby, not in the main
+                                reading lane.
+                            </p>
                         </div>
-                        <div className="search-card">
-                            <div className="search-grid">
-                                <input
-                                    placeholder="Search memory and notes…"
-                                    value={searchQuery}
-                                    onChange={(event) => setSearchQuery(event.target.value)}
-                                />
-                                <select
-                                    value={searchScope}
-                                    onChange={(event) =>
-                                        setSearchScope(event.target.value as SearchScope)
-                                    }
+                    </div>
+
+                    <div className="inspector-tabs">
+                        {(['search', 'activity', 'runtime'] as InspectorTab[]).map(
+                            (tab) => (
+                                <button
+                                    className="inspector-tab"
+                                    data-active={inspectorTab === tab}
+                                    key={tab}
+                                    onClick={() => setInspectorTab(tab)}
+                                    type="button"
                                 >
-                                    <option value="all">all</option>
-                                    <option value="messages">messages</option>
-                                    <option value="files">files</option>
-                                    <option value="memory">MEMORY.md</option>
-                                    <option value="daily_note">daily notes</option>
-                                </select>
-                            </div>
-                            {searchLoading ? (
-                                <div className="empty">Searching…</div>
-                            ) : null}
-                            <div className="search-results">
-                                {searchResults &&
-                                searchResults.messages.length === 0 &&
-                                searchResults.files.length === 0 ? (
-                                    <div className="empty">No matches yet.</div>
-                                ) : null}
-                                {searchResults?.messages.map((entry) => (
-                                    <article className="result-card" key={`m-${entry.id}`}>
-                                        <strong>
-                                            Message #{entry.id} · {entry.channel}/{entry.chatId}
-                                        </strong>
-                                        <p className="result-snippet">{entry.snippet}</p>
-                                        <div className="chip-row">
-                                            <span className="chip">{entry.role}</span>
-                                            <span className="chip">{formatTimestamp(entry.timestamp)}</span>
-                                        </div>
-                                    </article>
-                                ))}
-                                {searchResults?.files.map((entry) => (
-                                    <article className="result-card" key={`f-${entry.id}`}>
-                                        <strong>{entry.filepath}</strong>
-                                        <p className="result-snippet">{entry.snippet}</p>
-                                        <div className="chip-row">
-                                            <span className="chip">{entry.fileType}</span>
-                                            <span className="chip">{formatTimestamp(entry.updatedAt)}</span>
-                                        </div>
-                                    </article>
-                                ))}
-                            </div>
-                        </div>
+                                    {tab}
+                                </button>
+                            ),
+                        )}
                     </div>
 
-                    <div className="panel section">
-                        <div className="section-header">
-                            <h3>Host Tools</h3>
-                            <span>What WillClaw owns itself</span>
-                        </div>
-                        <div className="tool-list">
-                            {status?.hostTools.map((tool) => (
-                                <article className="tool-card" key={tool.name}>
-                                    <strong>{tool.label}</strong>
-                                    <div className="chip-row">
-                                        <span
-                                            className="chip"
-                                            data-tone={tool.globalEnabled ? 'teal' : 'danger'}
-                                        >
-                                            {tool.globalEnabled ? 'enabled' : 'disabled'}
-                                        </span>
-                                        <span className="chip">{tool.category}</span>
-                                        {tool.mode ? <span className="chip">{tool.mode}</span> : null}
+                    <div className="inspector-body">
+                        {inspectorTab === 'search' ? (
+                            <div className="stack-list">
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Memory Search</h3>
+                                        <span>messages + files</span>
                                     </div>
-                                    <p className="muted">
-                                        {tool.preferredProvider
-                                            ? `${tool.preferredProvider}${tool.fallbackProvider ? ` -> ${tool.fallbackProvider}` : ''}`
-                                            : 'No provider chain'}
-                                    </p>
-                                </article>
-                            )) ?? <div className="empty">Loading host tools…</div>}
-                        </div>
-                    </div>
-
-                    <div className="panel section">
-                        <div className="section-header">
-                            <h3>Recent Tool Logs</h3>
-                            <span>{toolLogs.length} entries</span>
-                        </div>
-                        <div className="log-list">
-                            {toolLogs.length === 0 ? (
-                                <div className="empty">No recent tool logs.</div>
-                            ) : (
-                                toolLogs.map((entry) => (
-                                    <article className="log-card" key={entry.id}>
-                                        <strong>
-                                            {entry.tool}.{entry.action}
-                                        </strong>
-                                        <p className="log-snippet">
-                                            {entry.output ?? entry.error ?? entry.input}
-                                        </p>
-                                        <div className="chip-row">
-                                            <span
-                                                className="chip"
-                                                data-tone={entry.success ? 'teal' : 'danger'}
+                                    <div className="search-card">
+                                        <div className="search-grid">
+                                            <input
+                                                placeholder="Search memory and notes…"
+                                                value={searchQuery}
+                                                onChange={(event) =>
+                                                    setSearchQuery(event.target.value)
+                                                }
+                                            />
+                                            <select
+                                                value={searchScope}
+                                                onChange={(event) =>
+                                                    setSearchScope(
+                                                        event.target
+                                                            .value as SearchScope,
+                                                    )
+                                                }
                                             >
-                                                {entry.success ? 'ok' : 'failed'}
-                                            </span>
-                                            <span className="chip">{entry.agent}</span>
-                                            <span className="chip">{formatDuration(entry.durationMs)}</span>
+                                                <option value="all">all</option>
+                                                <option value="messages">
+                                                    messages
+                                                </option>
+                                                <option value="files">files</option>
+                                                <option value="memory">memory</option>
+                                                <option value="daily_note">
+                                                    daily notes
+                                                </option>
+                                            </select>
                                         </div>
-                                    </article>
-                                ))
-                            )}
-                        </div>
+                                    </div>
+                                </section>
+
+                                {searchLoading ? (
+                                    <div className="empty">Searching…</div>
+                                ) : null}
+
+                                {searchResults?.messages.length ? (
+                                    <section className="inspector-panel">
+                                        <div className="section-header">
+                                            <h3>Message Hits</h3>
+                                            <span>
+                                                {searchResults.messages.length}
+                                            </span>
+                                        </div>
+                                        <div className="stack-list">
+                                            {searchResults.messages.map((entry) => (
+                                                <article
+                                                    className="result-card"
+                                                    key={`message-${entry.id}`}
+                                                >
+                                                    <strong>
+                                                        {entry.chatId} · {entry.role}
+                                                    </strong>
+                                                    <p className="muted">
+                                                        {cleanSnippet(entry.snippet)}
+                                                    </p>
+                                                    <div className="result-actions">
+                                                        <button
+                                                            className="quiet-btn"
+                                                            onClick={() => {
+                                                                handleSelectChat(
+                                                                    entry.chatId,
+                                                                );
+                                                                setInspectorTab(
+                                                                    'activity',
+                                                                );
+                                                            }}
+                                                            type="button"
+                                                        >
+                                                            Open chat
+                                                        </button>
+                                                        <button
+                                                            className="ghost-btn"
+                                                            onClick={() =>
+                                                                handleInjectIntoComposer(
+                                                                    entry.content,
+                                                                )
+                                                            }
+                                                            type="button"
+                                                        >
+                                                            Quote
+                                                        </button>
+                                                    </div>
+                                                </article>
+                                            ))}
+                                        </div>
+                                    </section>
+                                ) : null}
+
+                                {searchResults?.files.length ? (
+                                    <section className="inspector-panel">
+                                        <div className="section-header">
+                                            <h3>File Hits</h3>
+                                            <span>{searchResults.files.length}</span>
+                                        </div>
+                                        <div className="stack-list">
+                                            {searchResults.files.map((entry) => (
+                                                <article
+                                                    className="result-card"
+                                                    key={`file-${entry.id}`}
+                                                >
+                                                    <strong>{entry.filepath}</strong>
+                                                    <p className="muted">
+                                                        {cleanSnippet(entry.snippet)}
+                                                    </p>
+                                                    <div className="result-actions">
+                                                        <button
+                                                            className="ghost-btn"
+                                                            onClick={() =>
+                                                                handleInjectIntoComposer(
+                                                                    entry.content,
+                                                                )
+                                                            }
+                                                            type="button"
+                                                        >
+                                                            Insert excerpt
+                                                        </button>
+                                                    </div>
+                                                </article>
+                                            ))}
+                                        </div>
+                                    </section>
+                                ) : null}
+
+                                {!searchLoading &&
+                                deferredSearchQuery.length >= 2 &&
+                                !searchResults?.messages.length &&
+                                !searchResults?.files.length ? (
+                                    <div className="empty">
+                                        No results for “{deferredSearchQuery}”.
+                                    </div>
+                                ) : null}
+                            </div>
+                        ) : null}
+
+                        {inspectorTab === 'activity' ? (
+                            <div className="stack-list">
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Run Status</h3>
+                                        <span>{selectedChatId}</span>
+                                    </div>
+                                    {currentActiveRun ? (
+                                        <article className="task-card">
+                                            <strong>
+                                                run {currentActiveRun.runId.slice(0, 8)}
+                                            </strong>
+                                            <div className="chip-row">
+                                                <span
+                                                    className="chip"
+                                                    data-tone="accent"
+                                                >
+                                                    {currentActiveRun.status}
+                                                </span>
+                                                {currentActiveRun.executionMode ? (
+                                                    <span className="chip">
+                                                        {
+                                                            currentActiveRun.executionMode
+                                                        }
+                                                    </span>
+                                                ) : null}
+                                                {currentActiveRun.agent ? (
+                                                    <span className="chip">
+                                                        {currentActiveRun.agent}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                            <p className="muted">
+                                                Started{' '}
+                                                {formatRelativeTime(
+                                                    currentActiveRun.startedAt,
+                                                )}
+                                            </p>
+                                            <p className="muted">
+                                                {currentActiveRun.phase}
+                                            </p>
+                                            {currentActiveRun.streamContent ? (
+                                                <p className="muted">
+                                                    Preview:{' '}
+                                                    {summarizeText(
+                                                        currentActiveRun.streamContent,
+                                                        160,
+                                                    )}
+                                                </p>
+                                            ) : null}
+                                        </article>
+                                    ) : (
+                                        <div className="empty">
+                                            No active run for this conversation.
+                                        </div>
+                                    )}
+                                </section>
+
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Recent Events</h3>
+                                        <span>{currentRecentEvents.length}</span>
+                                    </div>
+                                    <div className="stack-list">
+                                        {currentRecentEvents.length === 0 ? (
+                                            <div className="empty">
+                                                Waiting for chat events.
+                                            </div>
+                                        ) : (
+                                            currentRecentEvents.map((event) => {
+                                                const descriptor =
+                                                    describeRealtimeEvent(event);
+
+                                                return (
+                                                    <article
+                                                        className="task-card"
+                                                        key={event.id}
+                                                    >
+                                                        <strong>
+                                                            {descriptor.title}
+                                                        </strong>
+                                                        <p className="muted">
+                                                            {descriptor.detail}
+                                                        </p>
+                                                        <p className="muted">
+                                                            {formatTimestamp(
+                                                                event.timestamp,
+                                                            )}
+                                                        </p>
+                                                    </article>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </section>
+
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Tool Logs</h3>
+                                        <span>{toolLogs.length} latest</span>
+                                    </div>
+                                    <div className="stack-list">
+                                        {toolLogs.length === 0 ? (
+                                            <div className="empty">
+                                                No tool activity recorded for this
+                                                chat yet.
+                                            </div>
+                                        ) : (
+                                            toolLogs.map((entry) => (
+                                                <article
+                                                    className="log-card"
+                                                    key={entry.id}
+                                                >
+                                                    <strong>
+                                                        {entry.tool}.{entry.action}
+                                                    </strong>
+                                                    <div className="chip-row">
+                                                        <span
+                                                            className="chip"
+                                                            data-tone={
+                                                                entry.success
+                                                                    ? 'teal'
+                                                                    : 'danger'
+                                                            }
+                                                        >
+                                                            {entry.success
+                                                                ? 'success'
+                                                                : 'failed'}
+                                                        </span>
+                                                        <span className="chip">
+                                                            {formatDuration(
+                                                                entry.durationMs,
+                                                            )}
+                                                        </span>
+                                                        <span className="chip">
+                                                            {entry.agent}
+                                                        </span>
+                                                    </div>
+                                                    <p className="log-snippet">
+                                                        {summarizeText(
+                                                            entry.input,
+                                                            120,
+                                                        )}
+                                                    </p>
+                                                </article>
+                                            ))
+                                        )}
+                                    </div>
+                                </section>
+                            </div>
+                        ) : null}
+
+                        {inspectorTab === 'runtime' ? (
+                            <div className="stack-list">
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Scheduler</h3>
+                                        <span>{schedulerTasks.length} tasks</span>
+                                    </div>
+                                    <div className="toolbar">
+                                        <button
+                                            className="ghost-btn"
+                                            onClick={() =>
+                                                void handleTaskRun(
+                                                    '/api/heartbeat/run',
+                                                )
+                                            }
+                                            type="button"
+                                        >
+                                            Run heartbeat
+                                        </button>
+                                        <button
+                                            className="ghost-btn"
+                                            onClick={() =>
+                                                void handleTaskRun(
+                                                    '/api/cron/daily_briefing/run',
+                                                )
+                                            }
+                                            type="button"
+                                        >
+                                            Run briefing
+                                        </button>
+                                        <button
+                                            className="ghost-btn"
+                                            onClick={() =>
+                                                void handleTaskRun(
+                                                    '/api/maintenance/daily_note/run',
+                                                )
+                                            }
+                                            type="button"
+                                        >
+                                            Daily note
+                                        </button>
+                                        <button
+                                            className="ghost-btn"
+                                            onClick={() =>
+                                                void handleTaskRun(
+                                                    '/api/maintenance/compact/run',
+                                                )
+                                            }
+                                            type="button"
+                                        >
+                                            Compact memory
+                                        </button>
+                                    </div>
+                                    <div className="stack-list">
+                                        {schedulerTasks.map((task) => (
+                                            <article
+                                                className="task-card"
+                                                key={task.id}
+                                            >
+                                                <strong>{task.name}</strong>
+                                                <div className="chip-row">
+                                                    <span
+                                                        className="chip"
+                                                        data-tone={taskTone(
+                                                            task.lastResult,
+                                                        )}
+                                                    >
+                                                        {task.lastResult ??
+                                                            'never run'}
+                                                    </span>
+                                                    <span className="chip">
+                                                        {task.kind}
+                                                    </span>
+                                                    <span className="chip">
+                                                        {task.schedule}
+                                                    </span>
+                                                </div>
+                                                <p className="muted">
+                                                    Last run:{' '}
+                                                    {formatTimestamp(
+                                                        task.lastRunAt,
+                                                    )}
+                                                </p>
+                                            </article>
+                                        ))}
+                                    </div>
+                                </section>
+
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Agents</h3>
+                                        <span>{status?.server.port ?? 8420}</span>
+                                    </div>
+                                    <div className="stack-list">
+                                        {status?.agents.map((agent) => (
+                                            <article
+                                                className="agent-card"
+                                                key={agent.name}
+                                            >
+                                                <div className="status-line">
+                                                    <strong>{agent.name}</strong>
+                                                    <span className="status-pill">
+                                                        <span
+                                                            className="status-dot"
+                                                            data-tone={
+                                                                agent.available
+                                                                    ? 'teal'
+                                                                    : 'danger'
+                                                            }
+                                                        />
+                                                        {agent.type}
+                                                    </span>
+                                                </div>
+                                                <div className="chip-row">
+                                                    <span
+                                                        className="chip"
+                                                        data-tone={
+                                                            agent.available
+                                                                ? 'teal'
+                                                                : 'danger'
+                                                        }
+                                                    >
+                                                        {agent.available
+                                                            ? 'available'
+                                                            : 'unavailable'}
+                                                    </span>
+                                                    <span className="chip">
+                                                        {agent.enabled
+                                                            ? 'enabled'
+                                                            : 'disabled'}
+                                                    </span>
+                                                </div>
+                                                <p className="muted">
+                                                    {toolPolicySummary(agent)}
+                                                </p>
+                                            </article>
+                                        )) ?? (
+                                            <div className="empty">
+                                                Loading agent availability…
+                                            </div>
+                                        )}
+                                    </div>
+                                </section>
+
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Host Tools</h3>
+                                        <span>
+                                            {status?.hostTools.length ?? 0} tools
+                                        </span>
+                                    </div>
+                                    <div className="stack-list">
+                                        {status?.hostTools.map((tool) => (
+                                            <article
+                                                className="tool-card"
+                                                key={tool.name}
+                                            >
+                                                <div className="status-line">
+                                                    <strong>{tool.label}</strong>
+                                                    <span className="chip">
+                                                        {tool.mode ??
+                                                            (tool.globalEnabled
+                                                                ? 'enabled'
+                                                                : 'disabled')}
+                                                    </span>
+                                                </div>
+                                                <p className="muted">
+                                                    {tool.category}
+                                                    {tool.preferredProvider
+                                                        ? ` · ${tool.preferredProvider}`
+                                                        : ''}
+                                                    {tool.fallbackProvider
+                                                        ? ` → ${tool.fallbackProvider}`
+                                                        : ''}
+                                                </p>
+                                            </article>
+                                        )) ?? (
+                                            <div className="empty">
+                                                Loading hosted tool policy…
+                                            </div>
+                                        )}
+                                    </div>
+                                </section>
+                            </div>
+                        ) : null}
                     </div>
-                </section>
+                </aside>
             </div>
         </main>
     );

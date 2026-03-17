@@ -36,6 +36,7 @@ Current implemented scope:
 - prompt assembly from workspace markdown files
 - agent backends for Claude Code, Codex, OpenCode, Gemini, Direct API, and ACP
 - orchestrator routing + explicit \`@agent\` selection + read-only fallback chain
+- CLI output normalization for text, structured JSON, and event-stream style backends
 - SQLite message storage + FTS search
 - markdown history export
 - command completion monitor
@@ -48,6 +49,7 @@ Current implemented scope:
 - Telegram polling channel adapter
 - React-based Web UI served from the Hono server root
 - SSE event hub for realtime UI updates
+- CLI-backed and direct-api streaming previews over SSE before the final assistant message is persisted
 - LaunchAgent login auto-start commands
 
 Current non-goals or not-yet-done areas:
@@ -79,6 +81,7 @@ Important runtime pieces:
 - config schema + path expansion
 - init/start/status CLI entrypoints
 - launch-agent install/uninstall/status/print CLI entrypoints
+- provider doctor checks for browser and screen integrations
 - app logger
 - prompt assembler
 - orchestrator
@@ -110,6 +113,7 @@ Implemented today:
 - channel manager
 - Telegram polling adapter
 - outbound channel notifications for heartbeat / cron results
+- Telegram shell commands: \`/status\`, \`/undo\`, \`/resend\`, \`/cancel\`, \`/heartbeat\`, \`/cron\`
 
 Telegram behavior:
 - reads token from the configured env var
@@ -118,6 +122,7 @@ Telegram behavior:
 - private chats are handled directly
 - inbound text is sent to ChatService
 - assistant replies are pushed back to Telegram
+- shell commands can inspect status, revoke the latest user turn, resend it, cancel the latest active run, or trigger heartbeat / cron work
 - background task notifications can be pushed to Telegram via the channel manager
 
 Design rules borrowed from OpenClaw-style gateways:
@@ -146,6 +151,7 @@ Routing behavior:
 - otherwise WillClaw uses heuristics for coding vs long-context vs simple QA
 - read-only requests may fallback across the configured chain
 - mutating fallback stays disabled unless config explicitly enables it
+- JSON-oriented CLI backends such as \`opencode\` and \`gemini\` should have their structured/event-stream stdout normalized before it becomes assistant message content
 
 Tool exposure policy:
 - \`native\` means the backend already has the ability; do not expose a duplicate hosted tool
@@ -223,6 +229,7 @@ Behavior notes:
 - provider attempts may fallback when the preferred binary is missing or fails
 - CLI agents with native terminal/filesystem should not receive duplicate hosted copies
 - browser and screen are host capabilities; they are not assumed to exist inside every backend session
+- provider health can be checked from the CLI and HTTP API before relying on agent-browser or peekaboo
 - for provider-specific workflows, read the narrower \`agent-browser\` or \`peekaboo\` skill`,
     },
     {
@@ -311,17 +318,23 @@ Current implementation:
 - Hono serves the bundle at \`/\`, \`/styles.css\`, \`/favicon.svg\`, and \`/assets/*\`
 
 Current UI scope:
+- chat-first three-column layout: conversations, main thread, inspector
+- multi-thread web conversation list powered by \`/api/chats\`
 - web-channel chat composer
-- message timeline for \`channel=web\`
+- message timeline for the selected \`channel=web\` thread
+- assistant / system markdown rendering with code blocks, lists, tables, and quotes
 - revoke / edit / resend controls for user messages
-- memory search panel
+- inspector tabs for memory search, activity, and runtime state
 - scheduler trigger buttons
-- recent tool log panel
+- recent tool log panel scoped to the current chat
 - agent and host-tool status summary
 - SSE-backed realtime connection, active runs, and recent event stream
+- live streaming preview bubble for CLI and direct-api runs before the final assistant message lands
+- active run cancel action in the conversation header
+- composer route preview via \`/api/route-preview\`
+- activity tab now shows route selection, agent attempts, and fallback events in human-readable form
 
 Current limits:
-- no markdown rendering yet
 - not every host-side event is streamed yet
 - fallback polling still exists as a safety net
 
@@ -344,10 +357,12 @@ Current REST surface includes:
 - \`/api/agents\`
 - \`/api/tools/catalog\`
 - \`/api/events\`
+- \`/api/route-preview\`
 - \`/api/prompt-preview\`
 - \`/api/chat\`
 - \`/api/runs/:runId\`
 - \`/api/runs/:runId/cancel\`
+- \`/api/chats\`
 - \`/api/messages\`
 - \`/api/messages/:id/revoke\`
 - \`/api/messages/:id/edit\`

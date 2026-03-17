@@ -1511,8 +1511,15 @@ daemon:
 - workspace 现在会自动生成 `SKILLS.md`、`SKILLS_INDEX.md` 和 `skills/*`
 - CLI 新增 `sync-skills`，可将生成的 skills 刷到任意 workspace 目录
 - 已有聊天渠道骨架：`ChannelManager + Telegram polling adapter`
+- 已有 Telegram 壳层命令：`/status`、`/undo`、`/resend`、`/cancel`、`/heartbeat`、`/cron`
 - 已有 Web UI 首版：React dashboard + Hono 静态托管
 - 已有 Web UI realtime：SSE 事件流 + active runs / recent events
+- 已有 Web UI Markdown 渲染：assistant / system 消息支持代码块、列表、表格、引用
+- 已有 Web UI chat-first 重构：三栏布局（会话列表 / 主线程 / inspector）+ `/api/chats`
+- 已有 Web UI 过程感：`/api/route-preview` + route / agent attempt / fallback 活动流
+- 已有 SSE 流式预览：CLI backend stdout 和 `direct-api` 的 Anthropic SSE 都会推送 `chat.run.stream.delta`，Web UI 可在最终消息落库前显示临时 assistant 气泡
+- 已有 CLI 输出归一化：`opencode` / `gemini` 这类 JSON / linewise event stream 会提纯正文，不再把 `step_start`、`timestamp` 等元数据混进消息内容
+- 已有 provider doctor：CLI `willclaw doctor` 和 `/api/providers/health` 会检查 `agent-browser / peekaboo / system-open / screencapture` 的安装与权限状态
 - 已有 macOS 登录自启：`launch-agent install / uninstall / status / print`
 
 尚未完成：
@@ -1557,7 +1564,11 @@ daemon:
 - [x] **Tool Log Panel**（Web UI 工具日志面板）
 - [x] **Search Panel**（Web UI 搜索面板）
 - [x] Agent 执行状态实时显示（SSE + active runs）
-- [ ] Markdown 渲染
+- [x] Markdown 渲染
+- [x] Chat-first layout（会话列表 / 主线程 / inspector）
+- [x] Route preview + process activity（route / agent attempt / fallback）
+- [x] CLI-backed streaming preview（SSE delta events + 临时 assistant 气泡）
+- [x] Telegram shell commands（`/status`、`/undo`、`/resend`、`/cancel`、`/heartbeat`、`/cron`）
 
 **交付**：Telegram + Web UI 聊天可用，支持撤回、日志查看、记忆搜索。
 
@@ -1582,6 +1593,7 @@ daemon:
 - [x] Codex CLI agent
 - [x] OpenCode CLI agent
 - [x] Gemini CLI agent
+- [x] CLI agent 输出归一化（structured JSON / linewise JSON / event stream）
 - [x] **ACP Client 实现**
 - [x] ACP agent 配置 + 调用
 - [ ] Agent Router 智能路由

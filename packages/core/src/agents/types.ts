@@ -3,10 +3,24 @@ import type { AgentToolMode, HostToolName } from '../config.js';
 export type ChatRole = 'user' | 'assistant' | 'system';
 export type AgentBackendType = 'cli' | 'api' | 'acp';
 export type ExecutionMode = 'foreground' | 'background';
+export type AgentTextStreamParser =
+    | 'plain_text'
+    | 'structured_json'
+    | 'linewise_json'
+    | 'event_stream'
+    | 'anthropic_sse';
 
 export interface ChatMessage {
     role: ChatRole;
     content: string;
+}
+
+export interface AgentTextStreamUpdate {
+    content: string;
+    delta: string;
+    mode: 'delta' | 'snapshot';
+    parser: AgentTextStreamParser;
+    eventTypes?: string[];
 }
 
 export interface AgentRequest {
@@ -20,6 +34,7 @@ export interface AgentRequest {
         enabled: boolean;
         maxCalls: number;
     };
+    onTextStream?: (update: AgentTextStreamUpdate) => void;
 }
 
 export interface AgentResponse {
