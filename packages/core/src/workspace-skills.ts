@@ -47,10 +47,11 @@ Current implemented scope:
 - scheduled daily note + scheduled MEMORY.md compact maintenance
 - Telegram polling channel adapter
 - React-based Web UI served from the Hono server root
+- SSE event hub for realtime UI updates
 - LaunchAgent login auto-start commands
 
 Current non-goals or not-yet-done areas:
-- WebSocket/live streaming Web UI
+- full WebSocket transport
 - channel-facing undo/edit UX
 - full macOS automation beyond minimal host tools
 
@@ -317,11 +318,12 @@ Current UI scope:
 - scheduler trigger buttons
 - recent tool log panel
 - agent and host-tool status summary
+- SSE-backed realtime connection, active runs, and recent event stream
 
 Current limits:
-- polling refresh, not WebSocket streaming
 - no markdown rendering yet
-- no dedicated run-progress stream yet
+- not every host-side event is streamed yet
+- fallback polling still exists as a safety net
 
 When changing this area:
 - keep the UI shell-centric, not IDE-centric
@@ -337,9 +339,11 @@ When changing this area:
 
 Current REST surface includes:
 - \`/health\`
+- \`/\` (Web UI)
 - \`/api/status\`
 - \`/api/agents\`
 - \`/api/tools/catalog\`
+- \`/api/events\`
 - \`/api/prompt-preview\`
 - \`/api/chat\`
 - \`/api/runs/:runId\`

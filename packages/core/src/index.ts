@@ -39,6 +39,10 @@ export {
     CommandCompletionMonitor,
     type CompletionMessage,
 } from './completion-monitor.js';
+export {
+    WillClawEventHub,
+    type WillClawEvent,
+} from './events.js';
 export { HistoryExporter } from './history-exporter.js';
 export {
     BackgroundTaskEngine,

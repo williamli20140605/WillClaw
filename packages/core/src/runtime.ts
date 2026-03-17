@@ -5,6 +5,7 @@ import type { AgentBackend } from './agents/types.js';
 import { ChatService } from './chat-service.js';
 import { CommandCompletionMonitor } from './completion-monitor.js';
 import { loadWillClawConfig, type WillClawConfig } from './config.js';
+import { WillClawEventHub } from './events.js';
 import { HistoryExporter } from './history-exporter.js';
 import { BackgroundTaskEngine } from './heartbeat.js';
 import { createAppLogger } from './logger.js';
@@ -30,6 +31,7 @@ export interface WillClawRuntime {
     config: WillClawConfig;
     paths: WillClawPaths;
     logger: Logger;
+    eventHub: WillClawEventHub;
     promptAssembler: PromptAssembler;
     agents: Map<string, AgentBackend>;
     memoryStore: MemoryStore;
@@ -52,6 +54,7 @@ export async function createWillClawRuntime(options?: {
 }): Promise<WillClawRuntime> {
     const { config, paths } = await loadWillClawConfig(options);
     const logger = await createAppLogger(config.logging.app_log);
+    const eventHub = new WillClawEventHub();
     const promptAssembler = new PromptAssembler(config, paths);
     const agents = createAgentBackends(config);
     const memoryStore = new MemoryStore(paths.databasePath);
@@ -94,6 +97,7 @@ export async function createWillClawRuntime(options?: {
         historyExporter,
         completionMonitor,
         logger,
+        eventHub,
     );
     const backgroundTaskEngine = new BackgroundTaskEngine(
         config,
@@ -102,12 +106,14 @@ export async function createWillClawRuntime(options?: {
         memoryStore,
         historyExporter,
         logger,
+        eventHub,
     );
     const scheduler = new WillClawScheduler(
         config,
         backgroundTaskEngine,
         workspaceMemoryManager,
         logger,
+        eventHub,
     );
 
     if (config.memory.search_reindex_on_start) {
@@ -118,6 +124,7 @@ export async function createWillClawRuntime(options?: {
         config,
         paths,
         logger,
+        eventHub,
         promptAssembler,
         agents,
         memoryStore,

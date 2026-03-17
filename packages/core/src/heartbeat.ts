@@ -5,6 +5,7 @@ import type { Logger } from 'pino';
 import type { AgentBackend } from './agents/types.js';
 import type { ChannelNotifier } from './channels/types.js';
 import type { WillClawConfig } from './config.js';
+import type { WillClawEventHub } from './events.js';
 import type { HistoryExporter } from './history-exporter.js';
 import type { MemoryStore, StoredMessage } from './memory.js';
 import type { PromptAssembler, PromptTrigger } from './prompt.js';
@@ -79,6 +80,7 @@ export class BackgroundTaskEngine {
         private readonly memoryStore: MemoryStore,
         private readonly historyExporter: HistoryExporter | null,
         private readonly logger: Logger,
+        private readonly eventHub: WillClawEventHub,
     ) { }
 
     setChannelNotifier(notifier: ChannelNotifier | null): void {
@@ -194,6 +196,14 @@ export class BackgroundTaskEngine {
             prompt: input.prompt,
             status: 'running',
         });
+        this.eventHub.publish('background.task.started', {
+            runId,
+            kind: input.kind,
+            taskName: input.taskName,
+            agent: input.agentName,
+            channel: target.channel,
+            chatId: target.chatId,
+        });
 
         try {
             const promptOptions: Parameters<
@@ -286,6 +296,17 @@ export class BackgroundTaskEngine {
                 },
                 'Background task completed',
             );
+            this.eventHub.publish('background.task.completed', {
+                runId,
+                kind: input.kind,
+                taskName: input.taskName,
+                agent: result.agent,
+                channel: target.channel,
+                chatId: target.chatId,
+                suppressed: result.suppressed,
+                notified: result.notified ?? false,
+                messageId: result.messageId ?? null,
+            });
 
             return result;
         } catch (error) {
@@ -317,6 +338,15 @@ export class BackgroundTaskEngine {
                 },
                 'Background task failed',
             );
+            this.eventHub.publish('background.task.failed', {
+                runId,
+                kind: input.kind,
+                taskName: input.taskName,
+                agent: input.agentName,
+                channel: target.channel,
+                chatId: target.chatId,
+                error: detail,
+            });
             throw error;
         }
     }
@@ -347,6 +377,15 @@ export class BackgroundTaskEngine {
         if (this.historyExporter) {
             await this.historyExporter.appendMessage(message);
         }
+        this.eventHub.publish('message.created', {
+            message,
+            messageId: message.id,
+            runId: message.runId ?? null,
+            channel: message.channel,
+            chatId: message.chatId,
+            role: message.role,
+            status: message.status,
+        });
 
         return message;
     }

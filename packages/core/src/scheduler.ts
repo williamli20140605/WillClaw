@@ -2,6 +2,7 @@ import cron, { type ScheduledTask } from 'node-cron';
 import type { Logger } from 'pino';
 
 import type { WillClawConfig } from './config.js';
+import type { WillClawEventHub } from './events.js';
 import type { BackgroundTaskEngine, BackgroundTaskResult } from './heartbeat.js';
 import type {
     GeneratedDailyNoteResult,
@@ -52,6 +53,7 @@ export class WillClawScheduler {
         private readonly engine: BackgroundTaskEngine,
         private readonly workspaceMemoryManager: WorkspaceMemoryManager,
         private readonly logger: Logger,
+        private readonly eventHub: WillClawEventHub,
     ) { }
 
     start(): void {
@@ -199,15 +201,35 @@ export class WillClawScheduler {
         task.running = true;
         task.lastRunAt = new Date().toISOString();
         task.lastError = undefined;
+        this.eventHub.publish('scheduler.task.started', {
+            id: task.id,
+            kind: task.kind,
+            name: task.name,
+            schedule: task.schedule,
+        });
 
         try {
             const result = await task.runner();
             task.lastResult = isSuppressed(result) ? 'suppressed' : 'completed';
+            this.eventHub.publish('scheduler.task.completed', {
+                id: task.id,
+                kind: task.kind,
+                name: task.name,
+                schedule: task.schedule,
+                result: task.lastResult,
+            });
             return result;
         } catch (error) {
             task.lastResult = 'failed';
             task.lastError =
                 error instanceof Error ? error.message : 'Unknown scheduled task error';
+            this.eventHub.publish('scheduler.task.failed', {
+                id: task.id,
+                kind: task.kind,
+                name: task.name,
+                schedule: task.schedule,
+                error: task.lastError,
+            });
             throw error;
         } finally {
             task.running = false;

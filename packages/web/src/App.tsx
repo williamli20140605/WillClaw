@@ -117,6 +117,23 @@ interface CronPayload {
     maintenance: SchedulerTaskStatus[];
 }
 
+interface RealtimeEvent {
+    id: string;
+    type: string;
+    timestamp: string;
+    payload: Record<string, unknown>;
+}
+
+interface ActiveRun {
+    runId: string;
+    channel: string;
+    chatId: string;
+    startedAt: string;
+    status: 'running' | 'completed' | 'failed' | 'cancelled';
+    agent?: string;
+    executionMode?: string;
+}
+
 const WEB_CHANNEL = 'web';
 const WEB_CHAT = 'default';
 const WEB_USER = 'web-ui';
@@ -191,6 +208,20 @@ function taskTone(result?: SchedulerResult): 'accent' | 'teal' | 'danger' {
     return 'accent';
 }
 
+function readPayloadString(
+    payload: Record<string, unknown>,
+    key: string,
+): string | undefined {
+    const value = payload[key];
+    return typeof value === 'string' ? value : undefined;
+}
+
+function upsertActiveRun(current: ActiveRun[], incoming: ActiveRun): ActiveRun[] {
+    const next = current.filter((entry) => entry.runId !== incoming.runId);
+    next.unshift(incoming);
+    return next.slice(0, 6);
+}
+
 export function App() {
     const [status, setStatus] = useState<StatusPayload | null>(null);
     const [messages, setMessages] = useState<StoredMessage[]>([]);
@@ -212,27 +243,50 @@ export function App() {
         null,
     );
     const [searchLoading, setSearchLoading] = useState(false);
+    const [realtimeConnected, setRealtimeConnected] = useState(false);
+    const [activeRuns, setActiveRuns] = useState<ActiveRun[]>([]);
+    const [recentEvents, setRecentEvents] = useState<RealtimeEvent[]>([]);
 
     const deferredSearchQuery = useDeferredValue(searchQuery.trim());
 
+    async function loadStatusPanel(): Promise<void> {
+        const payload = await readJson<StatusPayload>('/api/status');
+        startTransition(() => {
+            setStatus(payload);
+        });
+    }
+
+    async function loadMessagesPanel(): Promise<void> {
+        const payload = await readJson<StoredMessage[]>(
+            `/api/messages?channel=${WEB_CHANNEL}&chatId=${WEB_CHAT}&limit=80&includeRevoked=true`,
+        );
+        startTransition(() => {
+            setMessages(payload);
+        });
+    }
+
+    async function loadToolLogsPanel(): Promise<void> {
+        const payload = await readJson<ToolLogEntry[]>('/api/logs/tools?limit=12');
+        startTransition(() => {
+            setToolLogs(payload);
+        });
+    }
+
+    async function loadSchedulerPanel(): Promise<void> {
+        const payload = await readJson<CronPayload>('/api/cron');
+        startTransition(() => {
+            setCronState(payload);
+        });
+    }
+
     async function loadDashboard(): Promise<void> {
         try {
-            const [statusPayload, messagePayload, toolLogPayload, cronPayload] =
-                await Promise.all([
-                    readJson<StatusPayload>('/api/status'),
-                    readJson<StoredMessage[]>(
-                        `/api/messages?channel=${WEB_CHANNEL}&chatId=${WEB_CHAT}&limit=80&includeRevoked=true`,
-                    ),
-                    readJson<ToolLogEntry[]>('/api/logs/tools?limit=12'),
-                    readJson<CronPayload>('/api/cron'),
-                ]);
-
-            startTransition(() => {
-                setStatus(statusPayload);
-                setMessages(messagePayload);
-                setToolLogs(toolLogPayload);
-                setCronState(cronPayload);
-            });
+            await Promise.all([
+                loadStatusPanel(),
+                loadMessagesPanel(),
+                loadToolLogsPanel(),
+                loadSchedulerPanel(),
+            ]);
             setDashboardError('');
         } catch (error) {
             setDashboardError(
@@ -287,10 +341,122 @@ export function App() {
 
         const interval = window.setInterval(() => {
             void loadDashboard();
-        }, 5_000);
+        }, 30_000);
 
         return () => {
             window.clearInterval(interval);
+        };
+    }, []);
+
+    useEffect(() => {
+        const source = new EventSource('/api/events');
+        const eventTypes = [
+            'ready',
+            'chat.run.started',
+            'chat.run.completed',
+            'chat.run.failed',
+            'chat.run.cancelled',
+            'message.created',
+            'message.revoked',
+            'background.task.started',
+            'background.task.completed',
+            'background.task.failed',
+            'scheduler.task.started',
+            'scheduler.task.completed',
+            'scheduler.task.failed',
+        ] as const;
+
+        const handleEvent = (nativeEvent: Event) => {
+            const messageEvent = nativeEvent as MessageEvent<string>;
+
+            try {
+                const event = JSON.parse(messageEvent.data) as RealtimeEvent;
+                setRecentEvents((current) => [event, ...current].slice(0, 10));
+
+                switch (event.type) {
+                    case 'ready':
+                        setRealtimeConnected(true);
+                        break;
+                    case 'chat.run.started': {
+                        const runId = readPayloadString(event.payload, 'runId');
+                        const channel = readPayloadString(event.payload, 'channel');
+                        const chatId = readPayloadString(event.payload, 'chatId');
+                        if (!runId || !channel || !chatId) {
+                            break;
+                        }
+
+                        setActiveRuns((current) =>
+                            upsertActiveRun(current, {
+                                runId,
+                                channel,
+                                chatId,
+                                startedAt: event.timestamp,
+                                status: 'running',
+                                executionMode: readPayloadString(
+                                    event.payload,
+                                    'executionMode',
+                                ),
+                            }),
+                        );
+                        break;
+                    }
+                    case 'chat.run.completed':
+                    case 'chat.run.failed':
+                    case 'chat.run.cancelled': {
+                        const runId = readPayloadString(event.payload, 'runId');
+                        if (runId) {
+                            setActiveRuns((current) =>
+                                current.filter((entry) => entry.runId !== runId),
+                            );
+                        }
+
+                        void loadMessagesPanel();
+                        void loadToolLogsPanel();
+                        break;
+                    }
+                    case 'message.created':
+                    case 'message.revoked': {
+                        const channel = readPayloadString(event.payload, 'channel');
+                        const chatId = readPayloadString(event.payload, 'chatId');
+                        if (channel === WEB_CHANNEL && chatId === WEB_CHAT) {
+                            void loadMessagesPanel();
+                        }
+                        void loadToolLogsPanel();
+                        break;
+                    }
+                    case 'background.task.started':
+                    case 'background.task.completed':
+                    case 'background.task.failed':
+                    case 'scheduler.task.started':
+                    case 'scheduler.task.completed':
+                    case 'scheduler.task.failed':
+                        void loadSchedulerPanel();
+                        void loadMessagesPanel();
+                        break;
+                    default:
+                        break;
+                }
+            } catch {
+                setRealtimeConnected(false);
+            }
+        };
+
+        source.addEventListener('open', () => {
+            setRealtimeConnected(true);
+        });
+        source.addEventListener('error', () => {
+            setRealtimeConnected(false);
+        });
+
+        for (const eventType of eventTypes) {
+            source.addEventListener(eventType, handleEvent);
+        }
+
+        return () => {
+            for (const eventType of eventTypes) {
+                source.removeEventListener(eventType, handleEvent);
+            }
+            source.close();
         };
     }, []);
 
@@ -447,7 +613,7 @@ export function App() {
                     <div className="panel section">
                         <div className="section-header">
                             <h2>Overview</h2>
-                            <span>{status ? 'Live' : 'Loading'}</span>
+                            <span>{realtimeConnected ? 'Realtime connected' : 'Realtime reconnecting'}</span>
                         </div>
                         <div className="stats">
                             <div className="stat-card">
@@ -462,11 +628,18 @@ export function App() {
                                 <label>Scheduled Tasks</label>
                                 <strong>{totalTasks}</strong>
                             </div>
+                            <div className="stat-card">
+                                <label>Active Runs</label>
+                                <strong>{activeRuns.length}</strong>
+                            </div>
                         </div>
                         <div className="hint-strip">
                             <div className="hint">@claude-code fix the failing test</div>
                             <div className="hint">/search --memory release plan</div>
                             <div className="hint">/search incident timeline</div>
+                            <div className="hint">
+                                stream: {realtimeConnected ? 'connected' : 'waiting'}
+                            </div>
                         </div>
                     </div>
 
@@ -503,6 +676,44 @@ export function App() {
                                     <p className="muted">{toolPolicySummary(agent)}</p>
                                 </article>
                             )) ?? <div className="empty">Loading agent availability…</div>}
+                        </div>
+                    </div>
+
+                    <div className="panel section">
+                        <div className="section-header">
+                            <h3>Realtime</h3>
+                            <span>{recentEvents.length} events tracked</span>
+                        </div>
+                        <div className="task-list">
+                            {activeRuns.length === 0 ? (
+                                <div className="empty">No active runs right now.</div>
+                            ) : (
+                                activeRuns.map((run) => (
+                                    <article className="task-card" key={run.runId}>
+                                        <strong>{run.runId.slice(0, 8)}</strong>
+                                        <div className="chip-row">
+                                            <span className="chip" data-tone="accent">
+                                                {run.status}
+                                            </span>
+                                            <span className="chip">
+                                                {run.channel}/{run.chatId}
+                                            </span>
+                                            {run.executionMode ? (
+                                                <span className="chip">{run.executionMode}</span>
+                                            ) : null}
+                                        </div>
+                                        <p className="muted">
+                                            Started: {formatTimestamp(run.startedAt)}
+                                        </p>
+                                    </article>
+                                ))
+                            )}
+                            {recentEvents.map((event) => (
+                                <article className="task-card" key={event.id}>
+                                    <strong>{event.type}</strong>
+                                    <p className="muted">{formatTimestamp(event.timestamp)}</p>
+                                </article>
+                            ))}
                         </div>
                     </div>
 

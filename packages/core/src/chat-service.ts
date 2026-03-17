@@ -4,6 +4,7 @@ import type { Logger } from 'pino';
 
 import type { WillClawConfig } from './config.js';
 import type { CommandCompletionMonitor } from './completion-monitor.js';
+import type { WillClawEventHub } from './events.js';
 import type { HistoryExporter } from './history-exporter.js';
 import type {
     InvalidSearchCommand,
@@ -86,6 +87,7 @@ export class ChatService {
         private readonly historyExporter: HistoryExporter | null,
         private readonly completionMonitor: CommandCompletionMonitor,
         private readonly logger: Logger,
+        private readonly eventHub: WillClawEventHub,
     ) { }
 
     async handleChat(request: ChatServiceRequest): Promise<ChatServiceResult> {
@@ -117,6 +119,7 @@ export class ChatService {
         const userMessage = this.memoryStore.saveMessage(userMessageInput);
 
         await this.exportMessage(userMessage);
+        this.publishMessageEvent('message.created', userMessage);
         this.memoryStore.saveCommandRun({
             runId,
             agent: builtinCommand ? 'willclaw-command' : 'orchestrator',
@@ -131,6 +134,16 @@ export class ChatService {
             userId,
             userMessageId: userMessage.id,
             cancelRequested: false,
+        });
+        this.eventHub.publish('chat.run.started', {
+            runId,
+            channel,
+            chatId,
+            userId,
+            userMessageId: userMessage.id,
+            executionMode: request.executionMode ?? 'foreground',
+            text: request.text,
+            builtinCommand: Boolean(builtinCommand),
         });
 
         try {
@@ -181,6 +194,7 @@ export class ChatService {
             );
 
             await this.exportMessage(assistantMessage);
+            this.publishMessageEvent('message.created', assistantMessage);
             const completedRunUpdate: Partial<Parameters<MemoryStore['saveCommandRun']>[0]> = {
                 agent: result.agent,
                 status: 'completed',
@@ -235,6 +249,17 @@ export class ChatService {
                 response.completionMessageId = completionMessageId;
             }
 
+            this.eventHub.publish('chat.run.completed', {
+                runId: result.runId,
+                channel,
+                chatId,
+                agent: result.agent,
+                durationMs: result.duration,
+                assistantMessageId: assistantMessage.id,
+                completionMessageId,
+                executionMode: request.executionMode ?? 'foreground',
+            });
+
             return response;
         } catch (error) {
             const cancelled = this.isRunCancelled(runId) || error instanceof RunCancelledError;
@@ -257,6 +282,16 @@ export class ChatService {
                     error: failureMessage,
                 },
                 cancelled ? 'Chat execution cancelled' : 'Chat execution failed',
+            );
+
+            this.eventHub.publish(
+                cancelled ? 'chat.run.cancelled' : 'chat.run.failed',
+                {
+                    runId,
+                    channel,
+                    chatId,
+                    error: failureMessage,
+                },
             );
 
             if (cancelled) {
@@ -412,6 +447,13 @@ export class ChatService {
             .filter((entry) => entry.status !== 'revoked')
             .map((entry) => entry.id);
         const revokedMessages = this.memoryStore.revokeMessages(toRevoke);
+        this.eventHub.publish('message.revoked', {
+            targetMessageId: message.id,
+            runId: message.runId ?? null,
+            revokedMessageIds: revokedMessages.map((entry) => entry.id),
+            channel: message.channel,
+            chatId: message.chatId,
+        });
         const noteMessage = await this.createSystemMessage({
             channel: message.channel,
             chatId: message.chatId,
@@ -555,6 +597,7 @@ export class ChatService {
         const message = this.memoryStore.saveMessage(systemMessageInput);
 
         await this.exportMessage(message);
+        this.publishMessageEvent('message.created', message);
         return message;
     }
 
@@ -587,11 +630,20 @@ export class ChatService {
         );
 
         await this.exportMessage(assistantMessage);
+        this.publishMessageEvent('message.created', assistantMessage);
         this.memoryStore.updateCommandRun(input.runId, {
             agent: 'willclaw',
             status: 'completed',
             durationMs: input.duration,
             stdout: input.content,
+        });
+        this.eventHub.publish('chat.run.completed', {
+            runId: input.runId,
+            channel: input.channel,
+            chatId: input.chatId,
+            agent: 'willclaw',
+            durationMs: input.duration,
+            assistantMessageId: assistantMessage.id,
         });
 
         const result: ChatServiceResult = {
@@ -620,5 +672,17 @@ export class ChatService {
         }
 
         await this.historyExporter.appendMessage(message);
+    }
+
+    private publishMessageEvent(type: string, message: StoredMessage): void {
+        this.eventHub.publish(type, {
+            message,
+            messageId: message.id,
+            runId: message.runId ?? null,
+            channel: message.channel,
+            chatId: message.chatId,
+            role: message.role,
+            status: message.status,
+        });
     }
 }

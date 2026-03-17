@@ -11,6 +11,7 @@ import { z } from 'zod';
 import type { ChatService } from './chat-service.js';
 import { RunCancelledError } from './chat-service.js';
 import type { WillClawConfig } from './config.js';
+import type { WillClawEvent, WillClawEventHub } from './events.js';
 import type { BackgroundTaskEngine } from './heartbeat.js';
 import type { MemoryStore } from './memory.js';
 import type { Orchestrator } from './orchestrator.js';
@@ -147,6 +148,7 @@ export interface WillClawRuntimeLike {
     config: WillClawConfig;
     paths: WillClawPaths;
     logger: Logger;
+    eventHub: WillClawEventHub;
     promptAssembler: PromptAssembler;
     orchestrator: Orchestrator;
     memoryStore: MemoryStore;
@@ -167,6 +169,10 @@ function shouldRequireAuth(config: WillClawConfig): boolean {
     return Boolean(
         config.server.auth_token && !config.server.auth_token.includes('${'),
     );
+}
+
+function encodeSseEvent(event: WillClawEvent): string {
+    return `id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
 export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
@@ -251,6 +257,76 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
 
     app.get('/api/agents', async (c) => {
         return c.json(await runtime.orchestrator.listAgents());
+    });
+
+    app.get('/api/events', (c) => {
+        const encoder = new TextEncoder();
+        let closed = false;
+        let keepalive: ReturnType<typeof setInterval> | undefined;
+        let unsubscribe: (() => void) | undefined;
+
+        const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+                const close = () => {
+                    if (closed) {
+                        return;
+                    }
+
+                    closed = true;
+                    if (keepalive) {
+                        clearInterval(keepalive);
+                    }
+                    if (unsubscribe) {
+                        unsubscribe();
+                    }
+                    controller.close();
+                };
+                const send = (event: WillClawEvent) => {
+                    if (closed) {
+                        return;
+                    }
+
+                    controller.enqueue(encoder.encode(encodeSseEvent(event)));
+                };
+
+                unsubscribe = runtime.eventHub.subscribe(send);
+                send({
+                    id: 'connected',
+                    type: 'ready',
+                    timestamp: new Date().toISOString(),
+                    payload: {
+                        serverTime: new Date().toISOString(),
+                    },
+                });
+                keepalive = setInterval(() => {
+                    if (closed) {
+                        return;
+                    }
+
+                    controller.enqueue(
+                        encoder.encode(`: keepalive ${new Date().toISOString()}\n\n`),
+                    );
+                }, 15_000);
+                c.req.raw.signal.addEventListener('abort', close, { once: true });
+            },
+            cancel() {
+                closed = true;
+                if (keepalive) {
+                    clearInterval(keepalive);
+                }
+                if (unsubscribe) {
+                    unsubscribe();
+                }
+            },
+        });
+
+        return new Response(stream, {
+            headers: {
+                'content-type': 'text/event-stream; charset=utf-8',
+                'cache-control': 'no-cache, no-transform',
+                connection: 'keep-alive',
+            },
+        });
     });
 
     app.get('/api/tools/catalog', (c) => {

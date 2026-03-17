@@ -1512,11 +1512,11 @@ daemon:
 - CLI 新增 `sync-skills`，可将生成的 skills 刷到任意 workspace 目录
 - 已有聊天渠道骨架：`ChannelManager + Telegram polling adapter`
 - 已有 Web UI 首版：React dashboard + Hono 静态托管
+- 已有 Web UI realtime：SSE 事件流 + active runs / recent events
 - 已有 macOS 登录自启：`launch-agent install / uninstall / status / print`
 
 尚未完成：
 
-- Web UI 前端与撤回交互层
 - Discord / Feishu 渠道
 - 完整 macOS GUI 自动化、OCR
 - 将 provider 安装与健康检查做成正式 setup 流程
@@ -1552,10 +1552,11 @@ daemon:
 - [x] Telegram 适配器
 - [ ] Web UI WebSocket handler
 - [x] Web UI 前端（React）
+- [x] Web UI SSE handler / realtime event stream
 - [x] **消息撤回 / 编辑 / 重发 UI / 渠道交互层**（Web 已接；Telegram / Discord 侧还没接完）
 - [x] **Tool Log Panel**（Web UI 工具日志面板）
 - [x] **Search Panel**（Web UI 搜索面板）
-- [ ] Agent 执行状态实时显示
+- [x] Agent 执行状态实时显示（SSE + active runs）
 - [ ] Markdown 渲染
 
 **交付**：Telegram + Web UI 聊天可用，支持撤回、日志查看、记忆搜索。
