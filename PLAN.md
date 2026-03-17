@@ -69,6 +69,19 @@
 | MCP 支持          |         ✅          |  ✅   |        ✅        |           ✅           |
 | 权限控制          |  ✅ (permissions)   |  ✅   | ✅ (tool policy) |     ✅ (yolo mode)     |
 
+### 明确不做
+
+- **不做通用 MCP 工具层给 CLI coding agent 用**：像 `Exec`、`Read`、`Write`、`Edit` 这种基础能力，Claude Code / Codex / OpenCode / Gemini CLI 自己已经有，不再重复实现一套给它们调用
+- **不把 WillClaw 做成另一个 coding agent**：WillClaw 负责调度、持久化、渠道、记忆、心跳、宿主能力，不负责替代现有 coding agent 的核心工作流
+- **不试图拦截 CLI agent 内部工具调用**：子进程里的 shell / 文件 / git 行为默认视为黑盒，不做代理层，不做嵌套 MCP
+
+### WillClaw 真正负责的能力
+
+- **编排层**：agent 路由、fallback、工作模式、workspace prompt 组装
+- **宿主层**：聊天渠道、heartbeat / cron、history export、记忆库、统一日志
+- **agent 原生没有的能力**：browser / screen / macOS desktop / 主动推送 / 长期记忆检索
+- **必要时给非 CLI backend 提供最小宿主能力**：例如 `direct-api` 这类后端如果没有本地能力，可以按策略暴露少量 hosted tool；但这不是 WillClaw 的主产品面
+
 | CLAUDE
 
 | 决策       | 选择                                   | 理由                                      |
@@ -96,6 +109,7 @@
 | Redis / PostgreSQL | SQLite 够用                  |
 | Docker             | 直接跑 macOS，需要系统级 API |
 | Electron           | 浏览器访问就够               |
+| 通用 Coding MCP    | CLI agent 已有，不重复实现   |
 
 ---
 
@@ -135,10 +149,10 @@
 │  ┌───────────────┐  ┌──────────────┐  ┌───────────────┐  │
 │  │ Heartbeat     │  │ Memory       │  │ Tools         │  │
 │  │ Engine        │  │ Store        │  │               │  │
-│  │ (1hr default) │  │ (SQLite +    │  │ File I/O      │  │
-│  │               │  │  Markdown)   │  │ Shell         │  │
+│  │ (1hr default) │  │ (SQLite +    │  │ Host Tools    │  │
+│  │               │  │  Markdown)   │  │ Browser       │  │
 │  │ + Cron        │  │              │  │ Screen        │  │
-│  │ Scheduler     │  │              │  │ Browser       │  │
+│  │ Scheduler     │  │              │  │ macOS / etc.  │  │
 │  └───────────────┘  └──────────────┘  └───────────────┘  │
 │                                                           │
 │  ┌───────────────┐  ┌──────────────┐  ┌───────────────┐  │
@@ -154,6 +168,8 @@
 │  └─────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────┘
 ```
+
+> 这里的 `Tools` 指 **WillClaw 宿主层能力**，不是给 Claude Code / Codex / Gemini 再造一层通用 `Exec/Read/Write` MCP。
 
 ---
 
@@ -1124,6 +1140,12 @@ export async function exec(command: string, options: ExecOptions): Promise<ExecR
 | `screen`     | `screenshot`, `click`, `type`, `hotkey` — 坐标、文本                  |
 | `browser`    | `navigate`, `click`, `type`, `screenshot`, `evaluate` — URL、selector |
 
+**边界说明**：
+
+- `shell` / `filesystem` 包装层主要是 **WillClaw 自己的宿主 runtime** 在用，用来做审计、history 导出、setup、运维任务
+- 对 `claude-code` / `codex` / `opencode` / `gemini` 这类本身已经有文件和终端能力的 agent，WillClaw 默认不再把这套基础能力作为新的 agent-facing 工具面暴露
+- 真正适合做成 hosted tool 的，是它们原生普遍没有的能力：`browser`、`screen`、`desktop`、`memory_search`、主动通知等
+
 **文本日志**（同时写入，供 tail -f）：
 
 ```
@@ -1464,12 +1486,16 @@ daemon:
 
 ## 12. 开发路线图
 
-### Progress Snapshot（2026-03-16）
+### Progress Snapshot（2026-03-17）
 
 已落地：
 
 - `Phase 0` 已完成：monorepo、TS/ESLint/Prettier、config schema、CLI 骨架、日志、workspace 初始化
 - `Phase 1` 已完成：Prompt Assembler、Agent 接口与多 backend、Orchestrator、SQLite memory、FTS5 搜索、History Exporter、Command Completion Monitor、Tool Execution Logger、Hono REST API
+- 已有运行生命周期后端：`run status / cancel / revoke / edit / resend`
+- 已有 heartbeat / cron 执行引擎 + `node-cron` 调度 + 手动触发 API
+- 已有 workspace memory 索引：消息搜索 + `MEMORY.md / memory/*.md` 文件搜索
+- 已有手动 memory maintenance API：daily note ensure/generate、`MEMORY.md` compact
 - 多 agent 已接入：`claude-code`、`codex`、`opencode`、`gemini`、`direct-api`、`acp`
 - Host tools 已接入分类：`native | hosted | disabled`
 - Host browser / screen 已改为 provider 优先级：
@@ -1482,8 +1508,7 @@ daemon:
 
 尚未完成：
 
-- Heartbeat / cron 真正执行引擎
-- Web UI 前端与消息撤回
+- Web UI 前端与撤回交互层
 - Discord / Feishu 渠道
 - 完整 macOS GUI 自动化、OCR
 - 将 provider 安装与健康检查做成正式 setup 流程
@@ -1509,6 +1534,7 @@ daemon:
 - [x] **Command Completion Monitor**：后台子进程退出 → 系统消息注入
 - [x] **History Exporter**：消息实时 append 到 historyMessages/\*.md（撤回追加 tombstone）
 - [x] Hono 服务器 + REST API（含 `/api/logs/tools`）
+- [x] Run lifecycle API：`/api/runs/:id`、`cancel`、`/api/messages/:id/revoke|edit|resend`
 
 **交付**：REST API 可用，工具日志可查，后台任务自动通知，对话自动保存 md。
 
@@ -1518,7 +1544,7 @@ daemon:
 - [x] Telegram 适配器
 - [ ] Web UI WebSocket handler
 - [ ] Web UI 前端（React）
-- [ ] **消息撤回 / 编辑 / 重发**（撤回后从搜索和 memory_search 中消失）
+- [ ] **消息撤回 / 编辑 / 重发 UI / 渠道交互层**（后端 API 已有；Web / Telegram / Discord 侧还没接完）
 - [ ] **Tool Log Panel**（Web UI 工具日志面板）
 - [ ] **Search Panel**（Web UI 搜索面板）
 - [ ] Agent 执行状态实时显示
@@ -1528,12 +1554,15 @@ daemon:
 
 ### Phase 3 — Heartbeat + Cron + Memory（2-3 天）
 
-- [ ] Heartbeat 引擎（默认1小时）
-- [ ] HEARTBEAT.md + PROJECT_HEARTBEAT.md 加载
-- [ ] node-cron 调度器
-- [ ] 每日笔记自动生成
-- [ ] MEMORY.md 自动更新
-- [ ] **Memory Search**：FTS5 搜索消息 + 文件 + daily notes
+- [x] Heartbeat 引擎（默认1小时）
+- [x] HEARTBEAT.md + PROJECT_HEARTBEAT.md 加载
+- [x] node-cron 调度器
+- [x] 手动触发 API：`/api/heartbeat/run`、`/api/cron`、`/api/cron/:name/run`
+- [x] workspace 文件索引：`MEMORY.md` + `memory/*.md`
+- [x] **Memory Search**：FTS5 搜索消息 + 文件 + daily notes（HTTP API）
+- [x] 手动 memory maintenance API：daily note ensure/generate、`MEMORY.md` compact
+- [ ] 每日笔记自动生成（定时/事件驱动）
+- [ ] MEMORY.md 自动更新（定时/事件驱动）
 - [ ] `/search` 命令 + Agent memory_search 工具
 - [ ] 推送到指定 Channel
 

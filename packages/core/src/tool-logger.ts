@@ -7,120 +7,120 @@ import type { Logger } from 'pino';
 export type ToolLogSuccess = boolean;
 
 export interface ToolLogEntry {
-  id: number;
-  timestamp: string;
-  tool: string;
-  action: string;
-  agent: string;
-  chatId?: string | undefined;
-  input: string;
-  output?: string | undefined;
-  exitCode?: number | undefined;
-  durationMs: number;
-  success: ToolLogSuccess;
-  error?: string | undefined;
+    id: number;
+    timestamp: string;
+    tool: string;
+    action: string;
+    agent: string;
+    chatId?: string | undefined;
+    input: string;
+    output?: string | undefined;
+    exitCode?: number | undefined;
+    durationMs: number;
+    success: ToolLogSuccess;
+    error?: string | undefined;
 }
 
 export interface ToolLogFilters {
-  limit?: number;
-  tool?: string;
-  action?: string;
-  agent?: string;
-  chatId?: string;
-  from?: string;
-  to?: string;
-  success?: boolean;
+    limit?: number;
+    tool?: string;
+    action?: string;
+    agent?: string;
+    chatId?: string;
+    from?: string;
+    to?: string;
+    success?: boolean;
 }
 
 export interface ToolLogStatsEntry {
-  tool: string;
-  action: string;
-  totalCount: number;
-  successCount: number;
-  failureCount: number;
-  avgDurationMs: number;
+    tool: string;
+    action: string;
+    totalCount: number;
+    successCount: number;
+    failureCount: number;
+    avgDurationMs: number;
 }
 
 export interface LogToolExecutionInput {
-  timestamp?: string;
-  tool: string;
-  action: string;
-  agent: string;
-  chatId?: string | undefined;
-  input: string;
-  output?: string | undefined;
-  exitCode?: number | undefined;
-  durationMs: number;
-  success: boolean;
-  error?: string | undefined;
+    timestamp?: string;
+    tool: string;
+    action: string;
+    agent: string;
+    chatId?: string | undefined;
+    input: string;
+    output?: string | undefined;
+    exitCode?: number | undefined;
+    durationMs: number;
+    success: boolean;
+    error?: string | undefined;
 }
 
 interface ToolLogRow {
-  id: number;
-  timestamp: string;
-  tool: string;
-  action: string;
-  agent: string;
-  chat_id: string | null;
-  input: string;
-  output: string | null;
-  exit_code: number | null;
-  duration_ms: number;
-  success: number;
-  error: string | null;
+    id: number;
+    timestamp: string;
+    tool: string;
+    action: string;
+    agent: string;
+    chat_id: string | null;
+    input: string;
+    output: string | null;
+    exit_code: number | null;
+    duration_ms: number;
+    success: number;
+    error: string | null;
 }
 
 function hydrateToolLog(row: ToolLogRow): ToolLogEntry {
-  const entry: ToolLogEntry = {
-    id: row.id,
-    timestamp: row.timestamp,
-    tool: row.tool,
-    action: row.action,
-    agent: row.agent,
-    input: row.input,
-    durationMs: row.duration_ms,
-    success: Boolean(row.success),
-  };
+    const entry: ToolLogEntry = {
+        id: row.id,
+        timestamp: row.timestamp,
+        tool: row.tool,
+        action: row.action,
+        agent: row.agent,
+        input: row.input,
+        durationMs: row.duration_ms,
+        success: Boolean(row.success),
+    };
 
-  if (row.chat_id) {
-    entry.chatId = row.chat_id;
-  }
+    if (row.chat_id) {
+        entry.chatId = row.chat_id;
+    }
 
-  if (row.output) {
-    entry.output = row.output;
-  }
+    if (row.output) {
+        entry.output = row.output;
+    }
 
-  if (row.exit_code != null) {
-    entry.exitCode = row.exit_code;
-  }
+    if (row.exit_code != null) {
+        entry.exitCode = row.exit_code;
+    }
 
-  if (row.error) {
-    entry.error = row.error;
-  }
+    if (row.error) {
+        entry.error = row.error;
+    }
 
-  return entry;
+    return entry;
 }
 
 export class ToolExecutionLogger {
-  private readonly db: Database.Database;
+    private readonly db: Database.Database;
 
-  constructor(
-    databasePath: string,
-    private readonly appLogger: Logger,
-    private readonly maxOutputChars: number,
-  ) {
-    mkdirSync(path.dirname(databasePath), { recursive: true });
-    this.db = new Database(databasePath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('busy_timeout = 5000');
-    this.initializeSchema();
-  }
+    constructor(
+        databasePath: string,
+        private readonly appLogger: Logger,
+        private readonly maxOutputChars: number,
+    ) {
+        mkdirSync(path.dirname(databasePath), { recursive: true });
+        this.db = new Database(databasePath);
+        this.db.pragma('journal_mode = WAL');
+        this.db.pragma('busy_timeout = 5000');
+        this.initializeSchema();
+    }
 
-  log(input: LogToolExecutionInput): ToolLogEntry {
-    const timestamp = input.timestamp ?? new Date().toISOString();
-    const output = this.truncate(input.output);
-    const error = this.truncate(input.error);
-    const statement = this.db.prepare(`
+    log(input: LogToolExecutionInput): ToolLogEntry {
+        const timestamp = input.timestamp ?? new Date().toISOString();
+        const output = this.truncate(input.output);
+        const error = this.truncate(input.error);
+        const statement = this.db.prepare(`
       INSERT INTO tool_logs (
         timestamp,
         tool,
@@ -147,103 +147,103 @@ export class ToolExecutionLogger {
         @error
       )
     `);
-    const result = statement.run({
-      timestamp,
-      tool: input.tool,
-      action: input.action,
-      agent: input.agent,
-      chatId: input.chatId ?? null,
-      input: input.input,
-      output: output ?? null,
-      exitCode: input.exitCode ?? null,
-      durationMs: input.durationMs,
-      success: input.success ? 1 : 0,
-      error: error ?? null,
-    });
-    const entry = this.getById(Number(result.lastInsertRowid));
+        const result = statement.run({
+            timestamp,
+            tool: input.tool,
+            action: input.action,
+            agent: input.agent,
+            chatId: input.chatId ?? null,
+            input: input.input,
+            output: output ?? null,
+            exitCode: input.exitCode ?? null,
+            durationMs: input.durationMs,
+            success: input.success ? 1 : 0,
+            error: error ?? null,
+        });
+        const entry = this.getById(Number(result.lastInsertRowid));
 
-    if (!entry) {
-      throw new Error('Tool log insert succeeded but row could not be loaded.');
+        if (!entry) {
+            throw new Error('Tool log insert succeeded but row could not be loaded.');
+        }
+
+        if (entry.success) {
+            this.appLogger.info(
+                {
+                    tool: entry.tool,
+                    action: entry.action,
+                    agent: entry.agent,
+                    chatId: entry.chatId,
+                    input: entry.input,
+                    output: entry.output,
+                    exitCode: entry.exitCode,
+                    durationMs: entry.durationMs,
+                    success: entry.success,
+                },
+                'Tool executed',
+            );
+        } else {
+            this.appLogger.warn(
+                {
+                    tool: entry.tool,
+                    action: entry.action,
+                    agent: entry.agent,
+                    chatId: entry.chatId,
+                    input: entry.input,
+                    output: entry.output,
+                    exitCode: entry.exitCode,
+                    durationMs: entry.durationMs,
+                    success: entry.success,
+                    error: entry.error,
+                },
+                'Tool execution failed',
+            );
+        }
+
+        return entry;
     }
 
-    if (entry.success) {
-      this.appLogger.info(
-        {
-          tool: entry.tool,
-          action: entry.action,
-          agent: entry.agent,
-          chatId: entry.chatId,
-          input: entry.input,
-          output: entry.output,
-          exitCode: entry.exitCode,
-          durationMs: entry.durationMs,
-          success: entry.success,
-        },
-        'Tool executed',
-      );
-    } else {
-      this.appLogger.warn(
-        {
-          tool: entry.tool,
-          action: entry.action,
-          agent: entry.agent,
-          chatId: entry.chatId,
-          input: entry.input,
-          output: entry.output,
-          exitCode: entry.exitCode,
-          durationMs: entry.durationMs,
-          success: entry.success,
-          error: entry.error,
-        },
-        'Tool execution failed',
-      );
-    }
+    list(filters?: ToolLogFilters): ToolLogEntry[] {
+        const clauses = ['1 = 1'];
+        const params: Record<string, unknown> = {
+            limit: filters?.limit ?? 100,
+        };
 
-    return entry;
-  }
+        if (filters?.tool) {
+            clauses.push('tool = @tool');
+            params.tool = filters.tool;
+        }
 
-  list(filters?: ToolLogFilters): ToolLogEntry[] {
-    const clauses = ['1 = 1'];
-    const params: Record<string, unknown> = {
-      limit: filters?.limit ?? 100,
-    };
+        if (filters?.action) {
+            clauses.push('action = @action');
+            params.action = filters.action;
+        }
 
-    if (filters?.tool) {
-      clauses.push('tool = @tool');
-      params.tool = filters.tool;
-    }
+        if (filters?.agent) {
+            clauses.push('agent = @agent');
+            params.agent = filters.agent;
+        }
 
-    if (filters?.action) {
-      clauses.push('action = @action');
-      params.action = filters.action;
-    }
+        if (filters?.chatId) {
+            clauses.push('chat_id = @chatId');
+            params.chatId = filters.chatId;
+        }
 
-    if (filters?.agent) {
-      clauses.push('agent = @agent');
-      params.agent = filters.agent;
-    }
+        if (filters?.from) {
+            clauses.push('timestamp >= @from');
+            params.from = filters.from;
+        }
 
-    if (filters?.chatId) {
-      clauses.push('chat_id = @chatId');
-      params.chatId = filters.chatId;
-    }
+        if (filters?.to) {
+            clauses.push('timestamp <= @to');
+            params.to = filters.to;
+        }
 
-    if (filters?.from) {
-      clauses.push('timestamp >= @from');
-      params.from = filters.from;
-    }
+        if (filters?.success !== undefined) {
+            clauses.push('success = @success');
+            params.success = filters.success ? 1 : 0;
+        }
 
-    if (filters?.to) {
-      clauses.push('timestamp <= @to');
-      params.to = filters.to;
-    }
-
-    if (filters?.success !== undefined) {
-      clauses.push('success = @success');
-      params.success = filters.success ? 1 : 0;
-    }
-
-    const statement = this.db.prepare(`
+        const statement = this.db.prepare(`
       SELECT *
       FROM tool_logs
       WHERE ${clauses.join(' AND ')}
@@ -251,18 +251,18 @@ export class ToolExecutionLogger {
       LIMIT @limit
     `);
 
-    return (statement.all(params) as ToolLogRow[]).map(hydrateToolLog);
-  }
+        return (statement.all(params) as ToolLogRow[]).map(hydrateToolLog);
+    }
 
-  getById(id: number): ToolLogEntry | null {
-    const statement = this.db.prepare('SELECT * FROM tool_logs WHERE id = ?');
-    const row = statement.get(id) as ToolLogRow | undefined;
+    getById(id: number): ToolLogEntry | null {
+        const statement = this.db.prepare('SELECT * FROM tool_logs WHERE id = ?');
+        const row = statement.get(id) as ToolLogRow | undefined;
 
-    return row ? hydrateToolLog(row) : null;
-  }
+        return row ? hydrateToolLog(row) : null;
+    }
 
-  getStats(): ToolLogStatsEntry[] {
-    const statement = this.db.prepare(`
+    getStats(): ToolLogStatsEntry[] {
+        const statement = this.db.prepare(`
       SELECT
         tool,
         action,
@@ -275,43 +275,43 @@ export class ToolExecutionLogger {
       ORDER BY tool, action
     `);
 
-    return (
-      statement.all() as Array<{
-        tool: string;
-        action: string;
-        total_count: number;
-        success_count: number;
-        failure_count: number;
-        avg_duration_ms: number | null;
-      }>
-    ).map((row) => ({
-      tool: row.tool,
-      action: row.action,
-      totalCount: row.total_count,
-      successCount: row.success_count,
-      failureCount: row.failure_count,
-      avgDurationMs: row.avg_duration_ms ?? 0,
-    }));
-  }
-
-  close(): void {
-    this.db.close();
-  }
-
-  private truncate(value: string | undefined): string | undefined {
-    if (!value) {
-      return undefined;
+        return (
+            statement.all() as Array<{
+                tool: string;
+                action: string;
+                total_count: number;
+                success_count: number;
+                failure_count: number;
+                avg_duration_ms: number | null;
+            }>
+        ).map((row) => ({
+            tool: row.tool,
+            action: row.action,
+            totalCount: row.total_count,
+            successCount: row.success_count,
+            failureCount: row.failure_count,
+            avgDurationMs: row.avg_duration_ms ?? 0,
+        }));
     }
 
-    if (value.length <= this.maxOutputChars) {
-      return value;
+    close(): void {
+        this.db.close();
     }
 
-    return `${value.slice(0, this.maxOutputChars)}\n...[truncated]`;
-  }
+    private truncate(value: string | undefined): string | undefined {
+        if (!value) {
+            return undefined;
+        }
 
-  private initializeSchema(): void {
-    this.db.exec(`
+        if (value.length <= this.maxOutputChars) {
+            return value;
+        }
+
+        return `${value.slice(0, this.maxOutputChars)}\n...[truncated]`;
+    }
+
+    private initializeSchema(): void {
+        this.db.exec(`
       CREATE TABLE IF NOT EXISTS tool_logs (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp   TEXT NOT NULL,
@@ -331,5 +331,5 @@ export class ToolExecutionLogger {
       CREATE INDEX IF NOT EXISTS idx_tool_logs_tool ON tool_logs(tool, action);
       CREATE INDEX IF NOT EXISTS idx_tool_logs_agent ON tool_logs(agent);
     `);
-  }
+    }
 }

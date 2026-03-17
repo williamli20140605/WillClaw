@@ -1,16 +1,16 @@
 {
-  "name": "@willclaw/cli",
-  "version": "0.1.0",
-  "type": "module",
-  "bin": {
-    "willclaw": "dist/index.js"
-  },
-  "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc -b --pretty false"
-  },
-  "dependencies": {
-    "@willclaw/core": "workspace:*",
-    "commander": "^13.1.0"
-  }
+    "name": "@willclaw/cli",
+    "version": "0.1.0",
+    "type": "module",
+    "bin": {
+        "willclaw": "dist/index.js"
+    },
+    "scripts": {
+        "build": "tsc -b",
+        "typecheck": "tsc -b --pretty false"
+    },
+    "dependencies": {
+        "@willclaw/core": "workspace:*",
+        "commander": "^13.1.0"
+    }
 }

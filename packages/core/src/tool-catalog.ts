@@ -5,118 +5,118 @@ import { resolveAgentToolPolicy } from './tool-policy.js';
 export type HostToolCategory = 'terminal' | 'filesystem' | 'browser' | 'screen';
 
 export interface HostToolCatalogEntry {
-  name: HostToolName;
-  category: HostToolCategory;
-  label: string;
-  description: string;
-  globalEnabled: boolean;
-  providers?: string[];
-  preferredProvider?: string;
-  fallbackProvider?: string;
-  mode?: AgentToolMode;
-  hostedEnabled?: boolean;
+    name: HostToolName;
+    category: HostToolCategory;
+    label: string;
+    description: string;
+    globalEnabled: boolean;
+    providers?: string[];
+    preferredProvider?: string;
+    fallbackProvider?: string;
+    mode?: AgentToolMode;
+    hostedEnabled?: boolean;
 }
 
 interface HostToolMetadata {
-  category: HostToolCategory;
-  label: string;
-  description: string;
+    category: HostToolCategory;
+    label: string;
+    description: string;
 }
 
 const HOST_TOOL_METADATA: Record<HostToolName, HostToolMetadata> = {
-  shell: {
-    category: 'terminal',
-    label: 'Terminal',
-    description: 'Run shell commands on the WillClaw host machine.',
-  },
-  filesystem: {
-    category: 'filesystem',
-    label: 'Filesystem',
-    description: 'Read and write files from the WillClaw host workspace.',
-  },
-  browser: {
-    category: 'browser',
-    label: 'Browser',
-    description: 'Open URLs in a host browser managed by WillClaw.',
-  },
-  screen: {
-    category: 'screen',
-    label: 'Screen',
-    description: 'Capture host screenshots from the WillClaw machine.',
-  },
+    shell: {
+        category: 'terminal',
+        label: 'Terminal',
+        description: 'Run shell commands on the WillClaw host machine.',
+    },
+    filesystem: {
+        category: 'filesystem',
+        label: 'Filesystem',
+        description: 'Read and write files from the WillClaw host workspace.',
+    },
+    browser: {
+        category: 'browser',
+        label: 'Browser',
+        description: 'Open URLs in a host browser managed by WillClaw.',
+    },
+    screen: {
+        category: 'screen',
+        label: 'Screen',
+        description: 'Capture host screenshots from the WillClaw machine.',
+    },
 };
 
 function isToolGloballyEnabled(
-  config: WillClawConfig,
-  toolName: HostToolName,
+    config: WillClawConfig,
+    toolName: HostToolName,
 ): boolean {
-  if (toolName === 'browser') {
-    return config.tools.browser.providers.length > 0;
-  }
+    if (toolName === 'browser') {
+        return config.tools.browser.providers.length > 0;
+    }
 
-  if (toolName === 'screen') {
-    return (
-      config.tools.screen.enabled && config.tools.screen.providers.length > 0
-    );
-  }
+    if (toolName === 'screen') {
+        return (
+            config.tools.screen.enabled && config.tools.screen.providers.length > 0
+        );
+    }
 
-  return true;
+    return true;
 }
 
 function getConfiguredProviders(
-  config: WillClawConfig,
-  toolName: HostToolName,
+    config: WillClawConfig,
+    toolName: HostToolName,
 ): string[] {
-  if (toolName === 'browser') {
-    return [...config.tools.browser.providers];
-  }
+    if (toolName === 'browser') {
+        return [...config.tools.browser.providers];
+    }
 
-  if (toolName === 'screen') {
-    return [...config.tools.screen.providers];
-  }
+    if (toolName === 'screen') {
+        return [...config.tools.screen.providers];
+    }
 
-  return [];
+    return [];
 }
 
 export function listHostTools(
-  config: WillClawConfig,
-  agentName?: string,
+    config: WillClawConfig,
+    agentName?: string,
 ): HostToolCatalogEntry[] {
-  const agentPolicy = agentName
-    ? resolveAgentToolPolicy(config, agentName)
-    : undefined;
+    const agentPolicy = agentName
+        ? resolveAgentToolPolicy(config, agentName)
+        : undefined;
 
-  return HOST_TOOL_NAMES.map((toolName) => {
-    const metadata = HOST_TOOL_METADATA[toolName];
-    const globalEnabled = isToolGloballyEnabled(config, toolName);
-    const entry: HostToolCatalogEntry = {
-      name: toolName,
-      category: metadata.category,
-      label: metadata.label,
-      description: metadata.description,
-      globalEnabled,
-    };
-    const providers = getConfiguredProviders(config, toolName);
+    return HOST_TOOL_NAMES.map((toolName) => {
+        const metadata = HOST_TOOL_METADATA[toolName];
+        const globalEnabled = isToolGloballyEnabled(config, toolName);
+        const entry: HostToolCatalogEntry = {
+            name: toolName,
+            category: metadata.category,
+            label: metadata.label,
+            description: metadata.description,
+            globalEnabled,
+        };
+        const providers = getConfiguredProviders(config, toolName);
 
-    if (providers.length > 0) {
-      entry.providers = providers;
-      const preferredProvider = providers[0];
-      const fallbackProvider = providers[1];
+        if (providers.length > 0) {
+            entry.providers = providers;
+            const preferredProvider = providers[0];
+            const fallbackProvider = providers[1];
 
-      if (preferredProvider) {
-        entry.preferredProvider = preferredProvider;
-      }
+            if (preferredProvider) {
+                entry.preferredProvider = preferredProvider;
+            }
 
-      if (fallbackProvider) {
-        entry.fallbackProvider = fallbackProvider;
-      }
-    }
+            if (fallbackProvider) {
+                entry.fallbackProvider = fallbackProvider;
+            }
+        }
 
-    if (agentPolicy) {
-      entry.mode = agentPolicy[toolName];
-      entry.hostedEnabled = agentPolicy[toolName] === 'hosted' && globalEnabled;
-    }
+        if (agentPolicy) {
+            entry.mode = agentPolicy[toolName];
+            entry.hostedEnabled = agentPolicy[toolName] === 'hosted' && globalEnabled;
+        }
 
-    return entry;
-  });
+        return entry;
+    });
 }

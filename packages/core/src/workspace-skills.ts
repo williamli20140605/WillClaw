@@ -2,30 +2,30 @@ import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 interface GeneratedWorkspaceSkill {
-  slug: string;
-  title: string;
-  description: string;
-  body: string;
+    slug: string;
+    title: string;
+    description: string;
+    body: string;
 }
 
 export interface SyncWorkspaceSkillsOptions {
-  workspaceDir: string;
-  overwrite?: boolean;
+    workspaceDir: string;
+    overwrite?: boolean;
 }
 
 export interface SyncWorkspaceSkillsResult {
-  workspaceDir: string;
-  skillsDir: string;
-  filesWritten: string[];
+    workspaceDir: string;
+    skillsDir: string;
+    filesWritten: string[];
 }
 
 const GENERATED_SKILLS: GeneratedWorkspaceSkill[] = [
-  {
-    slug: 'willclaw-self',
-    title: 'willclaw-self',
-    description:
-      'Use when the task is about WillClaw itself: identity, current scope, repo structure, or deciding whether a feature already exists.',
-    body: `# WillClaw Self
+    {
+        slug: 'willclaw-self',
+        title: 'willclaw-self',
+        description:
+            'Use when the task is about WillClaw itself: identity, current scope, repo structure, or deciding whether a feature already exists.',
+        body: `# WillClaw Self
 
 You are WillClaw: a lightweight orchestration layer around external coding agents.
 
@@ -41,13 +41,15 @@ Current implemented scope:
 - command completion monitor
 - Hono REST API
 - audited host tools
+- run lifecycle API
+- heartbeat + cron runner
+- workspace memory indexing, daily notes, and MEMORY.md compaction
 - Telegram polling channel adapter
 - LaunchAgent login auto-start commands
 
 Current non-goals or not-yet-done areas:
-- full heartbeat engine and cron runner
 - full Web UI frontend
-- revoke/edit/resend message flow
+- channel-facing undo/edit UX
 - full macOS automation beyond minimal host tools
 
 Design rules:
@@ -55,13 +57,13 @@ Design rules:
 - prefer agent-native abilities before adding hosted duplicates
 - preserve auditability for any WillClaw-owned action
 - when code and docs disagree, trust code first and then sync the workspace skills`,
-  },
-  {
-    slug: 'willclaw-runtime',
-    title: 'willclaw-runtime',
-    description:
-      'Use when working on startup, config, home/workspace layout, CLI commands, or runtime wiring.',
-    body: `# Runtime
+    },
+    {
+        slug: 'willclaw-runtime',
+        title: 'willclaw-runtime',
+        description:
+            'Use when working on startup, config, home/workspace layout, CLI commands, or runtime wiring.',
+        body: `# Runtime
 
 WillClaw currently boots a local home with:
 - \`config.yaml\`
@@ -81,18 +83,21 @@ Important runtime pieces:
 - tool logger
 - shell/filesystem/browser/screen host tools
 - channel manager
+- background task engine
+- scheduler
+- workspace memory manager
 
 Notes:
 - \`init\` should be safe and repeatable
 - generated workspace skills are seeded automatically for the default workspace
 - explicit skill sync can target another workspace directory when needed`,
-  },
-  {
-    slug: 'willclaw-channels',
-    title: 'willclaw-channels',
-    description:
-      'Use when working on chat channel adapters, Telegram polling, inbound message gating, or reply delivery.',
-    body: `# Channels
+    },
+    {
+        slug: 'willclaw-channels',
+        title: 'willclaw-channels',
+        description:
+            'Use when working on chat channel adapters, Telegram polling, inbound message gating, or reply delivery.',
+        body: `# Channels
 
 Current channel work is gateway-style: one WillClaw process owns runtime state, channel adapters, chat handling, and persistence.
 
@@ -114,13 +119,13 @@ Design rules borrowed from OpenClaw-style gateways:
 - each chat keeps its own \`channel + chatId\`
 - access control should happen before model work
 - one broken channel must not stop the whole WillClaw process`,
-  },
-  {
-    slug: 'willclaw-routing',
-    title: 'willclaw-routing',
-    description:
-      'Use when changing agent selection, prompt assembly, backend adapters, routing, or tool exposure policy.',
-    body: `# Routing And Agents
+    },
+    {
+        slug: 'willclaw-routing',
+        title: 'willclaw-routing',
+        description:
+            'Use when changing agent selection, prompt assembly, backend adapters, routing, or tool exposure policy.',
+        body: `# Routing And Agents
 
 Supported agents:
 - \`claude-code\`
@@ -145,13 +150,13 @@ Default intent:
 - CLI coding agents keep terminal/filesystem as \`native\`
 - API-driven agents use hosted terminal/filesystem when enabled
 - browser/screen stay explicitly policy-driven instead of assumed`,
-  },
-  {
-    slug: 'willclaw-memory-history',
-    title: 'willclaw-memory-history',
-    description:
-      'Use when changing chat persistence, message search, history export, completion notifications, or command-run auditing.',
-    body: `# Memory And History
+    },
+    {
+        slug: 'willclaw-memory-history',
+        title: 'willclaw-memory-history',
+        description:
+            'Use when changing chat persistence, message search, history export, completion notifications, or command-run auditing.',
+        body: `# Memory And History
 
 Message flow:
 1. save the user message in SQLite
@@ -164,22 +169,31 @@ Message flow:
 Implemented storage:
 - \`messages\` table
 - \`command_runs\` table
+- \`indexed_files\` table
 - FTS5-backed message search
+- FTS5-backed workspace file search for \`MEMORY.md\` and \`memory/*.md\`
 
 Implemented exports:
 - \`historyMessages/<channel>/<date>_<chat>.md\`
+
+Implemented memory maintenance:
+- run lifecycle state: cancel / revoke / edit / resend
+- workspace memory reindex
+- daily note ensure + generate
+- MEMORY.md compact/update
+- combined memory search across messages and indexed files
 
 Important constraints:
 - history markdown is a human-readable export, not the source of truth
 - SQLite is the source of truth for search and future revoke semantics
 - completion messages are intended for background work, not duplicate foreground echoes`,
-  },
-  {
-    slug: 'willclaw-host-tools',
-    title: 'willclaw-host-tools',
-    description:
-      'Use when working on host-side tools, tool execution logging, or browser/screen provider selection.',
-    body: `# Host Tools
+    },
+    {
+        slug: 'willclaw-host-tools',
+        title: 'willclaw-host-tools',
+        description:
+            'Use when working on host-side tools, tool execution logging, or browser/screen provider selection.',
+        body: `# Host Tools
 
 Current hosted tools:
 - shell
@@ -199,13 +213,13 @@ Behavior notes:
 - CLI agents with native terminal/filesystem should not receive duplicate hosted copies
 - browser and screen are host capabilities; they are not assumed to exist inside every backend session
 - for provider-specific workflows, read the narrower \`agent-browser\` or \`peekaboo\` skill`,
-  },
-  {
-    slug: 'agent-browser',
-    title: 'agent-browser',
-    description:
-      'Use when WillClaw needs structured hosted browser automation, provider installation steps, or browser smoke tests.',
-    body: `# Agent Browser
+    },
+    {
+        slug: 'agent-browser',
+        title: 'agent-browser',
+        description:
+            'Use when WillClaw needs structured hosted browser automation, provider installation steps, or browser smoke tests.',
+        body: `# Agent Browser
 
 Use this skill when WillClaw needs a real hosted browser provider instead of the coarse \`system-open\` fallback.
 
@@ -237,13 +251,13 @@ Notes:
 - \`agent-browser install\` downloads Chrome for Testing
 - if the binary is missing or the command fails, WillClaw may fallback to \`system-open\`
 - prefer this skill whenever the task needs more than “just open a URL”`,
-  },
-  {
-    slug: 'peekaboo',
-    title: 'peekaboo',
-    description:
-      'Use when WillClaw needs hosted screen capture, macOS GUI inspection, provider installation, or screenshot smoke tests.',
-    body: `# Peekaboo
+    },
+    {
+        slug: 'peekaboo',
+        title: 'peekaboo',
+        description:
+            'Use when WillClaw needs hosted screen capture, macOS GUI inspection, provider installation, or screenshot smoke tests.',
+        body: `# Peekaboo
 
 Use this skill when WillClaw needs a real macOS screen provider instead of the raw \`screencapture\` fallback.
 
@@ -272,13 +286,13 @@ Notes:
 - requires Screen Recording and Accessibility permissions
 - treat it as the first-choice screen provider on macOS
 - if the binary is missing or the command fails, WillClaw may fallback to \`screencapture\``,
-  },
-  {
-    slug: 'willclaw-http-api',
-    title: 'willclaw-http-api',
-    description:
-      'Use when editing the Hono server, REST routes, status payloads, search endpoints, or tool-log endpoints.',
-    body: `# HTTP API
+    },
+    {
+        slug: 'willclaw-http-api',
+        title: 'willclaw-http-api',
+        description:
+            'Use when editing the Hono server, REST routes, status payloads, search endpoints, or tool-log endpoints.',
+        body: `# HTTP API
 
 Current REST surface includes:
 - \`/health\`
@@ -287,8 +301,21 @@ Current REST surface includes:
 - \`/api/tools/catalog\`
 - \`/api/prompt-preview\`
 - \`/api/chat\`
+- \`/api/runs/:runId\`
+- \`/api/runs/:runId/cancel\`
 - \`/api/messages\`
+- \`/api/messages/:id/revoke\`
+- \`/api/messages/:id/edit\`
+- \`/api/messages/:id/resend\`
 - \`/api/search\`
+- \`/api/memory/search\`
+- \`/api/memory/reindex\`
+- \`/api/memory/daily-note/ensure\`
+- \`/api/memory/daily-note/generate\`
+- \`/api/memory/compact\`
+- \`/api/cron\`
+- \`/api/heartbeat/run\`
+- \`/api/cron/:taskName/run\`
 - \`/api/logs/tools\`
 - \`/api/logs/tools/stats\`
 - \`/api/logs/tools/:id\`
@@ -303,35 +330,35 @@ When adding endpoints:
 - keep responses simple JSON
 - prefer runtime-backed data over duplicated caches
 - preserve auth checks for \`/api/*\` when a bearer token is configured`,
-  },
+    },
 ];
 
 async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
+    try {
+        await access(targetPath);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 async function writeGeneratedFile(
-  targetPath: string,
-  content: string,
-  overwrite: boolean,
-  filesWritten: string[],
+    targetPath: string,
+    content: string,
+    overwrite: boolean,
+    filesWritten: string[],
 ): Promise<void> {
-  if (!overwrite && (await pathExists(targetPath))) {
-    return;
-  }
+    if (!overwrite && (await pathExists(targetPath))) {
+        return;
+    }
 
-  await mkdir(path.dirname(targetPath), { recursive: true });
-  await writeFile(targetPath, content, 'utf8');
-  filesWritten.push(targetPath);
+    await mkdir(path.dirname(targetPath), { recursive: true });
+    await writeFile(targetPath, content, 'utf8');
+    filesWritten.push(targetPath);
 }
 
 function renderSkillMarkdown(skill: GeneratedWorkspaceSkill): string {
-  return `---
+    return `---
 name: ${skill.title}
 description: ${skill.description}
 ---
@@ -341,7 +368,7 @@ ${skill.body}
 }
 
 function renderSkillsOverview(): string {
-  return `# WillClaw Skills
+    return `# WillClaw Skills
 
 你是 WillClaw。
 
@@ -366,54 +393,54 @@ function renderSkillsOverview(): string {
 }
 
 function renderSkillsIndex(workspaceDir: string): string {
-  const lines = ['# WillClaw Skills Index', '', '按需加载下面这些 skill：', ''];
+    const lines = ['# WillClaw Skills Index', '', '按需加载下面这些 skill：', ''];
 
-  for (const skill of GENERATED_SKILLS) {
-    lines.push(`## ${skill.title}`);
-    lines.push(
-      `- Path: ${path.join(workspaceDir, 'skills', skill.slug, 'SKILL.md')}`,
-    );
-    lines.push(`- Use when: ${skill.description}`);
-    lines.push('');
-  }
+    for (const skill of GENERATED_SKILLS) {
+        lines.push(`## ${skill.title}`);
+        lines.push(
+            `- Path: ${path.join(workspaceDir, 'skills', skill.slug, 'SKILL.md')}`,
+        );
+        lines.push(`- Use when: ${skill.description}`);
+        lines.push('');
+    }
 
-  return lines.join('\n').trimEnd();
+    return lines.join('\n').trimEnd();
 }
 
 export async function syncWillClawWorkspaceSkills(
-  options: SyncWorkspaceSkillsOptions,
+    options: SyncWorkspaceSkillsOptions,
 ): Promise<SyncWorkspaceSkillsResult> {
-  const workspaceDir = path.resolve(options.workspaceDir);
-  const skillsDir = path.join(workspaceDir, 'skills');
-  const overwrite = options.overwrite ?? true;
-  const filesWritten: string[] = [];
+    const workspaceDir = path.resolve(options.workspaceDir);
+    const skillsDir = path.join(workspaceDir, 'skills');
+    const overwrite = options.overwrite ?? true;
+    const filesWritten: string[] = [];
 
-  await mkdir(skillsDir, { recursive: true });
-  await writeGeneratedFile(
-    path.join(workspaceDir, 'SKILLS.md'),
-    renderSkillsOverview(),
-    overwrite,
-    filesWritten,
-  );
-  await writeGeneratedFile(
-    path.join(workspaceDir, 'SKILLS_INDEX.md'),
-    renderSkillsIndex(workspaceDir),
-    overwrite,
-    filesWritten,
-  );
-
-  for (const skill of GENERATED_SKILLS) {
+    await mkdir(skillsDir, { recursive: true });
     await writeGeneratedFile(
-      path.join(skillsDir, skill.slug, 'SKILL.md'),
-      renderSkillMarkdown(skill),
-      overwrite,
-      filesWritten,
+        path.join(workspaceDir, 'SKILLS.md'),
+        renderSkillsOverview(),
+        overwrite,
+        filesWritten,
     );
-  }
+    await writeGeneratedFile(
+        path.join(workspaceDir, 'SKILLS_INDEX.md'),
+        renderSkillsIndex(workspaceDir),
+        overwrite,
+        filesWritten,
+    );
 
-  return {
-    workspaceDir,
-    skillsDir,
-    filesWritten,
-  };
+    for (const skill of GENERATED_SKILLS) {
+        await writeGeneratedFile(
+            path.join(skillsDir, skill.slug, 'SKILL.md'),
+            renderSkillMarkdown(skill),
+            overwrite,
+            filesWritten,
+        );
+    }
+
+    return {
+        workspaceDir,
+        skillsDir,
+        filesWritten,
+    };
 }

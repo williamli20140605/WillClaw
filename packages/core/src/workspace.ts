@@ -4,41 +4,41 @@ import { displayPath, getWillClawPaths, type WillClawPaths } from './paths.js';
 import { syncWillClawWorkspaceSkills } from './workspace-skills.js';
 
 const REQUIRED_DIRECTORIES = [
-  (paths: WillClawPaths) => paths.homeDir,
-  (paths: WillClawPaths) => paths.workspaceDir,
-  (paths: WillClawPaths) => paths.workspaceMemoryDir,
-  (paths: WillClawPaths) => paths.workspaceSkillsDir,
-  (paths: WillClawPaths) => paths.historyDir,
-  (paths: WillClawPaths) => `${paths.historyDir}/telegram`,
-  (paths: WillClawPaths) => `${paths.historyDir}/discord`,
-  (paths: WillClawPaths) => `${paths.historyDir}/web`,
-  (paths: WillClawPaths) => `${paths.historyDir}/cron`,
-  (paths: WillClawPaths) => paths.logsDir,
-  (paths: WillClawPaths) => paths.dataDir,
+    (paths: WillClawPaths) => paths.homeDir,
+    (paths: WillClawPaths) => paths.workspaceDir,
+    (paths: WillClawPaths) => paths.workspaceMemoryDir,
+    (paths: WillClawPaths) => paths.workspaceSkillsDir,
+    (paths: WillClawPaths) => paths.historyDir,
+    (paths: WillClawPaths) => `${paths.historyDir}/telegram`,
+    (paths: WillClawPaths) => `${paths.historyDir}/discord`,
+    (paths: WillClawPaths) => `${paths.historyDir}/web`,
+    (paths: WillClawPaths) => `${paths.historyDir}/cron`,
+    (paths: WillClawPaths) => paths.logsDir,
+    (paths: WillClawPaths) => paths.dataDir,
 ];
 
 export interface InitWorkspaceResult {
-  paths: WillClawPaths;
-  createdConfig: boolean;
+    paths: WillClawPaths;
+    createdConfig: boolean;
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
+    try {
+        await access(targetPath);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function renderDefaultConfig(paths: WillClawPaths): string {
-  const historyDir = displayPath(paths.historyDir);
-  const appLogPath = displayPath(paths.appLogPath);
-  const toolLogDbPath = displayPath(paths.toolLogDbPath);
-  const envFilePath = displayPath(paths.envFilePath);
-  const archiveDir = displayPath(`${paths.homeDir}/archive`);
+    const historyDir = displayPath(paths.historyDir);
+    const appLogPath = displayPath(paths.appLogPath);
+    const toolLogDbPath = displayPath(paths.toolLogDbPath);
+    const envFilePath = displayPath(paths.envFilePath);
+    const archiveDir = displayPath(`${paths.homeDir}/archive`);
 
-  return `server:
+    return `server:
   host: "127.0.0.1"
   port: 8420
   auth_token: "\${WILLCLAW_AUTH_TOKEN}"
@@ -206,27 +206,27 @@ daemon:
 }
 
 export async function initializeWillClawHome(options?: {
-  homeDir?: string;
-  forceConfig?: boolean;
+    homeDir?: string;
+    forceConfig?: boolean;
 }): Promise<InitWorkspaceResult> {
-  const paths = getWillClawPaths(options?.homeDir);
+    const paths = getWillClawPaths(options?.homeDir);
 
-  for (const toDirectory of REQUIRED_DIRECTORIES) {
-    await mkdir(toDirectory(paths), { recursive: true });
-  }
+    for (const toDirectory of REQUIRED_DIRECTORIES) {
+        await mkdir(toDirectory(paths), { recursive: true });
+    }
 
-  const configExists = await pathExists(paths.configPath);
-  if (!configExists || options?.forceConfig) {
-    await writeFile(paths.configPath, renderDefaultConfig(paths), 'utf8');
-  }
+    const configExists = await pathExists(paths.configPath);
+    if (!configExists || options?.forceConfig) {
+        await writeFile(paths.configPath, renderDefaultConfig(paths), 'utf8');
+    }
 
-  await syncWillClawWorkspaceSkills({
-    workspaceDir: paths.workspaceDir,
-    overwrite: false,
-  });
+    await syncWillClawWorkspaceSkills({
+        workspaceDir: paths.workspaceDir,
+        overwrite: false,
+    });
 
-  return {
-    paths,
-    createdConfig: !configExists || Boolean(options?.forceConfig),
-  };
+    return {
+        paths,
+        createdConfig: !configExists || Boolean(options?.forceConfig),
+    };
 }
