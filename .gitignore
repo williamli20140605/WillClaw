@@ -1,4 +1,4 @@
 node_modules/
-dist/
-*.tsbuildinfo
+**/dist/
+.playwright-cli/
 .DS_Store

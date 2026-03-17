@@ -1502,6 +1502,7 @@ daemon:
 - 已有手动 memory maintenance API：daily note ensure/generate、`MEMORY.md` compact
 - 已有自动 memory maintenance：scheduler 可定时跑 daily note / `MEMORY.md` compact
 - 已有用户侧 `/search` 命令 + agent 侧 `memory_search` 桥接
+- 已有后台任务 channel fanout：heartbeat / cron 结果可推送到指定 channel
 - 多 agent 已接入：`claude-code`、`codex`、`opencode`、`gemini`、`direct-api`、`acp`
 - Host tools 已接入分类：`native | hosted | disabled`
 - Host browser / screen 已改为 provider 优先级：
@@ -1510,6 +1511,7 @@ daemon:
 - workspace 现在会自动生成 `SKILLS.md`、`SKILLS_INDEX.md` 和 `skills/*`
 - CLI 新增 `sync-skills`，可将生成的 skills 刷到任意 workspace 目录
 - 已有聊天渠道骨架：`ChannelManager + Telegram polling adapter`
+- 已有 Web UI 首版：React dashboard + Hono 静态托管
 - 已有 macOS 登录自启：`launch-agent install / uninstall / status / print`
 
 尚未完成：
@@ -1549,10 +1551,10 @@ daemon:
 - [x] Channel 接口
 - [x] Telegram 适配器
 - [ ] Web UI WebSocket handler
-- [ ] Web UI 前端（React）
-- [ ] **消息撤回 / 编辑 / 重发 UI / 渠道交互层**（后端 API 已有；Web / Telegram / Discord 侧还没接完）
-- [ ] **Tool Log Panel**（Web UI 工具日志面板）
-- [ ] **Search Panel**（Web UI 搜索面板）
+- [x] Web UI 前端（React）
+- [x] **消息撤回 / 编辑 / 重发 UI / 渠道交互层**（Web 已接；Telegram / Discord 侧还没接完）
+- [x] **Tool Log Panel**（Web UI 工具日志面板）
+- [x] **Search Panel**（Web UI 搜索面板）
 - [ ] Agent 执行状态实时显示
 - [ ] Markdown 渲染
 
@@ -1570,7 +1572,7 @@ daemon:
 - [x] 每日笔记自动生成（scheduler）
 - [x] MEMORY.md 自动更新（scheduler）
 - [x] `/search` 命令 + Agent memory_search 桥接
-- [ ] 推送到指定 Channel
+- [x] 推送到指定 Channel（heartbeat / cron）
 
 **交付**：Agent 主动执行、维护记忆、可搜索全部历史。
 

@@ -2,17 +2,25 @@ import cron, { type ScheduledTask } from 'node-cron';
 import type { Logger } from 'pino';
 
 import type { WillClawConfig } from './config.js';
+import type { BackgroundTaskEngine, BackgroundTaskResult } from './heartbeat.js';
 import type {
-    BackgroundTaskEngine,
-    BackgroundTaskKind,
-    BackgroundTaskResult,
-} from './heartbeat.js';
+    GeneratedDailyNoteResult,
+    MemoryCompactResult,
+    WorkspaceMemoryManager,
+} from './workspace-memory.js';
+
+export type SchedulerTaskKind = 'heartbeat' | 'cron' | 'maintenance';
+export type SchedulerTaskRunResult =
+    | BackgroundTaskResult
+    | GeneratedDailyNoteResult
+    | MemoryCompactResult;
 
 interface RegisteredTask {
     id: string;
-    kind: BackgroundTaskKind;
+    kind: SchedulerTaskKind;
     name: string;
     schedule: string;
+    runner: () => Promise<SchedulerTaskRunResult>;
     job: ScheduledTask;
     running: boolean;
     lastRunAt: string | undefined;
@@ -22,13 +30,17 @@ interface RegisteredTask {
 
 export interface SchedulerTaskStatus {
     id: string;
-    kind: BackgroundTaskKind;
+    kind: SchedulerTaskKind;
     name: string;
     schedule: string;
     running: boolean;
     lastRunAt?: string;
     lastResult?: 'completed' | 'failed' | 'suppressed';
     lastError?: string;
+}
+
+function isSuppressed(result: SchedulerTaskRunResult): boolean {
+    return 'suppressed' in result && result.suppressed === true;
 }
 
 export class WillClawScheduler {
@@ -38,6 +50,7 @@ export class WillClawScheduler {
     constructor(
         private readonly config: WillClawConfig,
         private readonly engine: BackgroundTaskEngine,
+        private readonly workspaceMemoryManager: WorkspaceMemoryManager,
         private readonly logger: Logger,
     ) { }
 
@@ -49,11 +62,43 @@ export class WillClawScheduler {
         this.started = true;
 
         if (this.config.heartbeat.enabled) {
-            this.registerTask('heartbeat', 'heartbeat', this.config.heartbeat.interval);
+            this.registerTask({
+                id: 'heartbeat',
+                kind: 'heartbeat',
+                name: 'heartbeat',
+                schedule: this.config.heartbeat.interval,
+                runner: async () => await this.engine.runHeartbeat(),
+            });
         }
 
         for (const [name, entry] of Object.entries(this.config.cron)) {
-            this.registerTask(`cron:${name}`, name, entry.schedule);
+            this.registerTask({
+                id: `cron:${name}`,
+                kind: 'cron',
+                name,
+                schedule: entry.schedule,
+                runner: async () => await this.engine.runCronTask(name),
+            });
+        }
+
+        if (this.config.memory.daily_note.enabled) {
+            this.registerTask({
+                id: 'maintenance:daily_note',
+                kind: 'maintenance',
+                name: 'daily_note',
+                schedule: this.config.memory.daily_note.schedule,
+                runner: async () => await this.workspaceMemoryManager.runScheduledDailyNote(),
+            });
+        }
+
+        if (this.config.memory.compact.enabled) {
+            this.registerTask({
+                id: 'maintenance:compact',
+                kind: 'maintenance',
+                name: 'compact',
+                schedule: this.config.memory.compact.schedule,
+                runner: async () => await this.workspaceMemoryManager.runScheduledMemoryCompact(),
+            });
         }
     }
 
@@ -76,12 +121,15 @@ export class WillClawScheduler {
                 schedule: task.schedule,
                 running: task.running,
             };
+
             if (task.lastRunAt) {
                 status.lastRunAt = task.lastRunAt;
             }
+
             if (task.lastResult) {
                 status.lastResult = task.lastResult;
             }
+
             if (task.lastError) {
                 status.lastError = task.lastError;
             }
@@ -90,61 +138,58 @@ export class WillClawScheduler {
         });
     }
 
-    async runHeartbeatNow(): Promise<BackgroundTaskResult> {
+    async runHeartbeatNow(): Promise<SchedulerTaskRunResult> {
         return await this.runTask('heartbeat');
     }
 
-    async runCronNow(name: string): Promise<BackgroundTaskResult> {
+    async runCronNow(name: string): Promise<SchedulerTaskRunResult> {
         return await this.runTask(`cron:${name}`);
     }
 
-    private registerTask(
-        id: string,
-        name: string,
-        schedule: string,
-    ): void {
-        if (!cron.validate(schedule)) {
+    async runMaintenanceNow(name: 'daily_note' | 'compact'): Promise<SchedulerTaskRunResult> {
+        return await this.runTask(`maintenance:${name}`);
+    }
+
+    private registerTask(input: {
+        id: string;
+        kind: SchedulerTaskKind;
+        name: string;
+        schedule: string;
+        runner: () => Promise<SchedulerTaskRunResult>;
+    }): void {
+        if (!cron.validate(input.schedule)) {
             this.logger.error(
                 {
-                    taskId: id,
-                    schedule,
+                    taskId: input.id,
+                    schedule: input.schedule,
                 },
                 'Skipping invalid cron schedule',
             );
             return;
         }
 
-        const kind: BackgroundTaskKind = id === 'heartbeat' ? 'heartbeat' : 'cron';
         const task: RegisteredTask = {
-            id,
-            kind,
-            name,
-            schedule,
+            id: input.id,
+            kind: input.kind,
+            name: input.name,
+            schedule: input.schedule,
+            runner: input.runner,
             running: false,
             lastRunAt: undefined,
             lastResult: undefined,
             lastError: undefined,
-            job: cron.schedule(schedule, () => {
-                void this.runTask(id);
+            job: cron.schedule(input.schedule, () => {
+                void this.runTask(input.id);
             }),
         };
 
-        this.tasks.set(id, task);
+        this.tasks.set(input.id, task);
     }
 
-    private async runTask(id: string): Promise<BackgroundTaskResult> {
+    private async runTask(id: string): Promise<SchedulerTaskRunResult> {
         const task = this.tasks.get(id);
         if (!task) {
-            if (id === 'heartbeat') {
-                return await this.runDetachedHeartbeat();
-            }
-
-            const name = id.replace(/^cron:/, '');
-            if (this.config.cron[name]) {
-                return await this.runDetachedCron(name);
-            }
-
-            throw new Error(`Unknown scheduled task: ${id}`);
+            return await this.runDetachedTask(id);
         }
 
         if (task.running) {
@@ -156,11 +201,8 @@ export class WillClawScheduler {
         task.lastError = undefined;
 
         try {
-            const result =
-                task.kind === 'heartbeat'
-                    ? await this.engine.runHeartbeat()
-                    : await this.engine.runCronTask(task.name);
-            task.lastResult = result.suppressed ? 'suppressed' : 'completed';
+            const result = await task.runner();
+            task.lastResult = isSuppressed(result) ? 'suppressed' : 'completed';
             return result;
         } catch (error) {
             task.lastResult = 'failed';
@@ -172,11 +214,28 @@ export class WillClawScheduler {
         }
     }
 
-    private async runDetachedHeartbeat(): Promise<BackgroundTaskResult> {
-        return await this.engine.runHeartbeat();
-    }
+    private async runDetachedTask(id: string): Promise<SchedulerTaskRunResult> {
+        if (id === 'heartbeat') {
+            return await this.engine.runHeartbeat();
+        }
 
-    private async runDetachedCron(name: string): Promise<BackgroundTaskResult> {
-        return await this.engine.runCronTask(name);
+        if (id.startsWith('cron:')) {
+            const name = id.replace(/^cron:/, '');
+            if (!this.config.cron[name]) {
+                throw new Error(`Unknown scheduled task: ${id}`);
+            }
+
+            return await this.engine.runCronTask(name);
+        }
+
+        if (id === 'maintenance:daily_note') {
+            return await this.workspaceMemoryManager.runScheduledDailyNote();
+        }
+
+        if (id === 'maintenance:compact') {
+            return await this.workspaceMemoryManager.runScheduledMemoryCompact();
+        }
+
+        throw new Error(`Unknown scheduled task: ${id}`);
     }
 }

@@ -46,10 +46,11 @@ Current implemented scope:
 - workspace memory indexing, daily notes, and MEMORY.md compaction
 - scheduled daily note + scheduled MEMORY.md compact maintenance
 - Telegram polling channel adapter
+- React-based Web UI served from the Hono server root
 - LaunchAgent login auto-start commands
 
 Current non-goals or not-yet-done areas:
-- full Web UI frontend
+- WebSocket/live streaming Web UI
 - channel-facing undo/edit UX
 - full macOS automation beyond minimal host tools
 
@@ -87,6 +88,7 @@ Important runtime pieces:
 - background task engine
 - scheduler
 - workspace memory manager
+- bundled web UI assets served from the HTTP server root
 
 Notes:
 - \`init\` should be safe and repeatable
@@ -106,6 +108,7 @@ Implemented today:
 - channel adapter interface
 - channel manager
 - Telegram polling adapter
+- outbound channel notifications for heartbeat / cron results
 
 Telegram behavior:
 - reads token from the configured env var
@@ -114,6 +117,7 @@ Telegram behavior:
 - private chats are handled directly
 - inbound text is sent to ChatService
 - assistant replies are pushed back to Telegram
+- background task notifications can be pushed to Telegram via the channel manager
 
 Design rules borrowed from OpenClaw-style gateways:
 - channel enablement is config-driven
@@ -150,6 +154,7 @@ Tool exposure policy:
 Default intent:
 - CLI coding agents keep terminal/filesystem as \`native\`
 - API-driven agents use hosted terminal/filesystem when enabled
+- WillClaw-owned \`memory_search\` is a hosted shell capability, not a generic MCP layer
 - browser/screen stay explicitly policy-driven instead of assumed`,
     },
     {
@@ -293,6 +298,37 @@ Notes:
 - if the binary is missing or the command fails, WillClaw may fallback to \`screencapture\``,
     },
     {
+        slug: 'willclaw-web-ui',
+        title: 'willclaw-web-ui',
+        description:
+            'Use when working on the React front end, static bundle build, dashboard layout, or browser-facing chat/search/task flows.',
+        body: `# Web UI
+
+Current implementation:
+- React frontend in \`packages/web\`
+- esbuild bundle output copied to \`packages/web/dist\`
+- Hono serves the bundle at \`/\`, \`/styles.css\`, \`/favicon.svg\`, and \`/assets/*\`
+
+Current UI scope:
+- web-channel chat composer
+- message timeline for \`channel=web\`
+- revoke / edit / resend controls for user messages
+- memory search panel
+- scheduler trigger buttons
+- recent tool log panel
+- agent and host-tool status summary
+
+Current limits:
+- polling refresh, not WebSocket streaming
+- no markdown rendering yet
+- no dedicated run-progress stream yet
+
+When changing this area:
+- keep the UI shell-centric, not IDE-centric
+- prefer existing REST APIs before inventing new ones
+- preserve mobile usability and intentional visual direction`,
+    },
+    {
         slug: 'willclaw-http-api',
         title: 'willclaw-http-api',
         description:
@@ -327,6 +363,7 @@ Current REST surface includes:
 - \`/api/logs/tools/:id\`
 
 Behavior notes:
+- \`/\` now serves the bundled Web UI when \`packages/web/dist\` exists
 - \`/api/chat\` now handles built-in \`/search\` without dispatching to a coding agent
 - agent-facing \`memory_search\` is exposed as a narrow WillClaw bridge, not a generic MCP tool layer
 

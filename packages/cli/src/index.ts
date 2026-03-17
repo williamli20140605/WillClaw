@@ -107,6 +107,7 @@ program
         }
 
         const startedChannels = await channelManager.start();
+        runtime.backgroundTaskEngine.setChannelNotifier(channelManager);
         runtime.scheduler.start();
         if (startedChannels.length > 0) {
             console.log(`Channels: ${startedChannels.join(', ')}`);
@@ -119,6 +120,7 @@ program
         const shutdown = async (signal: string) => {
             console.log(`Received ${signal}, shutting down...`);
             runtime.scheduler.stop();
+            runtime.backgroundTaskEngine.setChannelNotifier(null);
             await channelManager.stop();
             await server.close();
             process.exit(0);

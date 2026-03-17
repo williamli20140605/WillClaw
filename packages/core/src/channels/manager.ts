@@ -4,10 +4,10 @@ import type { ChatService } from '../chat-service.js';
 import type { WillClawConfig } from '../config.js';
 
 import { TelegramChannel } from './telegram.js';
-import type { ChannelAdapter } from './types.js';
+import type { ChannelAdapter, ChannelNotifier } from './types.js';
 
-export class ChannelManager {
-    private readonly adapters: ChannelAdapter[] = [];
+export class ChannelManager implements ChannelNotifier {
+    private readonly adapters = new Map<string, ChannelAdapter>();
 
     constructor(
         private readonly config: WillClawConfig,
@@ -16,25 +16,24 @@ export class ChannelManager {
         private readonly workingDirectory: string,
     ) {
         if (this.config.channels.telegram.enabled) {
-            this.adapters.push(
-                new TelegramChannel(
-                    this.config.channels.telegram,
-                    this.chatService,
-                    this.logger,
-                    this.workingDirectory,
-                ),
+            const adapter = new TelegramChannel(
+                this.config.channels.telegram,
+                this.chatService,
+                this.logger,
+                this.workingDirectory,
             );
+            this.adapters.set(adapter.name, adapter);
         }
     }
 
     getConfiguredChannels(): string[] {
-        return this.adapters.map((adapter) => adapter.name);
+        return [...this.adapters.values()].map((adapter) => adapter.name);
     }
 
     async start(): Promise<string[]> {
         const started: string[] = [];
 
-        for (const adapter of this.adapters) {
+        for (const adapter of this.adapters.values()) {
             try {
                 if (await adapter.start()) {
                     started.push(adapter.name);
@@ -54,8 +53,22 @@ export class ChannelManager {
     }
 
     async stop(): Promise<void> {
-        for (const adapter of [...this.adapters].reverse()) {
+        for (const adapter of [...this.adapters.values()].reverse()) {
             await adapter.stop();
         }
+    }
+
+    async sendMessage(
+        channel: string,
+        chatId: string,
+        text: string,
+    ): Promise<boolean> {
+        const adapter = this.adapters.get(channel);
+        if (!adapter) {
+            return false;
+        }
+
+        await adapter.sendMessage(chatId, text);
+        return true;
     }
 }

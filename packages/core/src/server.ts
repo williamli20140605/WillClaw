@@ -1,4 +1,7 @@
+import { access, readFile } from 'node:fs/promises';
 import type { Server } from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
@@ -84,12 +87,61 @@ const generateDailyNoteSchema = z
     .optional();
 
 const compactMemorySchema = z
-    .object({
-        agentName: z.string().optional(),
-        workingDirectory: z.string().optional(),
-        limit: z.coerce.number().int().positive().optional(),
-    })
-    .optional();
+  .object({
+    agentName: z.string().optional(),
+    workingDirectory: z.string().optional(),
+    limit: z.coerce.number().int().positive().optional(),
+  })
+  .optional();
+
+const WEB_DIST_DIR = fileURLToPath(
+    new URL('../../web/dist', import.meta.url),
+);
+
+async function pathExists(targetPath: string): Promise<boolean> {
+    try {
+        await access(targetPath);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function getAssetContentType(targetPath: string): string {
+    const extension = path.extname(targetPath).toLowerCase();
+
+    switch (extension) {
+        case '.html':
+            return 'text/html; charset=utf-8';
+        case '.css':
+            return 'text/css; charset=utf-8';
+        case '.js':
+            return 'application/javascript; charset=utf-8';
+        case '.json':
+        case '.map':
+            return 'application/json; charset=utf-8';
+        case '.svg':
+            return 'image/svg+xml';
+        default:
+            return 'application/octet-stream';
+    }
+}
+
+async function readWebAsset(
+    assetPath: string,
+): Promise<{ content: string; contentType: string } | null> {
+    const normalized = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, '');
+    const filePath = path.join(WEB_DIST_DIR, normalized);
+
+    if (!(await pathExists(filePath))) {
+        return null;
+    }
+
+    return {
+        content: await readFile(filePath, 'utf8'),
+        contentType: getAssetContentType(filePath),
+    };
+}
 
 export interface WillClawRuntimeLike {
     config: WillClawConfig;
@@ -136,6 +188,51 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
 
     app.get('/health', (c) => {
         return c.json({ status: 'ok' });
+    });
+
+    app.get('/', async (c) => {
+        const asset = await readWebAsset('index.html');
+        if (!asset) {
+            return c.text('WillClaw Web UI is not built yet. Run `pnpm build`.', 503);
+        }
+
+        return c.body(asset.content, 200, {
+            'content-type': asset.contentType,
+            'cache-control': 'no-cache',
+        });
+    });
+
+    app.get('/styles.css', async (c) => {
+        const asset = await readWebAsset('styles.css');
+        if (!asset) {
+            return c.text('Not found', 404);
+        }
+
+        return c.body(asset.content, 200, {
+            'content-type': asset.contentType,
+        });
+    });
+
+    app.get('/favicon.svg', async (c) => {
+        const asset = await readWebAsset('favicon.svg');
+        if (!asset) {
+            return c.text('Not found', 404);
+        }
+
+        return c.body(asset.content, 200, {
+            'content-type': asset.contentType,
+        });
+    });
+
+    app.get('/assets/*', async (c) => {
+        const asset = await readWebAsset(c.req.path.replace(/^\//, ''));
+        if (!asset) {
+            return c.text('Not found', 404);
+        }
+
+        return c.body(asset.content, 200, {
+            'content-type': asset.contentType,
+        });
     });
 
     app.get('/api/status', async (c) => {

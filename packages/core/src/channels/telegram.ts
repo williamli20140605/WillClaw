@@ -212,7 +212,7 @@ export class TelegramChannel implements ChannelAdapter {
         }
 
         if (text === '/status') {
-            await this.sendMessage(token, message.chat.id, 'WillClaw is online.');
+            await this.sendTelegramMessage(token, message.chat.id, 'WillClaw is online.');
             return;
         }
 
@@ -229,7 +229,7 @@ export class TelegramChannel implements ChannelAdapter {
             });
 
             for (const chunk of splitTelegramText(result.content)) {
-                await this.sendMessage(token, message.chat.id, chunk);
+                await this.sendTelegramMessage(token, message.chat.id, chunk);
             }
         } catch (error) {
             this.logger.error(
@@ -242,11 +242,23 @@ export class TelegramChannel implements ChannelAdapter {
                 'Telegram chat handling failed',
             );
             await this.sendMessage(
-                token,
-                message.chat.id,
+                String(message.chat.id),
                 `WillClaw error: ${error instanceof Error ? error.message : 'Unknown failure'
                 }`,
             );
+        }
+    }
+
+    async sendMessage(chatId: string, text: string): Promise<void> {
+        const token = this.getToken();
+        if (!token) {
+            throw new Error(
+                `Telegram token env ${this.config.token_env} is not available.`,
+            );
+        }
+
+        for (const chunk of splitTelegramText(text)) {
+            await this.sendTelegramMessage(token, chatId, chunk);
         }
     }
 
@@ -322,9 +334,9 @@ export class TelegramChannel implements ChannelAdapter {
         }
     }
 
-    private async sendMessage(
+    private async sendTelegramMessage(
         token: string,
-        chatId: number,
+        chatId: number | string,
         text: string,
     ): Promise<void> {
         await this.apiRequest(token, 'sendMessage', {

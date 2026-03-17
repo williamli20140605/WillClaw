@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Logger } from 'pino';
 
 import type { AgentBackend } from './agents/types.js';
+import type { ChannelNotifier } from './channels/types.js';
 import type { WillClawConfig } from './config.js';
 import type { HistoryExporter } from './history-exporter.js';
 import type { MemoryStore, StoredMessage } from './memory.js';
@@ -20,6 +21,7 @@ export interface BackgroundTaskResult {
     content: string;
     durationMs: number;
     suppressed: boolean;
+    notified?: boolean;
     messageId?: number;
     exitCode?: number;
 }
@@ -68,6 +70,8 @@ function resolveTarget(
 }
 
 export class BackgroundTaskEngine {
+    private channelNotifier: ChannelNotifier | null = null;
+
     constructor(
         private readonly config: WillClawConfig,
         private readonly promptAssembler: PromptAssembler,
@@ -76,6 +80,10 @@ export class BackgroundTaskEngine {
         private readonly historyExporter: HistoryExporter | null,
         private readonly logger: Logger,
     ) { }
+
+    setChannelNotifier(notifier: ChannelNotifier | null): void {
+        this.channelNotifier = notifier;
+    }
 
     listCronTasks(): Array<{
         name: string;
@@ -260,6 +268,11 @@ export class BackgroundTaskEngine {
                     },
                 });
                 result.messageId = storedMessage.id;
+                result.notified = await this.notifyChannel(
+                    target.channel,
+                    target.chatId,
+                    response.content,
+                );
             }
 
             this.logger.info(
@@ -283,16 +296,18 @@ export class BackgroundTaskEngine {
                 status: 'failed',
                 stderr: detail,
             });
+            const failureMessage = `${input.kind} task failed: ${detail}`;
             await this.saveSystemMessage({
                 channel: target.channel,
                 chatId: target.chatId,
-                content: `${input.kind} task failed: ${detail}`,
+                content: failureMessage,
                 metadata: {
                     subtype: `${input.kind}_error`,
                     taskName: input.taskName,
                     agent: input.agentName,
                 },
             });
+            await this.notifyChannel(target.channel, target.chatId, failureMessage);
             this.logger.error(
                 {
                     kind: input.kind,
@@ -334,5 +349,29 @@ export class BackgroundTaskEngine {
         }
 
         return message;
+    }
+
+    private async notifyChannel(
+        channel: string,
+        chatId: string,
+        content: string,
+    ): Promise<boolean> {
+        if (!this.channelNotifier || channel === 'web') {
+            return false;
+        }
+
+        try {
+            return await this.channelNotifier.sendMessage(channel, chatId, content);
+        } catch (error) {
+            this.logger.warn(
+                {
+                    channel,
+                    chatId,
+                    error: error instanceof Error ? error.message : String(error),
+                },
+                'Background task notification failed',
+            );
+            return false;
+        }
     }
 }
