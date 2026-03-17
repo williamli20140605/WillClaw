@@ -3,6 +3,10 @@ import { randomUUID } from 'node:crypto';
 import type { Logger } from 'pino';
 
 import type { WillClawConfig } from './config.js';
+import {
+    renderMemorySearchBridgeInstructions,
+    type MemorySearchService,
+} from './memory-search.js';
 import type { PromptAssembler, PromptSection } from './prompt.js';
 import type { WillClawPaths } from './paths.js';
 import {
@@ -113,6 +117,7 @@ export class Orchestrator {
         private readonly paths: WillClawPaths,
         private readonly promptAssembler: PromptAssembler,
         private readonly agents: Map<string, AgentBackend>,
+        private readonly memorySearchService: MemorySearchService,
         private readonly logger: Logger,
     ) { }
 
@@ -216,12 +221,25 @@ export class Orchestrator {
             );
 
             try {
+                const memorySearchEnabled = this.canUseHostedTool(
+                    agentName,
+                    'memory_search',
+                );
                 this.activeRuns.set(agentRequest.runId, {
                     agent: agentName,
                     backend,
                     startedAt: Date.now(),
                 });
-                const response = await backend.execute(agentRequest);
+                const response = await this.executeAgent(agentName, backend, {
+                    ...agentRequest,
+                    systemPrompt: memorySearchEnabled
+                        ? `${agentRequest.systemPrompt}\n\n## Hosted Memory Search\n${renderMemorySearchBridgeInstructions()}`
+                        : agentRequest.systemPrompt,
+                    memorySearch: {
+                        enabled: memorySearchEnabled,
+                        maxCalls: 3,
+                    },
+                });
                 const result: RunChatResult = {
                     runId: agentRequest.runId,
                     agent: response.agent,
@@ -273,6 +291,101 @@ export class Orchestrator {
         throw new Error(
             `All agent attempts failed: ${attemptedErrors.join('; ') || 'no available agents'}`,
         );
+    }
+
+    private async executeAgent(
+        agentName: string,
+        backend: AgentBackend,
+        request: AgentRequest,
+    ) {
+        if (!request.memorySearch?.enabled) {
+            return await backend.execute(request);
+        }
+
+        const memorySearchHistory = [...request.history];
+        const usedQueries = new Set<string>();
+        const memorySearches: Array<{
+            query: string;
+            messageCount: number;
+            fileCount: number;
+        }> = [];
+
+        for (let callIndex = 0; callIndex <= request.memorySearch.maxCalls; callIndex += 1) {
+            const response = await backend.execute({
+                ...request,
+                history: memorySearchHistory,
+            });
+            const toolRequest = this.memorySearchService.parseBridgeRequest(
+                response.content,
+            );
+            if (!toolRequest) {
+                if (memorySearches.length === 0) {
+                    return response;
+                }
+
+                return {
+                    ...response,
+                    metadata: {
+                        ...(response.metadata ?? {}),
+                        hostedMemorySearches: memorySearches,
+                    },
+                };
+            }
+
+            const searchKey = JSON.stringify(toolRequest);
+            if (
+                callIndex === request.memorySearch.maxCalls ||
+                usedQueries.has(searchKey)
+            ) {
+                return {
+                    ...response,
+                    content:
+                        'WillClaw memory_search could not complete because the same lookup was requested repeatedly.',
+                    metadata: {
+                        ...(response.metadata ?? {}),
+                        hostedMemorySearches: memorySearches,
+                        memorySearchBridge: 'exhausted',
+                    },
+                };
+            }
+
+            usedQueries.add(searchKey);
+            const searchResult = this.memorySearchService.search({
+                ...toolRequest,
+                excludeRunId: request.runId,
+            });
+
+            memorySearches.push({
+                query: toolRequest.query,
+                messageCount: searchResult.messages.length,
+                fileCount: searchResult.files.length,
+            });
+            memorySearchHistory.push(
+                {
+                    role: 'assistant',
+                    content: response.content.trim(),
+                },
+                {
+                    role: 'system',
+                    content: this.memorySearchService.formatToolResult(
+                        toolRequest,
+                        searchResult,
+                    ),
+                },
+            );
+            this.logger.info(
+                {
+                    runId: request.runId,
+                    agent: agentName,
+                    query: toolRequest.query,
+                    messageCount: searchResult.messages.length,
+                    fileCount: searchResult.files.length,
+                },
+                'Served hosted memory_search to agent',
+            );
+        }
+
+        return await backend.execute(request);
     }
 
     getAgentToolPolicy(agentName: string): ResolvedAgentToolPolicy {

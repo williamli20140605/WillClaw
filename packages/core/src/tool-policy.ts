@@ -14,6 +14,7 @@ const CLI_DEFAULT_TOOL_POLICY: ResolvedAgentToolPolicy = {
     filesystem: 'native',
     browser: 'disabled',
     screen: 'disabled',
+    memory_search: 'hosted',
 };
 
 const API_DEFAULT_TOOL_POLICY: ResolvedAgentToolPolicy = {
@@ -21,6 +22,7 @@ const API_DEFAULT_TOOL_POLICY: ResolvedAgentToolPolicy = {
     filesystem: 'hosted',
     browser: 'disabled',
     screen: 'disabled',
+    memory_search: 'hosted',
 };
 
 const ACP_DEFAULT_TOOL_POLICY: ResolvedAgentToolPolicy = {
@@ -28,6 +30,7 @@ const ACP_DEFAULT_TOOL_POLICY: ResolvedAgentToolPolicy = {
     filesystem: 'disabled',
     browser: 'disabled',
     screen: 'disabled',
+    memory_search: 'disabled',
 };
 
 function getBasePolicy(entry: AgentPoolEntry): ResolvedAgentToolPolicy {
@@ -66,6 +69,7 @@ export function resolveAgentToolPolicy(
             filesystem: 'disabled',
             browser: 'disabled',
             screen: 'disabled',
+            memory_search: 'disabled',
         };
     }
 

@@ -60,17 +60,17 @@ function buildEmptyMemorySkeleton(): string {
 }
 
 function toChatHistory(messages: StoredMessage[]) {
-  return messages
-    .filter(
-      (
-        message,
-      ): message is StoredMessage & { role: 'user' | 'assistant' } =>
-        message.role === 'user' || message.role === 'assistant',
-    )
-    .map((message) => ({
-      role: message.role,
-      content: message.content,
-    }));
+    return messages
+        .filter(
+            (
+                message,
+            ): message is StoredMessage & { role: 'user' | 'assistant' } =>
+                message.role === 'user' || message.role === 'assistant',
+        )
+        .map((message) => ({
+            role: message.role,
+            content: message.content,
+        }));
 }
 
 export interface MemorySearchResult {
@@ -97,6 +97,14 @@ export interface MemoryCompactResult {
     indexedFile: IndexedFileRecord;
     runId?: string;
     agent?: string;
+}
+
+export interface WorkspaceMemoryMaintenanceTask {
+    name: 'daily_note' | 'compact';
+    enabled: boolean;
+    schedule: string;
+    agent: string;
+    limit?: number;
 }
 
 export class WorkspaceMemoryManager {
@@ -156,6 +164,26 @@ export class WorkspaceMemoryManager {
         return { files };
     }
 
+    listMaintenanceTasks(): WorkspaceMemoryMaintenanceTask[] {
+        const tasks: WorkspaceMemoryMaintenanceTask[] = [];
+
+        tasks.push({
+            name: 'daily_note',
+            enabled: this.config.memory.daily_note.enabled,
+            schedule: this.config.memory.daily_note.schedule,
+            agent: this.config.memory.daily_note.agent,
+        });
+        tasks.push({
+            name: 'compact',
+            enabled: this.config.memory.compact.enabled,
+            schedule: this.config.memory.compact.schedule,
+            agent: this.config.memory.compact.agent,
+            limit: this.config.memory.compact.limit,
+        });
+
+        return tasks;
+    }
+
   search(
         query: string,
         options?: {
@@ -164,27 +192,49 @@ export class WorkspaceMemoryManager {
             messageLimit?: number;
             fileLimit?: number;
             fileType?: string;
+            from?: string;
+            to?: string;
+            filepathLike?: string;
+            excludeRunId?: string;
         },
   ): MemorySearchResult {
     const messageOptions: Parameters<MemoryStore['searchMessages']>[1] = {
       limit: options?.messageLimit ?? 10,
     };
-    const fileOptions: Parameters<MemoryStore['searchIndexedFiles']>[1] = {
-      limit: options?.fileLimit ?? 10,
-    };
-    if (options?.channel) {
-      messageOptions.channel = options.channel;
-    }
+        const fileOptions: Parameters<MemoryStore['searchIndexedFiles']>[1] = {
+            limit: options?.fileLimit ?? 10,
+        };
+        if (options?.channel) {
+            messageOptions.channel = options.channel;
+        }
     if (options?.chatId) {
       messageOptions.chatId = options.chatId;
+    }
+    if (options?.from) {
+      messageOptions.from = options.from;
+    }
+    if (options?.to) {
+      messageOptions.to = options.to;
+    }
+    if (options?.excludeRunId) {
+      messageOptions.excludeRunId = options.excludeRunId;
     }
     if (options?.fileType) {
       fileOptions.fileType = options.fileType;
     }
+    if (options?.filepathLike) {
+      fileOptions.filepathLike = options.filepathLike;
+    }
 
     return {
-      messages: this.memoryStore.searchMessages(query, messageOptions),
-      files: this.memoryStore.searchIndexedFiles(query, fileOptions),
+      messages:
+        (options?.messageLimit ?? 10) > 0
+          ? this.memoryStore.searchMessages(query, messageOptions)
+          : [],
+      files:
+        (options?.fileLimit ?? 10) > 0
+          ? this.memoryStore.searchIndexedFiles(query, fileOptions)
+          : [],
     };
   }
 
@@ -223,17 +273,17 @@ export class WorkspaceMemoryManager {
         };
     }
 
-  async generateDailyNote(options?: {
-    date?: Date | string;
-    agentName?: string;
-    workingDirectory?: string;
-  }): Promise<GeneratedDailyNoteResult> {
-    const ensureOptions: Parameters<WorkspaceMemoryManager['ensureDailyNote']>[0] =
-      {};
-    if (options?.date) {
-      ensureOptions.date = options.date;
-    }
-    const current = await this.ensureDailyNote(ensureOptions);
+    async generateDailyNote(options?: {
+        date?: Date | string;
+        agentName?: string;
+        workingDirectory?: string;
+    }): Promise<GeneratedDailyNoteResult> {
+        const ensureOptions: Parameters<WorkspaceMemoryManager['ensureDailyNote']>[0] =
+            {};
+        if (options?.date) {
+            ensureOptions.date = options.date;
+        }
+        const current = await this.ensureDailyNote(ensureOptions);
         const range = buildDayRange(current.dateKey);
         const messages = this.memoryStore.listMessages({
             from: range.from,
@@ -245,21 +295,21 @@ export class WorkspaceMemoryManager {
             return current;
         }
 
-    const dailyNoteTask: Parameters<WorkspaceMemoryManager['runMemoryAgent']>[0] = {
-      taskName: 'daily_note',
-      history: toChatHistory(messages),
-      prompt:
-        `请把 ${current.dateKey} 这一天的对话整理成简洁的 Markdown 日志。` +
-        '输出只包含最终 daily note，不要解释。',
-    };
-    if (options?.agentName) {
-      dailyNoteTask.agentName = options.agentName;
-    }
-    if (options?.workingDirectory) {
-      dailyNoteTask.workingDirectory = options.workingDirectory;
-    }
+        const dailyNoteTask: Parameters<WorkspaceMemoryManager['runMemoryAgent']>[0] = {
+            taskName: 'daily_note',
+            history: toChatHistory(messages),
+            prompt:
+                `请把 ${current.dateKey} 这一天的对话整理成简洁的 Markdown 日志。` +
+                '输出只包含最终 daily note，不要解释。',
+        };
+        if (options?.agentName) {
+            dailyNoteTask.agentName = options.agentName;
+        }
+        if (options?.workingDirectory) {
+            dailyNoteTask.workingDirectory = options.workingDirectory;
+        }
 
-    const generated = await this.runMemoryAgent(dailyNoteTask);
+        const generated = await this.runMemoryAgent(dailyNoteTask);
         await this.fileSystemTool.writeText(current.filePath, generated.content, {
             triggeredBy: generated.agent,
         });
@@ -312,20 +362,20 @@ export class WorkspaceMemoryManager {
             };
         }
 
-    const memoryTask: Parameters<WorkspaceMemoryManager['runMemoryAgent']>[0] = {
-      taskName: 'memory_compact',
-      history,
-      prompt:
-        '根据以上最近对话更新 MEMORY.md。只保留稳定事实、偏好、长期约束和正在进行的重要事项。输出纯 Markdown，不要解释。',
-    };
-    if (options?.agentName) {
-      memoryTask.agentName = options.agentName;
-    }
-    if (options?.workingDirectory) {
-      memoryTask.workingDirectory = options.workingDirectory;
-    }
+        const memoryTask: Parameters<WorkspaceMemoryManager['runMemoryAgent']>[0] = {
+            taskName: 'memory_compact',
+            history,
+            prompt:
+                '根据以上最近对话更新 MEMORY.md。只保留稳定事实、偏好、长期约束和正在进行的重要事项。输出纯 Markdown，不要解释。',
+        };
+        if (options?.agentName) {
+            memoryTask.agentName = options.agentName;
+        }
+        if (options?.workingDirectory) {
+            memoryTask.workingDirectory = options.workingDirectory;
+        }
 
-    const generated = await this.runMemoryAgent(memoryTask);
+        const generated = await this.runMemoryAgent(memoryTask);
 
         await this.fileSystemTool.writeText(filePath, generated.content, {
             triggeredBy: generated.agent,
@@ -343,6 +393,37 @@ export class WorkspaceMemoryManager {
             runId: generated.runId,
             agent: generated.agent,
         };
+    }
+
+    async runScheduledDailyNote(options?: {
+        date?: Date | string;
+        workingDirectory?: string;
+    }): Promise<GeneratedDailyNoteResult> {
+        const input: Parameters<WorkspaceMemoryManager['generateDailyNote']>[0] = {
+            agentName: this.config.memory.daily_note.agent,
+        };
+        if (options?.date) {
+            input.date = options.date;
+        }
+        if (options?.workingDirectory) {
+            input.workingDirectory = options.workingDirectory;
+        }
+
+        return await this.generateDailyNote(input);
+    }
+
+    async runScheduledMemoryCompact(options?: {
+        workingDirectory?: string;
+    }): Promise<MemoryCompactResult> {
+        const input: Parameters<WorkspaceMemoryManager['compactMemory']>[0] = {
+            agentName: this.config.memory.compact.agent,
+            limit: this.config.memory.compact.limit,
+        };
+        if (options?.workingDirectory) {
+            input.workingDirectory = options.workingDirectory;
+        }
+
+        return await this.compactMemory(input);
     }
 
     private async runMemoryAgent(input: {

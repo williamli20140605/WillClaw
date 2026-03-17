@@ -24,6 +24,7 @@ const TOOL_LABELS = {
     filesystem: 'filesystem',
     browser: 'browser',
     screen: 'screen',
+    memory_search: 'memory',
 } as const;
 
 function formatToolPolicies(toolPolicies: Record<string, string>): string {

@@ -1042,13 +1042,17 @@ interface FileSearchResult {
 
 **Agent 使用方式**：
 
-Agent 在执行任务时可以通过工具调用搜索记忆（如果 AGENTS.md 中授权了）：
+Agent 在执行任务时可以通过 WillClaw 的窄桥接能力搜索记忆（如果 tool policy 允许）：
 
 ```
-System: Agent 可以使用 memory_search 工具搜索历史对话和笔记。
+System: Agent 可以使用 memory_search 搜索历史对话和笔记。
 ```
 
-Orchestrator 将 `memory_search` 暴露为 Agent 可调用的函数（Direct API 通过 tool_use，CLI agent 通过 prompt 注入搜索结果）。
+Orchestrator 将 `memory_search` 暴露为 Agent 可调用的壳层能力：
+- system prompt 明确告知如何请求 `memory_search`
+- Agent 通过一条严格格式的桥接指令请求搜索
+- WillClaw 执行搜索后把结果回注入历史，再让 Agent 继续回答
+
 查询时默认附带 `WHERE status = 'active'`，保证撤回消息不会再回流进上下文。
 
 **索引更新策略**：
@@ -1496,6 +1500,8 @@ daemon:
 - 已有 heartbeat / cron 执行引擎 + `node-cron` 调度 + 手动触发 API
 - 已有 workspace memory 索引：消息搜索 + `MEMORY.md / memory/*.md` 文件搜索
 - 已有手动 memory maintenance API：daily note ensure/generate、`MEMORY.md` compact
+- 已有自动 memory maintenance：scheduler 可定时跑 daily note / `MEMORY.md` compact
+- 已有用户侧 `/search` 命令 + agent 侧 `memory_search` 桥接
 - 多 agent 已接入：`claude-code`、`codex`、`opencode`、`gemini`、`direct-api`、`acp`
 - Host tools 已接入分类：`native | hosted | disabled`
 - Host browser / screen 已改为 provider 优先级：
@@ -1561,9 +1567,9 @@ daemon:
 - [x] workspace 文件索引：`MEMORY.md` + `memory/*.md`
 - [x] **Memory Search**：FTS5 搜索消息 + 文件 + daily notes（HTTP API）
 - [x] 手动 memory maintenance API：daily note ensure/generate、`MEMORY.md` compact
-- [ ] 每日笔记自动生成（定时/事件驱动）
-- [ ] MEMORY.md 自动更新（定时/事件驱动）
-- [ ] `/search` 命令 + Agent memory_search 工具
+- [x] 每日笔记自动生成（scheduler）
+- [x] MEMORY.md 自动更新（scheduler）
+- [x] `/search` 命令 + Agent memory_search 桥接
 - [ ] 推送到指定 Channel
 
 **交付**：Agent 主动执行、维护记忆、可搜索全部历史。

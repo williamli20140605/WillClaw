@@ -185,6 +185,15 @@ memory:
   max_history_messages: 20
   search_reindex_on_start: true
   exclude_revoked: true
+  daily_note:
+    enabled: true
+    schedule: "55 23 * * *"
+    agent: direct-api
+  compact:
+    enabled: true
+    schedule: "10 2 * * *"
+    agent: direct-api
+    limit: 200
 
 history:
   enabled: true

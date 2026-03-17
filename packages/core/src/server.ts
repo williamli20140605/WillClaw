@@ -66,30 +66,30 @@ const resendMessageSchema = z
         channel: z.string().optional(),
         chatId: z.string().optional(),
         userId: z.string().optional(),
-  })
-  .optional();
+    })
+    .optional();
 
 const ensureDailyNoteSchema = z
-  .object({
-    date: z.string().optional(),
-  })
-  .optional();
+    .object({
+        date: z.string().optional(),
+    })
+    .optional();
 
 const generateDailyNoteSchema = z
-  .object({
-    date: z.string().optional(),
-    agentName: z.string().optional(),
-    workingDirectory: z.string().optional(),
-  })
-  .optional();
+    .object({
+        date: z.string().optional(),
+        agentName: z.string().optional(),
+        workingDirectory: z.string().optional(),
+    })
+    .optional();
 
 const compactMemorySchema = z
-  .object({
-    agentName: z.string().optional(),
-    workingDirectory: z.string().optional(),
-    limit: z.coerce.number().int().positive().optional(),
-  })
-  .optional();
+    .object({
+        agentName: z.string().optional(),
+        workingDirectory: z.string().optional(),
+        limit: z.coerce.number().int().positive().optional(),
+    })
+    .optional();
 
 export interface WillClawRuntimeLike {
     config: WillClawConfig;
@@ -99,10 +99,10 @@ export interface WillClawRuntimeLike {
     orchestrator: Orchestrator;
     memoryStore: MemoryStore;
     toolLogger: ToolExecutionLogger;
-  chatService: ChatService;
-  backgroundTaskEngine: BackgroundTaskEngine;
-  scheduler: WillClawScheduler;
-  workspaceMemoryManager: WorkspaceMemoryManager;
+    chatService: ChatService;
+    backgroundTaskEngine: BackgroundTaskEngine;
+    scheduler: WillClawScheduler;
+    workspaceMemoryManager: WorkspaceMemoryManager;
 }
 
 export interface WillClawHttpServer {
@@ -204,7 +204,7 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
         return c.json(result);
     });
 
-  app.get('/api/search', (c) => {
+    app.get('/api/search', (c) => {
         const query = c.req.query('query') ?? '';
         const limit = Number(c.req.query('limit') ?? '20');
         const options: Parameters<MemoryStore['searchMessages']>[1] = {
@@ -221,8 +221,8 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
             options.chatId = chatId;
         }
 
-    return c.json(runtime.memoryStore.searchMessages(query, options));
-  });
+        return c.json(runtime.memoryStore.searchMessages(query, options));
+    });
 
   app.get('/api/memory/search', (c) => {
     const query = c.req.query('query') ?? '';
@@ -231,88 +231,104 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
     const channel = c.req.query('channel');
     const chatId = c.req.query('chatId');
     const fileType = c.req.query('fileType');
+    const from = c.req.query('from');
+    const to = c.req.query('to');
+    const filepathLike = c.req.query('filepathLike');
+    const excludeRunId = c.req.query('excludeRunId');
     const options: Parameters<WorkspaceMemoryManager['search']>[1] = {
       messageLimit: Number.isFinite(messageLimit) ? messageLimit : 10,
       fileLimit: Number.isFinite(fileLimit) ? fileLimit : 10,
     };
-    if (channel) {
-      options.channel = channel;
-    }
-    if (chatId) {
-      options.chatId = chatId;
-    }
+        if (channel) {
+            options.channel = channel;
+        }
+        if (chatId) {
+            options.chatId = chatId;
+        }
     if (fileType) {
       options.fileType = fileType;
+    }
+    if (from) {
+      options.from = from;
+    }
+    if (to) {
+      options.to = to;
+    }
+    if (filepathLike) {
+      options.filepathLike = filepathLike;
+    }
+    if (excludeRunId) {
+      options.excludeRunId = excludeRunId;
     }
 
     return c.json(runtime.workspaceMemoryManager.search(query, options));
   });
 
-  app.post('/api/memory/reindex', async (c) => {
-    return c.json(await runtime.workspaceMemoryManager.reindexWorkspaceMemory());
-  });
+    app.post('/api/memory/reindex', async (c) => {
+        return c.json(await runtime.workspaceMemoryManager.reindexWorkspaceMemory());
+    });
 
-  app.post('/api/memory/daily-note/ensure', async (c) => {
-    const payload = ensureDailyNoteSchema.parse(
-      await c.req.json().catch(() => ({})),
-    );
-    const options: Parameters<WorkspaceMemoryManager['ensureDailyNote']>[0] = {};
-    if (payload?.date) {
-      options.date = payload.date;
-    }
+    app.post('/api/memory/daily-note/ensure', async (c) => {
+        const payload = ensureDailyNoteSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+        const options: Parameters<WorkspaceMemoryManager['ensureDailyNote']>[0] = {};
+        if (payload?.date) {
+            options.date = payload.date;
+        }
 
-    return c.json(await runtime.workspaceMemoryManager.ensureDailyNote(options));
-  });
+        return c.json(await runtime.workspaceMemoryManager.ensureDailyNote(options));
+    });
 
-  app.post('/api/memory/daily-note/generate', async (c) => {
-    const payload = generateDailyNoteSchema.parse(
-      await c.req.json().catch(() => ({})),
-    );
-    const options: Parameters<
-      WorkspaceMemoryManager['generateDailyNote']
-    >[0] = {};
-    if (payload?.date) {
-      options.date = payload.date;
-    }
-    if (payload?.agentName) {
-      options.agentName = payload.agentName;
-    }
-    if (payload?.workingDirectory) {
-      options.workingDirectory = payload.workingDirectory;
-    }
+    app.post('/api/memory/daily-note/generate', async (c) => {
+        const payload = generateDailyNoteSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+        const options: Parameters<
+            WorkspaceMemoryManager['generateDailyNote']
+        >[0] = {};
+        if (payload?.date) {
+            options.date = payload.date;
+        }
+        if (payload?.agentName) {
+            options.agentName = payload.agentName;
+        }
+        if (payload?.workingDirectory) {
+            options.workingDirectory = payload.workingDirectory;
+        }
 
-    return c.json(
-      await runtime.workspaceMemoryManager.generateDailyNote(options),
-    );
-  });
+        return c.json(
+            await runtime.workspaceMemoryManager.generateDailyNote(options),
+        );
+    });
 
-  app.post('/api/memory/compact', async (c) => {
-    const payload = compactMemorySchema.parse(
-      await c.req.json().catch(() => ({})),
-    );
-    const options: Parameters<WorkspaceMemoryManager['compactMemory']>[0] = {};
-    if (payload?.agentName) {
-      options.agentName = payload.agentName;
-    }
-    if (payload?.workingDirectory) {
-      options.workingDirectory = payload.workingDirectory;
-    }
-    if (payload?.limit != null) {
-      options.limit = payload.limit;
-    }
+    app.post('/api/memory/compact', async (c) => {
+        const payload = compactMemorySchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+        const options: Parameters<WorkspaceMemoryManager['compactMemory']>[0] = {};
+        if (payload?.agentName) {
+            options.agentName = payload.agentName;
+        }
+        if (payload?.workingDirectory) {
+            options.workingDirectory = payload.workingDirectory;
+        }
+        if (payload?.limit != null) {
+            options.limit = payload.limit;
+        }
 
-    return c.json(await runtime.workspaceMemoryManager.compactMemory(options));
-  });
+        return c.json(await runtime.workspaceMemoryManager.compactMemory(options));
+    });
 
-  app.get('/api/cron', (c) => {
+    app.get('/api/cron', (c) => {
+        const tasks = runtime.scheduler.listTasks();
+
         return c.json({
-            heartbeat: runtime.scheduler
-                .listTasks()
-                .find((task) => task.kind === 'heartbeat') ?? null,
-            cron: runtime.scheduler
-                .listTasks()
-                .filter((task) => task.kind === 'cron'),
+            heartbeat: tasks.find((task) => task.kind === 'heartbeat') ?? null,
+            cron: tasks.filter((task) => task.kind === 'cron'),
+            maintenance: tasks.filter((task) => task.kind === 'maintenance'),
             definedCronTasks: runtime.backgroundTaskEngine.listCronTasks(),
+            memoryMaintenance: runtime.workspaceMemoryManager.listMaintenanceTasks(),
         });
     });
 
@@ -323,6 +339,15 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
     app.post('/api/cron/:taskName/run', async (c) => {
         const taskName = c.req.param('taskName');
         return c.json(await runtime.scheduler.runCronNow(taskName));
+    });
+
+    app.post('/api/maintenance/:taskName/run', async (c) => {
+        const taskName = c.req.param('taskName');
+        if (taskName !== 'daily_note' && taskName !== 'compact') {
+            return c.json({ error: 'Unknown maintenance task' }, 404);
+        }
+
+        return c.json(await runtime.scheduler.runMaintenanceNow(taskName));
     });
 
     app.get('/api/logs/tools', (c) => {

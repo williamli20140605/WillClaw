@@ -44,6 +44,7 @@ Current implemented scope:
 - run lifecycle API
 - heartbeat + cron runner
 - workspace memory indexing, daily notes, and MEMORY.md compaction
+- scheduled daily note + scheduled MEMORY.md compact maintenance
 - Telegram polling channel adapter
 - LaunchAgent login auto-start commands
 
@@ -181,7 +182,10 @@ Implemented memory maintenance:
 - workspace memory reindex
 - daily note ensure + generate
 - MEMORY.md compact/update
+- scheduled maintenance tasks for daily note + MEMORY compact
 - combined memory search across messages and indexed files
+- built-in \`/search\` command
+- agent-facing \`memory_search\` bridge for hosted WillClaw memory
 
 Important constraints:
 - history markdown is a human-readable export, not the source of truth
@@ -200,6 +204,7 @@ Current hosted tools:
 - filesystem
 - browser
 - screen
+- memory_search
 
 Audit rule:
 - every WillClaw-owned host tool call must write to the tool log database and the app log
@@ -316,9 +321,14 @@ Current REST surface includes:
 - \`/api/cron\`
 - \`/api/heartbeat/run\`
 - \`/api/cron/:taskName/run\`
+- \`/api/maintenance/:taskName/run\`
 - \`/api/logs/tools\`
 - \`/api/logs/tools/stats\`
 - \`/api/logs/tools/:id\`
+
+Behavior notes:
+- \`/api/chat\` now handles built-in \`/search\` without dispatching to a coding agent
+- agent-facing \`memory_search\` is exposed as a narrow WillClaw bridge, not a generic MCP tool layer
 
 Status payloads should expose:
 - configured agents

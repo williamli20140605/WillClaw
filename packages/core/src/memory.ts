@@ -410,6 +410,9 @@ export class MemoryStore {
         options?: {
             channel?: string;
             chatId?: string;
+            from?: string;
+            to?: string;
+            excludeRunId?: string;
             limit?: number;
         },
     ): SearchMessageResult[] {
@@ -431,6 +434,21 @@ export class MemoryStore {
         if (options?.chatId) {
             clauses.push('m.chat_id = @chatId');
             params.chatId = options.chatId;
+        }
+
+        if (options?.from) {
+            clauses.push('m.timestamp >= @from');
+            params.from = options.from;
+        }
+
+        if (options?.to) {
+            clauses.push('m.timestamp < @to');
+            params.to = options.to;
+        }
+
+        if (options?.excludeRunId) {
+            clauses.push('(m.run_id IS NULL OR m.run_id != @excludeRunId)');
+            params.excludeRunId = options.excludeRunId;
         }
 
         const statement = this.db.prepare(`
@@ -551,6 +569,7 @@ export class MemoryStore {
         query: string,
         options?: {
             fileType?: string;
+            filepathLike?: string;
             limit?: number;
         },
     ): SearchFileResult[] {
@@ -567,6 +586,11 @@ export class MemoryStore {
         if (options?.fileType) {
             clauses.push('f.file_type = @fileType');
             params.fileType = options.fileType;
+        }
+
+        if (options?.filepathLike) {
+            clauses.push('f.filepath LIKE @filepathLike');
+            params.filepathLike = options.filepathLike;
         }
 
         const statement = this.db.prepare(`

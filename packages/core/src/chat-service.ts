@@ -5,6 +5,11 @@ import type { Logger } from 'pino';
 import type { WillClawConfig } from './config.js';
 import type { CommandCompletionMonitor } from './completion-monitor.js';
 import type { HistoryExporter } from './history-exporter.js';
+import type {
+    InvalidSearchCommand,
+    MemorySearchService,
+    ParsedSearchCommand,
+} from './memory-search.js';
 import type { MemoryStore, StoredCommandRun, StoredMessage } from './memory.js';
 import type {
     Orchestrator,
@@ -77,6 +82,7 @@ export class ChatService {
         private readonly config: WillClawConfig,
         private readonly orchestrator: Orchestrator,
         private readonly memoryStore: MemoryStore,
+        private readonly memorySearchService: MemorySearchService,
         private readonly historyExporter: HistoryExporter | null,
         private readonly completionMonitor: CommandCompletionMonitor,
         private readonly logger: Logger,
@@ -94,6 +100,7 @@ export class ChatService {
                 chatId,
                 limit: this.config.memory.max_history_messages,
             });
+        const builtinCommand = this.memorySearchService.parseCommand(request.text);
         const userMessageInput: Parameters<MemoryStore['saveMessage']>[0] = {
             timestamp: new Date().toISOString(),
             channel,
@@ -112,7 +119,7 @@ export class ChatService {
         await this.exportMessage(userMessage);
         this.memoryStore.saveCommandRun({
             runId,
-            agent: 'orchestrator',
+            agent: builtinCommand ? 'willclaw-command' : 'orchestrator',
             chatId,
             prompt: request.text,
             status: 'running',
@@ -127,6 +134,17 @@ export class ChatService {
         });
 
         try {
+            if (builtinCommand) {
+                return await this.handleBuiltInCommand(
+                    builtinCommand,
+                    request,
+                    userMessage.id,
+                    runId,
+                    channel,
+                    chatId,
+                );
+            }
+
             const result = await this.orchestrator.runChat({
                 ...request,
                 history,
@@ -249,6 +267,57 @@ export class ChatService {
         } finally {
             this.activeRuns.delete(runId);
         }
+    }
+
+    private async handleBuiltInCommand(
+        builtinCommand: ParsedSearchCommand | InvalidSearchCommand,
+        request: ChatServiceRequest,
+        userMessageId: number,
+        runId: string,
+        channel: string,
+        chatId: string,
+    ): Promise<ChatServiceResult> {
+        const startedAt = Date.now();
+
+        if ('error' in builtinCommand) {
+            return await this.completeBuiltInCommand({
+                runId,
+                channel,
+                chatId,
+                userMessageId,
+                content: `${builtinCommand.error}\nUsage: ${builtinCommand.usage}`,
+                duration: Date.now() - startedAt,
+                metadata: {
+                    subtype: 'builtin_command_error',
+                    command: 'search',
+                },
+            });
+        }
+
+        const searchResult = this.memorySearchService.search({
+            ...builtinCommand.request,
+            excludeRunId: runId,
+        });
+
+        return await this.completeBuiltInCommand({
+            runId,
+            channel,
+            chatId,
+            userMessageId,
+            content: this.memorySearchService.formatCommandResult(
+                builtinCommand.request,
+                searchResult,
+            ),
+            duration: Date.now() - startedAt,
+            metadata: {
+                subtype: 'builtin_command',
+                command: 'search',
+                query: builtinCommand.request.query,
+                messageCount: searchResult.messages.length,
+                fileCount: searchResult.files.length,
+                executionMode: request.executionMode ?? 'foreground',
+            },
+        });
     }
 
     getRunStatus(runId: string): RunStatusResult {
@@ -487,6 +556,62 @@ export class ChatService {
 
         await this.exportMessage(message);
         return message;
+    }
+
+    private async completeBuiltInCommand(input: {
+        runId: string;
+        channel: string;
+        chatId: string;
+        userMessageId: number;
+        content: string;
+        duration: number;
+        metadata?: Record<string, unknown>;
+    }): Promise<ChatServiceResult> {
+        const assistantMessageInput: Parameters<MemoryStore['saveMessage']>[0] = {
+            timestamp: new Date().toISOString(),
+            channel: input.channel,
+            chatId: input.chatId,
+            userId: 'willclaw',
+            role: 'assistant',
+            content: input.content,
+            agent: 'willclaw',
+            durationMs: input.duration,
+            runId: input.runId,
+        };
+        if (input.metadata) {
+            assistantMessageInput.metadata = input.metadata;
+        }
+
+        const assistantMessage = this.memoryStore.saveMessage(
+            assistantMessageInput,
+        );
+
+        await this.exportMessage(assistantMessage);
+        this.memoryStore.updateCommandRun(input.runId, {
+            agent: 'willclaw',
+            status: 'completed',
+            durationMs: input.duration,
+            stdout: input.content,
+        });
+
+        const result: ChatServiceResult = {
+            runId: input.runId,
+            agent: 'willclaw',
+            content: input.content,
+            duration: input.duration,
+            attemptedAgents: ['willclaw'],
+            systemPromptChars: 0,
+            promptSections: [],
+            channel: input.channel,
+            chatId: input.chatId,
+            userMessageId: input.userMessageId,
+            assistantMessageId: assistantMessage.id,
+        };
+        if (input.metadata) {
+            result.metadata = input.metadata;
+        }
+
+        return result;
     }
 
     private async exportMessage(message: StoredMessage): Promise<void> {

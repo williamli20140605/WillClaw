@@ -2,7 +2,12 @@ import type { AgentToolMode, HostToolName, WillClawConfig } from './config.js';
 import { HOST_TOOL_NAMES } from './config.js';
 import { resolveAgentToolPolicy } from './tool-policy.js';
 
-export type HostToolCategory = 'terminal' | 'filesystem' | 'browser' | 'screen';
+export type HostToolCategory =
+    | 'terminal'
+    | 'filesystem'
+    | 'browser'
+    | 'screen'
+    | 'memory';
 
 export interface HostToolCatalogEntry {
     name: HostToolName;
@@ -43,6 +48,11 @@ const HOST_TOOL_METADATA: Record<HostToolName, HostToolMetadata> = {
         category: 'screen',
         label: 'Screen',
         description: 'Capture host screenshots from the WillClaw machine.',
+    },
+    memory_search: {
+        category: 'memory',
+        label: 'Memory Search',
+        description: 'Search WillClaw messages, MEMORY.md, and daily notes.',
     },
 };
 

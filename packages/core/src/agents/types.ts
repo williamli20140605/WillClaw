@@ -16,6 +16,10 @@ export interface AgentRequest {
     history: ChatMessage[];
     workingDirectory?: string;
     executionMode?: ExecutionMode;
+    memorySearch?: {
+        enabled: boolean;
+        maxCalls: number;
+    };
 }
 
 export interface AgentResponse {

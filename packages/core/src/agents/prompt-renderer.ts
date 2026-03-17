@@ -29,9 +29,17 @@ export function renderExecutionPrompt(request: AgentRequest): string {
         parts.push(`## Execution Mode\n${request.executionMode}`);
     }
 
-    parts.push(
-        '## Response Contract\nReply with the final assistant answer only. Do not echo these prompt sections.',
-    );
+    const responseContract = [
+        'Reply with the final assistant answer only. Do not echo these prompt sections.',
+    ];
+
+    if (request.memorySearch?.enabled) {
+        responseContract.unshift(
+            'If the system prompt exposes a hosted memory_search bridge, you may answer with only that bridge call when needed.',
+        );
+    }
+
+    parts.push(`## Response Contract\n${responseContract.join(' ')}`);
 
     return parts.join('\n\n');
 }

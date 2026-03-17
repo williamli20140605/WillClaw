@@ -15,6 +15,7 @@ export const HOST_TOOL_NAMES = [
     'filesystem',
     'browser',
     'screen',
+    'memory_search',
 ] as const;
 export const BROWSER_TOOL_PROVIDERS = ['agent-browser', 'system-open'] as const;
 export const SCREEN_TOOL_PROVIDERS = ['peekaboo', 'screencapture'] as const;
@@ -54,6 +55,7 @@ const agentToolPolicySchema = z
         filesystem: agentToolModeSchema.optional(),
         browser: agentToolModeSchema.optional(),
         screen: agentToolModeSchema.optional(),
+        memory_search: agentToolModeSchema.optional(),
     })
     .default({});
 
@@ -252,6 +254,23 @@ const memorySchema = z
         max_history_messages: z.coerce.number().int().positive().default(20),
         search_reindex_on_start: z.boolean().default(true),
         exclude_revoked: z.boolean().default(true),
+        daily_note: z
+            .object({
+                enabled: z.boolean().default(true),
+                schedule: z.string().default('55 23 * * *'),
+                agent: z.string().default('direct-api'),
+            })
+            .passthrough()
+            .default({}),
+        compact: z
+            .object({
+                enabled: z.boolean().default(true),
+                schedule: z.string().default('10 2 * * *'),
+                agent: z.string().default('direct-api'),
+                limit: z.coerce.number().int().positive().default(200),
+            })
+            .passthrough()
+            .default({}),
     })
     .passthrough()
     .default({});

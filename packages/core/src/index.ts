@@ -54,6 +54,13 @@ export {
     type StoredMessage,
 } from './memory.js';
 export {
+    MemorySearchService,
+    type InvalidSearchCommand,
+    type MemorySearchRequest,
+    type ParsedSearchCommand,
+    type SearchCommandParseResult,
+} from './memory-search.js';
+export {
     ToolExecutionLogger,
     type LogToolExecutionInput,
     type ToolLogEntry,

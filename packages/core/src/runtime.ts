@@ -8,6 +8,7 @@ import { loadWillClawConfig, type WillClawConfig } from './config.js';
 import { HistoryExporter } from './history-exporter.js';
 import { BackgroundTaskEngine } from './heartbeat.js';
 import { createAppLogger } from './logger.js';
+import { MemorySearchService } from './memory-search.js';
 import { MemoryStore } from './memory.js';
 import { Orchestrator } from './orchestrator.js';
 import type { WillClawPaths } from './paths.js';
@@ -67,17 +68,29 @@ export async function createWillClawRuntime(options?: {
         ? new HistoryExporter(config.history.dir, fileSystemTool)
         : null;
     const completionMonitor = new CommandCompletionMonitor(config);
+    const workspaceMemoryManager = new WorkspaceMemoryManager(
+        config,
+        paths,
+        promptAssembler,
+        agents,
+        memoryStore,
+        fileSystemTool,
+        logger,
+    );
+    const memorySearchService = new MemorySearchService(workspaceMemoryManager);
     const orchestrator = new Orchestrator(
         config,
         paths,
         promptAssembler,
         agents,
+        memorySearchService,
         logger,
     );
     const chatService = new ChatService(
         config,
         orchestrator,
         memoryStore,
+        memorySearchService,
         historyExporter,
         completionMonitor,
         logger,
@@ -93,23 +106,15 @@ export async function createWillClawRuntime(options?: {
     const scheduler = new WillClawScheduler(
         config,
         backgroundTaskEngine,
+        workspaceMemoryManager,
         logger,
     );
-  const workspaceMemoryManager = new WorkspaceMemoryManager(
-    config,
-    paths,
-        promptAssembler,
-        agents,
-        memoryStore,
-    fileSystemTool,
-    logger,
-  );
 
-  if (config.memory.search_reindex_on_start) {
-    await workspaceMemoryManager.reindexWorkspaceMemory();
-  }
+    if (config.memory.search_reindex_on_start) {
+        await workspaceMemoryManager.reindexWorkspaceMemory();
+    }
 
-  return {
+    return {
         config,
         paths,
         logger,
