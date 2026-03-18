@@ -167,6 +167,10 @@ const feishuChannelSchema = z
         enabled: z.boolean().default(false),
         app_id_env: z.string().default('FEISHU_APP_ID'),
         app_secret_env: z.string().default('FEISHU_APP_SECRET'),
+        verification_token_env: z.string().default('FEISHU_VERIFICATION_TOKEN'),
+        owner_open_id: z.string().default(''),
+        allowed_open_ids: z.array(z.string()).default([]),
+        require_mention_in_groups: z.boolean().default(true),
     })
     .passthrough()
     .default({});
@@ -332,6 +336,7 @@ export type AcpAgentPoolEntry = z.infer<typeof acpAgentPoolEntrySchema>;
 export type AgentToolPolicy = z.infer<typeof agentToolPolicySchema>;
 export type TelegramChannelConfig = z.infer<typeof telegramChannelSchema>;
 export type DiscordChannelConfig = z.infer<typeof discordChannelSchema>;
+export type FeishuChannelConfig = z.infer<typeof feishuChannelSchema>;
 
 export function isCliAgentPoolEntry(
     entry: AgentPoolEntry,

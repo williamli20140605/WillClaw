@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 import { createAgentBackends } from './agents/factory.js';
 import type { AgentBackend } from './agents/types.js';
 import { ChatService } from './chat-service.js';
+import { ChannelManager } from './channels/manager.js';
 import { CommandCompletionMonitor } from './completion-monitor.js';
 import { loadWillClawConfig, type WillClawConfig } from './config.js';
 import { WillClawEventHub } from './events.js';
@@ -45,6 +46,7 @@ export interface WillClawRuntime {
     completionMonitor: CommandCompletionMonitor;
     orchestrator: Orchestrator;
     chatService: ChatService;
+    channelManager: ChannelManager;
     backgroundTaskEngine: BackgroundTaskEngine;
     scheduler: WillClawScheduler;
     workspaceMemoryManager: WorkspaceMemoryManager;
@@ -123,6 +125,15 @@ export async function createWillClawRuntime(options?: {
         logger,
         eventHub,
     );
+    const channelManager = new ChannelManager(
+        config,
+        chatService,
+        orchestrator,
+        scheduler,
+        memoryStore,
+        logger,
+        paths.homeDir,
+    );
 
     if (config.memory.search_reindex_on_start) {
         await workspaceMemoryManager.reindexWorkspaceMemory();
@@ -145,6 +156,7 @@ export async function createWillClawRuntime(options?: {
         completionMonitor,
         orchestrator,
         chatService,
+        channelManager,
         backgroundTaskEngine,
         scheduler,
         workspaceMemoryManager,

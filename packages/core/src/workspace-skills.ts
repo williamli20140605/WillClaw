@@ -48,6 +48,7 @@ Current implemented scope:
 - scheduled daily note + scheduled MEMORY.md compact maintenance
 - Telegram polling channel adapter
 - Discord message adapter
+- Feishu webhook adapter
 - React-based Web UI served from the Hono server root
 - SSE event hub for realtime UI updates
 - CLI-backed and direct-api streaming previews over SSE before the final assistant message is persisted
@@ -115,6 +116,7 @@ Implemented today:
 - channel manager
 - Telegram polling adapter
 - Discord adapter
+- Feishu webhook adapter
 - outbound channel notifications for heartbeat / cron results
 - Telegram shell commands: \`/status\`, \`/undo\`, \`/resend\`, \`/cancel\`, \`/heartbeat\`, \`/cron\`
 
@@ -134,6 +136,15 @@ Discord behavior:
 - guild messages default to mention-gated handling
 - shell commands reuse the same channel command router as Telegram
 - replies are sent back to the originating text channel or DM
+
+Feishu behavior:
+- receives event callbacks on \`/api/channels/feishu/events\`
+- supports Feishu URL verification challenge
+- verifies the configured verification token when present
+- handles unencrypted \`im.message.receive_v1\` text events
+- p2p chats are handled directly
+- group chats can be mention-gated
+- replies are sent back as message replies through the Feishu IM API
 
 Design rules borrowed from OpenClaw-style gateways:
 - channel enablement is config-driven

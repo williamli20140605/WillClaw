@@ -11,6 +11,7 @@ const REQUIRED_DIRECTORIES = [
     (paths: WillClawPaths) => paths.historyDir,
     (paths: WillClawPaths) => `${paths.historyDir}/telegram`,
     (paths: WillClawPaths) => `${paths.historyDir}/discord`,
+    (paths: WillClawPaths) => `${paths.historyDir}/feishu`,
     (paths: WillClawPaths) => `${paths.historyDir}/web`,
     (paths: WillClawPaths) => `${paths.historyDir}/cron`,
     (paths: WillClawPaths) => paths.logsDir,
@@ -149,6 +150,10 @@ channels:
     enabled: false
     app_id_env: FEISHU_APP_ID
     app_secret_env: FEISHU_APP_SECRET
+    verification_token_env: FEISHU_VERIFICATION_TOKEN
+    owner_open_id: ""
+    allowed_open_ids: []
+    require_mention_in_groups: true
   web:
     enabled: true
 

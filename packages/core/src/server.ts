@@ -9,6 +9,7 @@ import type { Logger } from 'pino';
 import { z } from 'zod';
 
 import type { ChatService } from './chat-service.js';
+import type { ChannelManager } from './channels/manager.js';
 import { RunCancelledError } from './chat-service.js';
 import type { WillClawConfig } from './config.js';
 import type { WillClawEvent, WillClawEventHub } from './events.js';
@@ -252,6 +253,7 @@ export interface WillClawRuntimeLike {
     browserTool: BrowserTool;
     screenTool: ScreenTool;
     chatService: ChatService;
+    channelManager: ChannelManager;
     backgroundTaskEngine: BackgroundTaskEngine;
     scheduler: WillClawScheduler;
     workspaceMemoryManager: WorkspaceMemoryManager;
@@ -299,6 +301,11 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
     const app = new Hono();
 
     app.use('/api/*', async (c, next) => {
+        if (c.req.path === '/api/channels/feishu/events') {
+            await next();
+            return;
+        }
+
         if (!shouldRequireAuth(runtime.config)) {
             await next();
             return;
@@ -381,6 +388,19 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
 
     app.get('/api/providers/health', async (c) => {
         return c.json(await getProviderHealth(runtime.config));
+    });
+
+    app.post('/api/channels/feishu/events', async (c) => {
+        const response = await runtime.channelManager.handleInboundRequest(
+            'feishu',
+            c.req.raw,
+        );
+
+        if (!response) {
+            return c.json({ error: 'Feishu channel is not enabled' }, 404);
+        }
+
+        return response;
     });
 
     app.get('/api/route-preview', (c) => {

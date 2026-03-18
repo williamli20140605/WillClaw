@@ -7,6 +7,7 @@ import type { Orchestrator } from '../orchestrator.js';
 import type { WillClawScheduler } from '../scheduler.js';
 
 import { DiscordChannel } from './discord.js';
+import { FeishuChannel } from './feishu.js';
 import { TelegramChannel } from './telegram.js';
 import type { ChannelAdapter, ChannelNotifier } from './types.js';
 
@@ -38,6 +39,19 @@ export class ChannelManager implements ChannelNotifier {
         if (this.config.channels.discord.enabled) {
             const adapter = new DiscordChannel(
                 this.config.channels.discord,
+                this.chatService,
+                this.orchestrator,
+                this.scheduler,
+                this.memoryStore,
+                this.logger,
+                this.workingDirectory,
+            );
+            this.adapters.set(adapter.name, adapter);
+        }
+
+        if (this.config.channels.feishu.enabled) {
+            const adapter = new FeishuChannel(
+                this.config.channels.feishu,
                 this.chatService,
                 this.orchestrator,
                 this.scheduler,
@@ -93,5 +107,17 @@ export class ChannelManager implements ChannelNotifier {
 
         await adapter.sendMessage(chatId, text);
         return true;
+    }
+
+    async handleInboundRequest(
+        channel: string,
+        request: Request,
+    ): Promise<Response | null> {
+        const adapter = this.adapters.get(channel);
+        if (!adapter?.handleInboundRequest) {
+            return null;
+        }
+
+        return await adapter.handleInboundRequest(request);
     }
 }

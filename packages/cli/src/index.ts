@@ -3,7 +3,6 @@
 import { Command } from 'commander';
 
 import {
-    ChannelManager,
     getProviderHealth,
     getWillClawStatus,
     initWillClaw,
@@ -90,15 +89,7 @@ program
         const runtime = await startWillClaw(
             options.home ? { homeDir: options.home } : undefined,
         );
-        const channelManager = new ChannelManager(
-            runtime.config,
-            runtime.chatService,
-            runtime.orchestrator,
-            runtime.scheduler,
-            runtime.memoryStore,
-            runtime.logger,
-            runtime.paths.homeDir,
-        );
+        const channelManager = runtime.channelManager;
 
         console.log('WillClaw runtime initialized.');
         console.log(`Home: ${runtime.paths.homeDir}`);

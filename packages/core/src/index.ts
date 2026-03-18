@@ -35,6 +35,7 @@ export {
 } from './chat-service.js';
 export { ChannelManager } from './channels/manager.js';
 export { DiscordChannel } from './channels/discord.js';
+export { FeishuChannel } from './channels/feishu.js';
 export { TelegramChannel } from './channels/telegram.js';
 export type { ChannelAdapter } from './channels/types.js';
 export {

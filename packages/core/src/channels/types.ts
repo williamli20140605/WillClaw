@@ -4,6 +4,7 @@ export interface ChannelAdapter {
     start(): Promise<boolean>;
     stop(): Promise<void>;
     sendMessage(chatId: string, text: string): Promise<void>;
+    handleInboundRequest?(request: Request): Promise<Response | null>;
 }
 
 export interface ChannelNotifier {
