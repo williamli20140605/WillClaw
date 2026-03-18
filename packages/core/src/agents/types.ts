@@ -40,6 +40,7 @@ export interface AgentRequest {
         enabled: boolean;
         maxCalls: number;
         tools: Array<'browser' | 'screen'>;
+        allowedActions?: Partial<Record<'browser' | 'screen', string[]>>;
     };
     onTextStream?: (update: AgentTextStreamUpdate) => void;
 }

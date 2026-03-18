@@ -359,6 +359,17 @@ program
             if (entry.installHint) {
                 console.log(`  hint: ${entry.installHint}`);
             }
+
+            for (const action of entry.actions) {
+                const actionState = action.healthy
+                    ? 'ready'
+                    : action.available
+                        ? 'degraded'
+                        : 'unsupported';
+                console.log(
+                    `  - ${action.action}\t${actionState}\t${action.detail}`,
+                );
+            }
         }
     });
 

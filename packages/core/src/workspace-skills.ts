@@ -248,6 +248,7 @@ Agent-facing bridge:
 - the agent must answer with exactly one \`WILLCLAW_HOSTED_ACTION {...}\` line
 - WillClaw executes the action, appends the result as a system message, and the agent continues
 - this is intentionally narrower than generic MCP or shell/file bridges
+- only actions that are currently healthy should be exposed to the selected agent
 
 Audit rule:
 - every WillClaw-owned host tool call must write to the tool log database and the app log
@@ -299,9 +300,11 @@ Current default usage by backend type:
 
 Bridge rules:
 - only expose capabilities the selected agent actually needs
+- only expose actions that are currently healthy according to provider doctor results
 - prefer the smallest possible action payload
 - use browser/session continuity within one run when possible
 - keep artifacts and outputs auditable through WillClaw tool logs
+- reject hosted actions that fall outside the current allowed action list
 - if a provider fails, return the failure to the agent as system context instead of hiding it
 
 Good fits:

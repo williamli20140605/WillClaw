@@ -1521,6 +1521,7 @@ daemon:
 - 已有 SSE 流式预览：CLI backend stdout 和 `direct-api` 的 Anthropic SSE 都会推送 `chat.run.stream.delta`，Web UI 可在最终消息落库前显示临时 assistant 气泡
 - 已有 CLI 输出归一化：`opencode` / `gemini` 这类 JSON / linewise event stream 会提纯正文，不再把 `step_start`、`timestamp` 等元数据混进消息内容
 - 已有 provider doctor：CLI `willclaw doctor` 和 `/api/providers/health` 会检查 `agent-browser / peekaboo / system-open / screencapture` 的安装与权限状态
+- 已有 action-level provider doctor：会明确区分 `open / snapshot / capture / see / click / type / press` 哪些动作当前 healthy，hosted bridge 只向 agent 暴露健康动作
 - 已有结构化宿主 browser actions：`open / snapshot / click / type / screenshot`
 - 已有结构化宿主 screen actions：`capture / see / click / type / press`
 - 已有 host tool action API：`/api/tools/browser/*`、`/api/tools/screen/*`

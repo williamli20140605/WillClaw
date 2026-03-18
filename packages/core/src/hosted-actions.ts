@@ -149,33 +149,95 @@ function formatResultData(data: unknown): string | null {
 }
 
 export function renderHostedActionBridgeInstructions(options: {
-    browser: boolean;
-    screen: boolean;
+    browserActions: string[];
+    screenActions: string[];
 }): string | null {
     const lines: string[] = [];
 
-    if (options.browser) {
+    if (options.browserActions.length > 0) {
         lines.push(
             'WillClaw exposes a hosted browser bridge.',
             `If you need browser help, reply with exactly one line and nothing else:`,
-            `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"open","target":"https://example.com"}`,
-            `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"snapshot","interactive":true,"compact":true}`,
-            `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"click","selector":"@e2"}`,
-            `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"type","selector":"@e3","text":"hello","clear":true}`,
-            `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"screenshot","filePath":"/tmp/browser.png","fullPage":true}`,
-            'Structured browser actions depend on agent-browser; plain URL open can still fall back to system-open.',
         );
+
+        if (options.browserActions.includes('open')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"open","target":"https://example.com"}`,
+            );
+        }
+        if (options.browserActions.includes('snapshot')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"snapshot","interactive":true,"compact":true}`,
+            );
+        }
+        if (options.browserActions.includes('click')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"click","selector":"@e2"}`,
+            );
+        }
+        if (options.browserActions.includes('type')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"type","selector":"@e3","text":"hello","clear":true}`,
+            );
+        }
+        if (options.browserActions.includes('screenshot')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"screenshot","filePath":"/tmp/browser.png","fullPage":true}`,
+            );
+        }
+
+        lines.push(
+            `Allowed browser actions right now: ${options.browserActions.join(', ')}.`,
+        );
+
+        if (
+            options.browserActions.includes('open') &&
+            options.browserActions.length === 1
+        ) {
+            lines.push(
+                'Only plain URL open is currently healthy; structured browser automation is unavailable.',
+            );
+        } else {
+            lines.push(
+                'Structured browser actions depend on agent-browser; plain URL open can still fall back to system-open.',
+            );
+        }
     }
 
-    if (options.screen) {
+    if (options.screenActions.length > 0) {
         lines.push(
             'WillClaw exposes a hosted screen/desktop bridge.',
             `If you need desktop vision or interaction, reply with exactly one line and nothing else:`,
-            `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"capture","mode":"screen","filePath":"/tmp/screen.png"}`,
-            `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"see","mode":"frontmost","path":"/tmp/see.png"}`,
-            `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"click","elementId":"B1","app":"Terminal"}`,
-            `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"type","text":"hello","app":"Terminal","pressReturn":true}`,
-            `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"press","keys":["tab","return"],"app":"Terminal"}`,
+        );
+
+        if (options.screenActions.includes('capture')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"capture","mode":"screen","filePath":"/tmp/screen.png"}`,
+            );
+        }
+        if (options.screenActions.includes('see')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"see","mode":"frontmost","path":"/tmp/see.png"}`,
+            );
+        }
+        if (options.screenActions.includes('click')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"click","elementId":"B1","app":"Terminal"}`,
+            );
+        }
+        if (options.screenActions.includes('type')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"type","text":"hello","app":"Terminal","pressReturn":true}`,
+            );
+        }
+        if (options.screenActions.includes('press')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"press","keys":["tab","return"],"app":"Terminal"}`,
+            );
+        }
+
+        lines.push(
+            `Allowed screen actions right now: ${options.screenActions.join(', ')}.`,
             'Desktop click/type/press require macOS Accessibility permission for the host app running WillClaw.',
         );
     }
@@ -189,6 +251,21 @@ export function renderHostedActionBridgeInstructions(options: {
     );
 
     return lines.join('\n');
+}
+
+export function formatHostedActionRestriction(options: {
+    request: HostedActionRequest;
+    allowedActions: Partial<Record<HostedActionTool, string[]>>;
+}): string {
+    const allowed = options.allowedActions[options.request.tool] ?? [];
+    const supportedList =
+        allowed.length > 0 ? allowed.join(', ') : 'none currently available';
+
+    return [
+        `WillClaw blocked hosted action: ${options.request.tool}.${options.request.action}`,
+        `Allowed ${options.request.tool} actions right now: ${supportedList}`,
+        'Choose one of the allowed actions or continue without the hosted bridge.',
+    ].join('\n');
 }
 
 export class HostedActionService {

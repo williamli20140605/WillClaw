@@ -5,6 +5,7 @@ import type { Logger } from 'pino';
 import type { WillClawConfig } from './config.js';
 import type { WillClawEventHub } from './events.js';
 import {
+    formatHostedActionRestriction,
     renderHostedActionBridgeInstructions,
     type HostedActionService,
     type HostedActionUse,
@@ -15,6 +16,10 @@ import {
 } from './memory-search.js';
 import type { PromptAssembler, PromptSection } from './prompt.js';
 import type { WillClawPaths } from './paths.js';
+import {
+    getHealthyProviderActions,
+    getProviderHealth,
+} from './provider-health.js';
 import {
     getAgentToolMode,
     resolveAgentToolPolicy,
@@ -286,11 +291,22 @@ export class Orchestrator {
                     agentName,
                     'screen',
                 );
-                const hostedActionInstructions =
+                const hostedProviderHealth =
                     hostedBrowserEnabled || hostedScreenEnabled
+                        ? await getProviderHealth(this.config)
+                        : [];
+                const hostedBrowserActions = hostedBrowserEnabled
+                    ? getHealthyProviderActions(hostedProviderHealth, 'browser')
+                    : [];
+                const hostedScreenActions = hostedScreenEnabled
+                    ? getHealthyProviderActions(hostedProviderHealth, 'screen')
+                    : [];
+                const hostedActionInstructions =
+                    hostedBrowserActions.length > 0 ||
+                    hostedScreenActions.length > 0
                         ? renderHostedActionBridgeInstructions({
-                            browser: hostedBrowserEnabled,
-                            screen: hostedScreenEnabled,
+                            browserActions: hostedBrowserActions,
+                            screenActions: hostedScreenActions,
                         })
                         : null;
                 this.activeRuns.set(agentRequest.runId, {
@@ -339,9 +355,21 @@ export class Orchestrator {
                         enabled: Boolean(hostedActionInstructions),
                         maxCalls: 4,
                         tools: [
-                            ...(hostedBrowserEnabled ? (['browser'] as const) : []),
-                            ...(hostedScreenEnabled ? (['screen'] as const) : []),
+                            ...(hostedBrowserActions.length > 0
+                                ? (['browser'] as const)
+                                : []),
+                            ...(hostedScreenActions.length > 0
+                                ? (['screen'] as const)
+                                : []),
                         ],
+                        allowedActions: {
+                            ...(hostedBrowserActions.length > 0
+                                ? { browser: hostedBrowserActions }
+                                : {}),
+                            ...(hostedScreenActions.length > 0
+                                ? { screen: hostedScreenActions }
+                                : {}),
+                        },
                     },
                 });
                 const result: RunChatResult = {
@@ -462,6 +490,7 @@ export class Orchestrator {
     ) {
         const memorySearchEnabled = request.memorySearch?.enabled === true;
         const hostedActionEnabled = request.hostedActionBridge?.enabled === true;
+        const allowedHostedActions = request.hostedActionBridge?.allowedActions ?? {};
 
         if (!memorySearchEnabled && !hostedActionEnabled) {
             return await backend.execute(request);
@@ -578,6 +607,39 @@ export class Orchestrator {
             }
 
             if (!hostedActionRequest) {
+                continue;
+            }
+
+            const allowedActions = allowedHostedActions[hostedActionRequest.tool] ?? [];
+            if (!allowedActions.includes(hostedActionRequest.action)) {
+                hostedActions.push({
+                    tool: hostedActionRequest.tool,
+                    action: hostedActionRequest.action,
+                    success: false,
+                });
+                memorySearchHistory.push(
+                    {
+                        role: 'assistant',
+                        content: response.content.trim(),
+                    },
+                    {
+                        role: 'system',
+                        content: formatHostedActionRestriction({
+                            request: hostedActionRequest,
+                            allowedActions: allowedHostedActions,
+                        }),
+                    },
+                );
+                this.logger.warn(
+                    {
+                        runId: request.runId,
+                        agent: agentName,
+                        tool: hostedActionRequest.tool,
+                        action: hostedActionRequest.action,
+                        allowedActions,
+                    },
+                    'Hosted browser/screen action was blocked by action policy',
+                );
                 continue;
             }
 

@@ -105,7 +105,9 @@ export {
     type WillClawPaths,
 } from './paths.js';
 export {
+    getHealthyProviderActions,
     getProviderHealth,
+    type ProviderActionHealth,
     type ProviderHealthEntry,
 } from './provider-health.js';
 export {

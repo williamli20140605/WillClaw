@@ -25,6 +25,24 @@ interface HostTool {
     mode?: string;
 }
 
+interface ProviderActionHealth {
+    action: string;
+    available: boolean;
+    healthy: boolean;
+    detail: string;
+}
+
+interface ProviderHealthEntry {
+    tool: 'browser' | 'screen';
+    provider: string;
+    configured: boolean;
+    available: boolean;
+    healthy: boolean;
+    detail: string;
+    installHint?: string;
+    actions: ProviderActionHealth[];
+}
+
 interface StatusPayload {
     name: string;
     homeDir: string;
@@ -562,6 +580,7 @@ export function App() {
     const [activeRuns, setActiveRuns] = useState<ActiveRun[]>([]);
     const [recentEvents, setRecentEvents] = useState<RealtimeEvent[]>([]);
     const [inspectorTab, setInspectorTab] = useState<InspectorTab>('search');
+    const [providerHealth, setProviderHealth] = useState<ProviderHealthEntry[]>([]);
     const [browserTarget, setBrowserTarget] = useState('https://example.com');
     const [screenApp, setScreenApp] = useState('');
     const [hostActionBusy, setHostActionBusy] = useState(false);
@@ -574,6 +593,15 @@ export function App() {
         const payload = await readJson<StatusPayload>('/api/status');
         startTransition(() => {
             setStatus(payload);
+        });
+    }
+
+    async function loadProviderHealthPanel(): Promise<void> {
+        const payload = await readJson<ProviderHealthEntry[]>(
+            '/api/providers/health',
+        );
+        startTransition(() => {
+            setProviderHealth(payload);
         });
     }
 
@@ -638,6 +666,7 @@ export function App() {
         try {
             await Promise.all([
                 loadStatusPanel(),
+                loadProviderHealthPanel(),
                 loadChatList(),
                 loadSchedulerPanel(),
             ]);
@@ -2418,6 +2447,70 @@ export function App() {
                                                 </pre>
                                             </article>
                                         ) : null}
+                                    </div>
+                                </section>
+
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Providers</h3>
+                                        <span>{providerHealth.length} checks</span>
+                                    </div>
+                                    <div className="stack-list">
+                                        {providerHealth.map((entry) => (
+                                            <article
+                                                className="provider-card"
+                                                key={`${entry.tool}-${entry.provider}`}
+                                            >
+                                                <div className="status-line">
+                                                    <strong>{entry.provider}</strong>
+                                                    <div className="chip-row">
+                                                        <span className="chip">
+                                                            {entry.tool}
+                                                        </span>
+                                                        <span
+                                                            className="chip"
+                                                            data-tone={
+                                                                entry.healthy
+                                                                    ? 'teal'
+                                                                    : entry.available
+                                                                        ? 'accent'
+                                                                        : 'danger'
+                                                            }
+                                                        >
+                                                            {entry.healthy
+                                                                ? 'healthy'
+                                                                : entry.available
+                                                                    ? 'degraded'
+                                                                    : 'missing'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <p className="muted">{entry.detail}</p>
+                                                <div className="chip-row">
+                                                    {entry.actions.map((action) => (
+                                                        <span
+                                                            className="chip"
+                                                            data-tone={
+                                                                action.healthy
+                                                                    ? 'teal'
+                                                                    : action.available
+                                                                        ? 'accent'
+                                                                        : 'danger'
+                                                            }
+                                                            key={`${entry.provider}-${action.action}`}
+                                                            title={action.detail}
+                                                        >
+                                                            {action.action}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                                {entry.installHint ? (
+                                                    <p className="muted">
+                                                        Hint: {entry.installHint}
+                                                    </p>
+                                                ) : null}
+                                            </article>
+                                        ))}
                                     </div>
                                 </section>
 
