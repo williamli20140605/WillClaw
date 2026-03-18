@@ -108,8 +108,11 @@ program
             console.log(`Channels: ${startedChannels.join(', ')}`);
         }
 
-        const { server } = await listenWithRuntime(runtime);
+        const { server, acpServer } = await listenWithRuntime(runtime);
         console.log(`HTTP server: http://${server.hostname}:${server.port}`);
+        if (acpServer) {
+            console.log(`ACP server: http://${acpServer.hostname}:${acpServer.port}`);
+        }
         console.log('Press Ctrl+C to stop.');
 
         const shutdown = async (signal: string) => {
@@ -117,6 +120,9 @@ program
             runtime.scheduler.stop();
             runtime.backgroundTaskEngine.setChannelNotifier(null);
             await channelManager.stop();
+            if (acpServer) {
+                await acpServer.close();
+            }
             await server.close();
             process.exit(0);
         };

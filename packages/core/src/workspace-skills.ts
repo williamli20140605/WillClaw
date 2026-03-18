@@ -53,6 +53,7 @@ Current implemented scope:
 - SSE event hub for realtime UI updates
 - CLI-backed, direct-api, and ACP streaming previews over SSE before the final assistant message is persisted
 - agent-facing hosted browser/screen bridge for narrow WillClaw-owned actions
+- minimal ACP server with list/get/run endpoints, sync+stream+async modes, and bearer-token auth
 - LaunchAgent login auto-start commands
 
 Current non-goals or not-yet-done areas:
@@ -96,6 +97,7 @@ Important runtime pieces:
 - scheduler
 - workspace memory manager
 - bundled web UI assets served from the HTTP server root
+- optional ACP server on a separate port when \`acp.server.enabled\` is true
 
 Notes:
 - \`init\` should be safe and repeatable

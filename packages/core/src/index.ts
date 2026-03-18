@@ -1,4 +1,10 @@
 export {
+    createWillClawAcpApp,
+    startWillClawAcpServer,
+    type AcpHttpServer,
+    type AcpServerRuntimeLike,
+} from './acp/server.js';
+export {
     getWillClawStatus,
     initWillClaw,
     startWillClaw,

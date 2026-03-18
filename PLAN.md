@@ -1514,6 +1514,7 @@ daemon:
 - 已有 Telegram 壳层命令：`/status`、`/undo`、`/resend`、`/cancel`、`/heartbeat`、`/cron`
 - 已有 Discord adapter：DM 直通、guild mention gating、基础壳层命令复用
 - 已有 Feishu adapter：支持 webhook challenge、`im.message.receive_v1` 文本事件、mention gating、消息回复
+- 已有最小 ACP Server：独立端口、bearer token 鉴权、`/agents` discovery、`run sync/stream/async`、`run status/cancel`
 - 已有 Web UI 首版：React dashboard + Hono 静态托管
 - 已有 Web UI realtime：SSE 事件流 + active runs / recent events
 - 已有 Web UI Markdown 渲染：assistant / system 消息支持代码块、列表、表格、引用
@@ -1631,8 +1632,8 @@ daemon:
 
 ### Phase 6 — 打磨（持续）
 
-- [ ] WillClaw 作为 ACP Server
-- [ ] 飞书适配器
+- [x] WillClaw 作为 ACP Server（最小版）
+- [x] 飞书适配器
 - [ ] Web UI 美化
 - [ ] Tailscale 远程访问
 - [ ] `/mode` 工作模式切换

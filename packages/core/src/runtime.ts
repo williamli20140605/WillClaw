@@ -1,5 +1,10 @@
 import type { Logger } from 'pino';
 
+import {
+    createWillClawAcpApp,
+    startWillClawAcpServer,
+    type AcpHttpServer,
+} from './acp/server.js';
 import { createAgentBackends } from './agents/factory.js';
 import type { AgentBackend } from './agents/types.js';
 import { ChatService } from './chat-service.js';
@@ -166,12 +171,22 @@ export async function createWillClawRuntime(options?: {
 export async function listenWithRuntime(runtime: WillClawRuntime): Promise<{
     app: ReturnType<typeof createWillClawApp>;
     server: WillClawHttpServer;
+    acpApp?: ReturnType<typeof createWillClawAcpApp>;
+    acpServer?: AcpHttpServer;
 }> {
     const app = createWillClawApp(runtime);
     const server = await startWillClawHttpServer(runtime, app);
+    const acpEnabled = runtime.config.acp.server.enabled;
+    const acpApp = acpEnabled ? createWillClawAcpApp(runtime) : undefined;
+    const acpServer =
+        acpEnabled && acpApp
+            ? await startWillClawAcpServer(runtime, acpApp)
+            : undefined;
 
     return {
         app,
         server,
+        ...(acpApp ? { acpApp } : {}),
+        ...(acpServer ? { acpServer } : {}),
     };
 }

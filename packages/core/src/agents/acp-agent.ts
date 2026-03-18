@@ -186,7 +186,9 @@ function applyStreamPayload(options: {
         throw new AgentExecutionError(
             extractTextCandidate(options.payload.error ?? options.payload) ||
                 'ACP stream returned an error event',
-            {},
+            {
+                agent: 'acp-stream',
+            },
         );
     }
 
