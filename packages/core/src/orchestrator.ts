@@ -5,6 +5,11 @@ import type { Logger } from 'pino';
 import type { WillClawConfig } from './config.js';
 import type { WillClawEventHub } from './events.js';
 import {
+    renderHostedActionBridgeInstructions,
+    type HostedActionService,
+    type HostedActionUse,
+} from './hosted-actions.js';
+import {
     renderMemorySearchBridgeInstructions,
     type MemorySearchService,
 } from './memory-search.js';
@@ -140,6 +145,7 @@ export class Orchestrator {
         private readonly promptAssembler: PromptAssembler,
         private readonly agents: Map<string, AgentBackend>,
         private readonly memorySearchService: MemorySearchService,
+        private readonly hostedActionService: HostedActionService,
         private readonly logger: Logger,
         private readonly eventHub: WillClawEventHub,
     ) { }
@@ -196,6 +202,8 @@ export class Orchestrator {
             systemPrompt,
             history: request.history ?? [],
             executionMode: request.executionMode ?? 'foreground',
+            ...(request.channel ? { channel: request.channel } : {}),
+            ...(request.chatId ? { chatId: request.chatId } : {}),
         };
 
         if (request.workingDirectory) {
@@ -270,6 +278,21 @@ export class Orchestrator {
                     agentName,
                     'memory_search',
                 );
+                const hostedBrowserEnabled = this.canUseHostedTool(
+                    agentName,
+                    'browser',
+                );
+                const hostedScreenEnabled = this.canUseHostedTool(
+                    agentName,
+                    'screen',
+                );
+                const hostedActionInstructions =
+                    hostedBrowserEnabled || hostedScreenEnabled
+                        ? renderHostedActionBridgeInstructions({
+                            browser: hostedBrowserEnabled,
+                            screen: hostedScreenEnabled,
+                        })
+                        : null;
                 this.activeRuns.set(agentRequest.runId, {
                     agent: agentName,
                     backend,
@@ -299,9 +322,26 @@ export class Orchestrator {
                     systemPrompt: memorySearchEnabled
                         ? `${agentRequest.systemPrompt}\n\n## Hosted Memory Search\n${renderMemorySearchBridgeInstructions()}`
                         : agentRequest.systemPrompt,
+                    ...(hostedActionInstructions
+                        ? {
+                            systemPrompt: `${
+                                memorySearchEnabled
+                                    ? `${agentRequest.systemPrompt}\n\n## Hosted Memory Search\n${renderMemorySearchBridgeInstructions()}`
+                                    : agentRequest.systemPrompt
+                            }\n\n## Hosted Browser / Screen Actions\n${hostedActionInstructions}`,
+                        }
+                        : {}),
                     memorySearch: {
                         enabled: memorySearchEnabled,
                         maxCalls: 3,
+                    },
+                    hostedActionBridge: {
+                        enabled: Boolean(hostedActionInstructions),
+                        maxCalls: 4,
+                        tools: [
+                            ...(hostedBrowserEnabled ? (['browser'] as const) : []),
+                            ...(hostedScreenEnabled ? (['screen'] as const) : []),
+                        ],
                     },
                 });
                 const result: RunChatResult = {
@@ -420,7 +460,10 @@ export class Orchestrator {
         backend: AgentBackend,
         request: AgentRequest,
     ) {
-        if (!request.memorySearch?.enabled) {
+        const memorySearchEnabled = request.memorySearch?.enabled === true;
+        const hostedActionEnabled = request.hostedActionBridge?.enabled === true;
+
+        if (!memorySearchEnabled && !hostedActionEnabled) {
             return await backend.execute(request);
         }
 
@@ -431,17 +474,25 @@ export class Orchestrator {
             messageCount: number;
             fileCount: number;
         }> = [];
+        const hostedActions: HostedActionUse[] = [];
+        const maxBridgeCalls =
+            (memorySearchEnabled ? request.memorySearch?.maxCalls ?? 0 : 0) +
+            (hostedActionEnabled ? request.hostedActionBridge?.maxCalls ?? 0 : 0);
 
-        for (let callIndex = 0; callIndex <= request.memorySearch.maxCalls; callIndex += 1) {
+        for (let callIndex = 0; callIndex <= maxBridgeCalls; callIndex += 1) {
             const response = await backend.execute({
                 ...request,
                 history: memorySearchHistory,
             });
-            const toolRequest = this.memorySearchService.parseBridgeRequest(
-                response.content,
-            );
-            if (!toolRequest) {
-                if (memorySearches.length === 0) {
+            const memoryToolRequest = memorySearchEnabled
+                ? this.memorySearchService.parseBridgeRequest(response.content)
+                : null;
+            const hostedActionRequest = hostedActionEnabled
+                ? this.hostedActionService.parseBridgeRequest(response.content)
+                : null;
+
+            if (!memoryToolRequest && !hostedActionRequest) {
+                if (memorySearches.length === 0 && hostedActions.length === 0) {
                     return response;
                 }
 
@@ -449,62 +500,160 @@ export class Orchestrator {
                     ...response,
                     metadata: {
                         ...(response.metadata ?? {}),
-                        hostedMemorySearches: memorySearches,
+                        ...(memorySearches.length > 0
+                            ? { hostedMemorySearches: memorySearches }
+                            : {}),
+                        ...(hostedActions.length > 0
+                            ? { hostedActions }
+                            : {}),
                     },
                 };
             }
 
-            const searchKey = JSON.stringify(toolRequest);
+            const bridgeKey = memoryToolRequest
+                ? `memory:${JSON.stringify(memoryToolRequest)}`
+                : `action:${JSON.stringify(hostedActionRequest)}`;
             if (
-                callIndex === request.memorySearch.maxCalls ||
-                usedQueries.has(searchKey)
+                callIndex === maxBridgeCalls ||
+                usedQueries.has(bridgeKey)
             ) {
                 return {
                     ...response,
                     content:
-                        'WillClaw memory_search could not complete because the same lookup was requested repeatedly.',
+                        memoryToolRequest
+                            ? 'WillClaw memory_search could not complete because the same lookup was requested repeatedly.'
+                            : 'WillClaw hosted browser/screen bridge could not complete because the same action was requested repeatedly.',
                     metadata: {
                         ...(response.metadata ?? {}),
-                        hostedMemorySearches: memorySearches,
-                        memorySearchBridge: 'exhausted',
+                        ...(memorySearches.length > 0
+                            ? { hostedMemorySearches: memorySearches }
+                            : {}),
+                        ...(hostedActions.length > 0
+                            ? { hostedActions }
+                            : {}),
+                        ...(memoryToolRequest
+                            ? { memorySearchBridge: 'exhausted' }
+                            : { hostedActionBridge: 'exhausted' }),
                     },
                 };
             }
 
-            usedQueries.add(searchKey);
-            const searchResult = this.memorySearchService.search({
-                ...toolRequest,
-                excludeRunId: request.runId,
-            });
+            usedQueries.add(bridgeKey);
 
-            memorySearches.push({
-                query: toolRequest.query,
-                messageCount: searchResult.messages.length,
-                fileCount: searchResult.files.length,
-            });
-            memorySearchHistory.push(
-                {
-                    role: 'assistant',
-                    content: response.content.trim(),
-                },
-                {
-                    role: 'system',
-                    content: this.memorySearchService.formatToolResult(
-                        toolRequest,
-                        searchResult,
-                    ),
-                },
-            );
-            this.logger.info(
-                {
-                    runId: request.runId,
-                    agent: agentName,
-                    query: toolRequest.query,
+            if (memoryToolRequest) {
+                const searchResult = this.memorySearchService.search({
+                    ...memoryToolRequest,
+                    excludeRunId: request.runId,
+                });
+
+                memorySearches.push({
+                    query: memoryToolRequest.query,
                     messageCount: searchResult.messages.length,
                     fileCount: searchResult.files.length,
-                },
-                'Served hosted memory_search to agent',
-            );
+                });
+                memorySearchHistory.push(
+                    {
+                        role: 'assistant',
+                        content: response.content.trim(),
+                    },
+                    {
+                        role: 'system',
+                        content: this.memorySearchService.formatToolResult(
+                            memoryToolRequest,
+                            searchResult,
+                        ),
+                    },
+                );
+                this.logger.info(
+                    {
+                        runId: request.runId,
+                        agent: agentName,
+                        query: memoryToolRequest.query,
+                        messageCount: searchResult.messages.length,
+                        fileCount: searchResult.files.length,
+                    },
+                    'Served hosted memory_search to agent',
+                );
+                continue;
+            }
+
+            if (!hostedActionRequest) {
+                continue;
+            }
+
+            try {
+                const hostedActionResult = await this.hostedActionService.execute(
+                    hostedActionRequest,
+                    {
+                        runId: request.runId,
+                        agent: agentName,
+                        ...(request.channel ? { channel: request.channel } : {}),
+                        ...(request.chatId ? { chatId: request.chatId } : {}),
+                    },
+                );
+                hostedActions.push({
+                    tool: hostedActionResult.tool,
+                    action: hostedActionResult.action,
+                    success: true,
+                    ...(hostedActionResult.provider
+                        ? { provider: hostedActionResult.provider }
+                        : {}),
+                });
+                memorySearchHistory.push(
+                    {
+                        role: 'assistant',
+                        content: response.content.trim(),
+                    },
+                    {
+                        role: 'system',
+                        content: this.hostedActionService.formatToolResult(
+                            hostedActionRequest,
+                            hostedActionResult,
+                        ),
+                    },
+                );
+                this.hostedActionService.logServedAction(
+                    {
+                        runId: request.runId,
+                        agent: agentName,
+                        ...(request.channel ? { channel: request.channel } : {}),
+                        ...(request.chatId ? { chatId: request.chatId } : {}),
+                    },
+                    hostedActionResult,
+                );
+            } catch (error) {
+                hostedActions.push({
+                    tool: hostedActionRequest.tool,
+                    action: hostedActionRequest.action,
+                    success: false,
+                });
+                memorySearchHistory.push(
+                    {
+                        role: 'assistant',
+                        content: response.content.trim(),
+                    },
+                    {
+                        role: 'system',
+                        content: this.hostedActionService.formatToolError(
+                            hostedActionRequest,
+                            error,
+                        ),
+                    },
+                );
+                this.logger.warn(
+                    {
+                        runId: request.runId,
+                        agent: agentName,
+                        tool: hostedActionRequest.tool,
+                        action: hostedActionRequest.action,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : 'Unknown hosted action error',
+                    },
+                    'Hosted browser/screen action failed for agent',
+                );
+            }
         }
 
         return await backend.execute(request);

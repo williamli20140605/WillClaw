@@ -28,11 +28,18 @@ export interface AgentRequest {
     text: string;
     systemPrompt: string;
     history: ChatMessage[];
+    channel?: string;
+    chatId?: string;
     workingDirectory?: string;
     executionMode?: ExecutionMode;
     memorySearch?: {
         enabled: boolean;
         maxCalls: number;
+    };
+    hostedActionBridge?: {
+        enabled: boolean;
+        maxCalls: number;
+        tools: Array<'browser' | 'screen'>;
     };
     onTextStream?: (update: AgentTextStreamUpdate) => void;
 }

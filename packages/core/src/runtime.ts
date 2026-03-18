@@ -8,6 +8,7 @@ import { loadWillClawConfig, type WillClawConfig } from './config.js';
 import { WillClawEventHub } from './events.js';
 import { HistoryExporter } from './history-exporter.js';
 import { BackgroundTaskEngine } from './heartbeat.js';
+import { HostedActionService } from './hosted-actions.js';
 import { createAppLogger } from './logger.js';
 import { MemorySearchService } from './memory-search.js';
 import { MemoryStore } from './memory.js';
@@ -67,6 +68,11 @@ export async function createWillClawRuntime(options?: {
     const shellTool = new ShellTool(config, toolLogger);
     const browserTool = new BrowserTool(config, toolLogger);
     const screenTool = new ScreenTool(config, toolLogger);
+    const hostedActionService = new HostedActionService(
+        browserTool,
+        screenTool,
+        logger,
+    );
     const historyExporter = config.history.enabled
         ? new HistoryExporter(config.history.dir, fileSystemTool)
         : null;
@@ -87,6 +93,7 @@ export async function createWillClawRuntime(options?: {
         promptAssembler,
         agents,
         memorySearchService,
+        hostedActionService,
         logger,
         eventHub,
     );

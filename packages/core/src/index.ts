@@ -52,6 +52,16 @@ export {
     type BackgroundTaskResult,
 } from './heartbeat.js';
 export {
+    HOSTED_ACTION_BRIDGE_PREFIX,
+    HostedActionService,
+    renderHostedActionBridgeInstructions,
+    type HostedActionContext,
+    type HostedActionExecutionResult,
+    type HostedActionRequest,
+    type HostedActionTool,
+    type HostedActionUse,
+} from './hosted-actions.js';
+export {
     MemoryStore,
     type SaveCommandRunInput,
     type SaveMessageInput,

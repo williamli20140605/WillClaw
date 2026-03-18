@@ -20,8 +20,8 @@ const CLI_DEFAULT_TOOL_POLICY: ResolvedAgentToolPolicy = {
 const API_DEFAULT_TOOL_POLICY: ResolvedAgentToolPolicy = {
     shell: 'hosted',
     filesystem: 'hosted',
-    browser: 'disabled',
-    screen: 'disabled',
+    browser: 'hosted',
+    screen: 'hosted',
     memory_search: 'hosted',
 };
 

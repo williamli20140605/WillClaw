@@ -51,6 +51,7 @@ Current implemented scope:
 - React-based Web UI served from the Hono server root
 - SSE event hub for realtime UI updates
 - CLI-backed and direct-api streaming previews over SSE before the final assistant message is persisted
+- agent-facing hosted browser/screen bridge for narrow WillClaw-owned actions
 - LaunchAgent login auto-start commands
 
 Current non-goals or not-yet-done areas:
@@ -169,7 +170,8 @@ Tool exposure policy:
 
 Default intent:
 - CLI coding agents keep terminal/filesystem as \`native\`
-- API-driven agents use hosted terminal/filesystem when enabled
+- API-driven agents use hosted terminal/filesystem by default
+- API-driven agents may also use hosted browser/screen bridges when policy allows
 - WillClaw-owned \`memory_search\` is a hosted shell capability, not a generic MCP layer
 - browser/screen stay explicitly policy-driven instead of assumed`,
     },
@@ -241,6 +243,12 @@ Current screen / desktop actions:
 - type
 - press keys
 
+Agent-facing bridge:
+- WillClaw can expose browser/screen as a narrow hosted bridge
+- the agent must answer with exactly one \`WILLCLAW_HOSTED_ACTION {...}\` line
+- WillClaw executes the action, appends the result as a system message, and the agent continues
+- this is intentionally narrower than generic MCP or shell/file bridges
+
 Audit rule:
 - every WillClaw-owned host tool call must write to the tool log database and the app log
 
@@ -256,6 +264,55 @@ Behavior notes:
 - structured desktop actions depend on \`peekaboo\`; \`screencapture\` is only a coarse fallback for screenshot capture
 - provider health can be checked from the CLI and HTTP API before relying on agent-browser or peekaboo
 - for provider-specific workflows, read the narrower \`agent-browser\` or \`peekaboo\` skill`,
+    },
+    {
+        slug: 'willclaw-hosted-bridge',
+        title: 'willclaw-hosted-bridge',
+        description:
+            'Use when deciding which agents should use the narrow hosted browser/screen bridge, or when editing that bridge behavior.',
+        body: `# Hosted Browser / Screen Bridge
+
+WillClaw may expose a narrow hosted bridge for browser and screen actions.
+
+What it is:
+- agent replies with exactly one \`WILLCLAW_HOSTED_ACTION {...}\` line
+- WillClaw executes the hosted browser/screen action
+- WillClaw appends the result as a system message
+- the agent continues and produces the final answer
+
+What it is not:
+- not generic MCP
+- not a shell/filesystem bridge
+- not meant to replace agent-native coding abilities
+
+Current default usage by backend type:
+- CLI coding agents (\`claude-code\`, \`codex\`, \`opencode\`, \`gemini\`):
+  - \`shell/filesystem = native\`
+  - \`browser/screen = disabled\`
+  - do not force the bridge onto agents that already excel inside their own coding loop
+- API agents (\`direct-api\`):
+  - \`shell/filesystem = hosted\`
+  - \`browser/screen = hosted\`
+  - this is the main target for the hosted bridge today
+- ACP agents:
+  - browser/screen stay disabled by default unless a future ACP-specific design proves necessary
+
+Bridge rules:
+- only expose capabilities the selected agent actually needs
+- prefer the smallest possible action payload
+- use browser/session continuity within one run when possible
+- keep artifacts and outputs auditable through WillClaw tool logs
+- if a provider fails, return the failure to the agent as system context instead of hiding it
+
+Good fits:
+- \`direct-api\` heartbeat / cron tasks that need browser inspection
+- shell-side research helpers that need hosted screenshots
+- future channel commands that need WillClaw-owned browser or desktop actions
+
+Bad fits:
+- general coding loops for CLI agents
+- replacing \`Exec / Read / Write / Edit\`
+- broad autonomous desktop control without explicit policy`,
     },
     {
         slug: 'agent-browser',

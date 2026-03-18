@@ -122,8 +122,8 @@ agents:
       tool_policy:
         shell: hosted
         filesystem: hosted
-        browser: disabled
-        screen: disabled
+        browser: hosted
+        screen: hosted
 
 acp:
   agents: {}

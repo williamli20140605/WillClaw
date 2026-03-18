@@ -1524,6 +1524,8 @@ daemon:
 - 已有结构化宿主 browser actions：`open / snapshot / click / type / screenshot`
 - 已有结构化宿主 screen actions：`capture / see / click / type / press`
 - 已有 host tool action API：`/api/tools/browser/*`、`/api/tools/screen/*`
+- 已有 agent-facing hosted browser/screen bridge：agent 可通过窄格式 `WILLCLAW_HOSTED_ACTION {...}` 请求 WillClaw 执行宿主动作，再继续完成任务
+- `direct-api` 默认策略现已允许 `browser/screen` hosted bridge
 - 已有 Web UI Host Lab：可直接触发 browser open/snapshot/screenshot 与 screen inspect/capture
 - 已有 macOS 登录自启：`launch-agent install / uninstall / status / print`
 

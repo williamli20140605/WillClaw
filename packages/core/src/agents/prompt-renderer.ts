@@ -33,9 +33,9 @@ export function renderExecutionPrompt(request: AgentRequest): string {
         'Reply with the final assistant answer only. Do not echo these prompt sections.',
     ];
 
-    if (request.memorySearch?.enabled) {
+    if (request.memorySearch?.enabled || request.hostedActionBridge?.enabled) {
         responseContract.unshift(
-            'If the system prompt exposes a hosted memory_search bridge, you may answer with only that bridge call when needed.',
+            'If the system prompt exposes hosted WillClaw bridges, you may answer with only one bridge call when needed.',
         );
     }
 
