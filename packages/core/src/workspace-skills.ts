@@ -51,7 +51,7 @@ Current implemented scope:
 - Feishu webhook adapter
 - React-based Web UI served from the Hono server root
 - SSE event hub for realtime UI updates
-- CLI-backed and direct-api streaming previews over SSE before the final assistant message is persisted
+- CLI-backed, direct-api, and ACP streaming previews over SSE before the final assistant message is persisted
 - agent-facing hosted browser/screen bridge for narrow WillClaw-owned actions
 - LaunchAgent login auto-start commands
 
@@ -308,6 +308,7 @@ Current default usage by backend type:
   - this is the main target for the hosted bridge today
 - ACP agents:
   - browser/screen stay disabled by default unless a future ACP-specific design proves necessary
+  - ACP responses may stream over SSE or NDJSON, and WillClaw should surface deltas when available
 
 Bridge rules:
 - only expose capabilities the selected agent actually needs
