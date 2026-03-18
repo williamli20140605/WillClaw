@@ -47,6 +47,7 @@ Current implemented scope:
 - workspace memory indexing, daily notes, and MEMORY.md compaction
 - scheduled daily note + scheduled MEMORY.md compact maintenance
 - Telegram polling channel adapter
+- Discord message adapter
 - React-based Web UI served from the Hono server root
 - SSE event hub for realtime UI updates
 - CLI-backed and direct-api streaming previews over SSE before the final assistant message is persisted
@@ -55,7 +56,7 @@ Current implemented scope:
 Current non-goals or not-yet-done areas:
 - full WebSocket transport
 - channel-facing undo/edit UX
-- full macOS automation beyond minimal host tools
+- full macOS automation beyond the current hosted browser/screen action set
 
 Design rules:
 - keep the core small
@@ -112,6 +113,7 @@ Implemented today:
 - channel adapter interface
 - channel manager
 - Telegram polling adapter
+- Discord adapter
 - outbound channel notifications for heartbeat / cron results
 - Telegram shell commands: \`/status\`, \`/undo\`, \`/resend\`, \`/cancel\`, \`/heartbeat\`, \`/cron\`
 
@@ -124,6 +126,13 @@ Telegram behavior:
 - assistant replies are pushed back to Telegram
 - shell commands can inspect status, revoke the latest user turn, resend it, cancel the latest active run, or trigger heartbeat / cron work
 - background task notifications can be pushed to Telegram via the channel manager
+
+Discord behavior:
+- reads token from the configured env var
+- DMs are handled directly
+- guild messages default to mention-gated handling
+- shell commands reuse the same channel command router as Telegram
+- replies are sent back to the originating text channel or DM
 
 Design rules borrowed from OpenClaw-style gateways:
 - channel enablement is config-driven
@@ -218,6 +227,20 @@ Current hosted tools:
 - screen
 - memory_search
 
+Current browser actions:
+- open URL
+- accessibility snapshot
+- click
+- type / fill
+- screenshot
+
+Current screen / desktop actions:
+- capture screenshot
+- see / inspect UI elements
+- click
+- type
+- press keys
+
 Audit rule:
 - every WillClaw-owned host tool call must write to the tool log database and the app log
 
@@ -229,6 +252,8 @@ Behavior notes:
 - provider attempts may fallback when the preferred binary is missing or fails
 - CLI agents with native terminal/filesystem should not receive duplicate hosted copies
 - browser and screen are host capabilities; they are not assumed to exist inside every backend session
+- structured browser actions depend on \`agent-browser\`; \`system-open\` is only a coarse fallback for URL open
+- structured desktop actions depend on \`peekaboo\`; \`screencapture\` is only a coarse fallback for screenshot capture
 - provider health can be checked from the CLI and HTTP API before relying on agent-browser or peekaboo
 - for provider-specific workflows, read the narrower \`agent-browser\` or \`peekaboo\` skill`,
     },
@@ -263,6 +288,8 @@ Useful commands:
 - \`agent-browser open <url>\`
 - \`agent-browser open <url> --headed\`
 - \`agent-browser snapshot -i --json\`
+- \`agent-browser click @e2\`
+- \`agent-browser type @e3 "hello"\`
 - \`agent-browser screenshot\`
 
 Notes:
@@ -299,6 +326,9 @@ Useful commands:
 - \`peekaboo permissions status\`
 - \`peekaboo permissions grant\`
 - \`peekaboo image --mode screen --retina --path <file>\`
+- \`peekaboo see --app Terminal --annotate --json\`
+- \`peekaboo click --id B1 --app Terminal --json\`
+- \`peekaboo type "hello" --app Terminal --json\`
 
 Notes:
 - requires Screen Recording and Accessibility permissions
@@ -328,6 +358,7 @@ Current UI scope:
 - scheduler trigger buttons
 - recent tool log panel scoped to the current chat
 - agent and host-tool status summary
+- runtime host lab for browser open/snapshot/screenshot and screen inspect/capture
 - SSE-backed realtime connection, active runs, and recent event stream
 - live streaming preview bubble for CLI and direct-api runs before the final assistant message lands
 - active run cancel action in the conversation header

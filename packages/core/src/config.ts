@@ -155,6 +155,9 @@ const discordChannelSchema = z
     .object({
         enabled: z.boolean().default(false),
         token_env: z.string().default('DISCORD_BOT_TOKEN'),
+        owner_id: z.string().default(''),
+        allowed_users: z.array(z.string()).default([]),
+        require_mention_in_guilds: z.boolean().default(true),
     })
     .passthrough()
     .default({});
@@ -328,6 +331,7 @@ export type ApiAgentPoolEntry = z.infer<typeof apiAgentPoolEntrySchema>;
 export type AcpAgentPoolEntry = z.infer<typeof acpAgentPoolEntrySchema>;
 export type AgentToolPolicy = z.infer<typeof agentToolPolicySchema>;
 export type TelegramChannelConfig = z.infer<typeof telegramChannelSchema>;
+export type DiscordChannelConfig = z.infer<typeof discordChannelSchema>;
 
 export function isCliAgentPoolEntry(
     entry: AgentPoolEntry,

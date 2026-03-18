@@ -142,6 +142,9 @@ channels:
   discord:
     enabled: false
     token_env: DISCORD_BOT_TOKEN
+    owner_id: ""
+    allowed_users: []
+    require_mention_in_guilds: true
   feishu:
     enabled: false
     app_id_env: FEISHU_APP_ID

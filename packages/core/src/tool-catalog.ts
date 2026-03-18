@@ -42,12 +42,14 @@ const HOST_TOOL_METADATA: Record<HostToolName, HostToolMetadata> = {
     browser: {
         category: 'browser',
         label: 'Browser',
-        description: 'Open URLs in a host browser managed by WillClaw.',
+        description:
+            'Run hosted browser actions such as open, snapshot, click, type, and screenshot.',
     },
     screen: {
         category: 'screen',
         label: 'Screen',
-        description: 'Capture host screenshots from the WillClaw machine.',
+        description:
+            'Inspect the host desktop and run capture, see, click, type, and key actions.',
     },
     memory_search: {
         category: 'memory',

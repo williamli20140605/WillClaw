@@ -626,6 +626,45 @@ button:disabled {
   resize: vertical;
 }
 
+.field-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.field-input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+}
+
+.host-action-card,
+.host-result-card {
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.host-result {
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(19, 36, 42, 0.96), rgba(31, 35, 38, 0.98));
+  color: #f4efe5;
+  font-family: "SFMono-Regular", "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
 .inline-editor textarea,
 .composer-card textarea {
   min-height: 124px;

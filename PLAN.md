@@ -1512,6 +1512,7 @@ daemon:
 - CLI 新增 `sync-skills`，可将生成的 skills 刷到任意 workspace 目录
 - 已有聊天渠道骨架：`ChannelManager + Telegram polling adapter`
 - 已有 Telegram 壳层命令：`/status`、`/undo`、`/resend`、`/cancel`、`/heartbeat`、`/cron`
+- 已有 Discord adapter：DM 直通、guild mention gating、基础壳层命令复用
 - 已有 Web UI 首版：React dashboard + Hono 静态托管
 - 已有 Web UI realtime：SSE 事件流 + active runs / recent events
 - 已有 Web UI Markdown 渲染：assistant / system 消息支持代码块、列表、表格、引用
@@ -1520,12 +1521,16 @@ daemon:
 - 已有 SSE 流式预览：CLI backend stdout 和 `direct-api` 的 Anthropic SSE 都会推送 `chat.run.stream.delta`，Web UI 可在最终消息落库前显示临时 assistant 气泡
 - 已有 CLI 输出归一化：`opencode` / `gemini` 这类 JSON / linewise event stream 会提纯正文，不再把 `step_start`、`timestamp` 等元数据混进消息内容
 - 已有 provider doctor：CLI `willclaw doctor` 和 `/api/providers/health` 会检查 `agent-browser / peekaboo / system-open / screencapture` 的安装与权限状态
+- 已有结构化宿主 browser actions：`open / snapshot / click / type / screenshot`
+- 已有结构化宿主 screen actions：`capture / see / click / type / press`
+- 已有 host tool action API：`/api/tools/browser/*`、`/api/tools/screen/*`
+- 已有 Web UI Host Lab：可直接触发 browser open/snapshot/screenshot 与 screen inspect/capture
 - 已有 macOS 登录自启：`launch-agent install / uninstall / status / print`
 
 尚未完成：
 
-- Discord / Feishu 渠道
-- 完整 macOS GUI 自动化、OCR
+- Feishu 渠道
+- 更完整 macOS GUI 自动化、OCR
 - 将 provider 安装与健康检查做成正式 setup 流程
 
 ### Phase 0 — 脚手架（1-2 天）
@@ -1557,6 +1562,7 @@ daemon:
 
 - [x] Channel 接口
 - [x] Telegram 适配器
+- [x] Discord 适配器
 - [ ] Web UI WebSocket handler
 - [x] Web UI 前端（React）
 - [x] Web UI SSE handler / realtime event stream
@@ -1600,14 +1606,12 @@ daemon:
 
 **交付**：5 个 CLI/API agent + ACP agent 全部可用。
 
-### Phase 5 — macOS + Browser + Daemon（2-3 天）
+### Phase 5 — macOS + Browser（2-3 天）
 
 - [ ] 屏幕截图 + OCR
 - [ ] 鼠标键盘模拟
 - [ ] 应用控制
 - [ ] Playwright 集成
-- [ ] **`willclaw install-daemon`** — launchd plist 生成 + 加载
-- [ ] **`willclaw uninstall-daemon`** / **`restart-daemon`** / **`daemon-status`**
 - [ ] **`willclaw logs`** — tail 日志
 
 补充进度：
@@ -1615,14 +1619,17 @@ daemon:
 - [x] Browser host tool provider 顺序（`agent-browser -> system-open`）
 - [x] Screen host tool provider 顺序（`peekaboo -> screencapture`）
 - [x] 最小 browser open / screen capture 宿主工具封装
+- [x] 结构化 browser hosted actions：`snapshot / click / type / screenshot`
+- [x] 结构化 screen hosted actions：`see / click / type / press`
+- [x] `/api/tools/browser/*` + `/api/tools/screen/*`
 - [x] `launch-agent install / uninstall / status / print`（登录自启，不走 daemon 命名）
 
-**交付**：开机自启、崩溃自动恢复、macOS 完整控制。
+**交付**：登录自启、宿主 browser/screen 可行动、macOS 更完整控制。
 
 ### Phase 6 — 打磨（持续）
 
 - [ ] WillClaw 作为 ACP Server
-- [ ] Discord + 飞书适配器
+- [ ] 飞书适配器
 - [ ] Web UI 美化
 - [ ] Tailscale 远程访问
 - [ ] `/mode` 工作模式切换

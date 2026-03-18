@@ -251,6 +251,14 @@ function formatDuration(value?: number): string {
     return `${value}ms`;
 }
 
+function formatStructuredResult(value: unknown): string {
+    if (typeof value === 'string') {
+        return value;
+    }
+
+    return JSON.stringify(value, null, 2);
+}
+
 function messageLabel(message: StoredMessage): string {
     if (message.role === 'assistant') {
         return message.agent ? `Assistant · ${message.agent}` : 'Assistant';
@@ -554,6 +562,10 @@ export function App() {
     const [activeRuns, setActiveRuns] = useState<ActiveRun[]>([]);
     const [recentEvents, setRecentEvents] = useState<RealtimeEvent[]>([]);
     const [inspectorTab, setInspectorTab] = useState<InspectorTab>('search');
+    const [browserTarget, setBrowserTarget] = useState('https://example.com');
+    const [screenApp, setScreenApp] = useState('');
+    const [hostActionBusy, setHostActionBusy] = useState(false);
+    const [hostActionResult, setHostActionResult] = useState('');
 
     const deferredSearchQuery = useDeferredValue(searchQuery.trim());
     const deferredComposerText = useDeferredValue(composerText.trim());
@@ -1164,6 +1176,32 @@ export function App() {
             setActionError(
                 error instanceof Error ? error.message : 'Task trigger failed.',
             );
+        }
+    }
+
+    async function runHostAction(
+        endpoint: string,
+        payload: Record<string, unknown>,
+    ): Promise<void> {
+        setHostActionBusy(true);
+        setActionError('');
+
+        try {
+            const result = await readJson<unknown>(endpoint, {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
+            setHostActionResult(formatStructuredResult(result));
+            await loadToolLogsPanel(selectedChatId);
+        } catch (error) {
+            setActionError(
+                error instanceof Error ? error.message : 'Host action failed.',
+            );
+        } finally {
+            setHostActionBusy(false);
         }
     }
 
@@ -2229,6 +2267,157 @@ export function App() {
                                                 </p>
                                             </article>
                                         ))}
+                                    </div>
+                                </section>
+
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Host Lab</h3>
+                                        <span>agent-browser / peekaboo</span>
+                                    </div>
+                                    <div className="stack-list">
+                                        <article className="host-action-card">
+                                            <label className="field-label" htmlFor="browser-target">
+                                                Browser target
+                                            </label>
+                                            <input
+                                                className="field-input"
+                                                id="browser-target"
+                                                onChange={(event) =>
+                                                    setBrowserTarget(event.target.value)
+                                                }
+                                                placeholder="https://example.com"
+                                                type="url"
+                                                value={browserTarget}
+                                            />
+                                            <div className="toolbar">
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={hostActionBusy}
+                                                    onClick={() =>
+                                                        void runHostAction(
+                                                            '/api/tools/browser/open',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                                target: browserTarget.trim(),
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Open URL
+                                                </button>
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={hostActionBusy}
+                                                    onClick={() =>
+                                                        void runHostAction(
+                                                            '/api/tools/browser/snapshot',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                                interactive: true,
+                                                                compact: true,
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Snapshot
+                                                </button>
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={hostActionBusy}
+                                                    onClick={() =>
+                                                        void runHostAction(
+                                                            '/api/tools/browser/screenshot',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                                filePath: `/tmp/willclaw-browser-${Date.now().toString(36)}.png`,
+                                                                fullPage: true,
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Screenshot
+                                                </button>
+                                            </div>
+                                            <p className="muted">
+                                                Reuses the current web chat as the hosted browser session.
+                                            </p>
+                                        </article>
+
+                                        <article className="host-action-card">
+                                            <label className="field-label" htmlFor="screen-app">
+                                                Desktop app (optional)
+                                            </label>
+                                            <input
+                                                className="field-input"
+                                                id="screen-app"
+                                                onChange={(event) =>
+                                                    setScreenApp(event.target.value)
+                                                }
+                                                placeholder="Terminal"
+                                                type="text"
+                                                value={screenApp}
+                                            />
+                                            <div className="toolbar">
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={hostActionBusy}
+                                                    onClick={() =>
+                                                        void runHostAction(
+                                                            '/api/tools/screen/see',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                                ...(screenApp.trim()
+                                                                    ? { app: screenApp.trim() }
+                                                                    : { mode: 'frontmost' }),
+                                                                annotate: true,
+                                                                path: `/tmp/willclaw-see-${Date.now().toString(36)}.png`,
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Inspect UI
+                                                </button>
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={hostActionBusy}
+                                                    onClick={() =>
+                                                        void runHostAction(
+                                                            '/api/tools/screen/capture',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                                ...(screenApp.trim()
+                                                                    ? { app: screenApp.trim() }
+                                                                    : { mode: 'screen' }),
+                                                                filePath: `/tmp/willclaw-screen-${Date.now().toString(36)}.png`,
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Capture
+                                                </button>
+                                            </div>
+                                            <p className="muted">
+                                                Uses Peekaboo first, then falls back to system capture when possible.
+                                            </p>
+                                        </article>
+
+                                        {hostActionResult ? (
+                                            <article className="host-result-card">
+                                                <div className="section-header">
+                                                    <h3>Last Host Result</h3>
+                                                    <span>JSON / text</span>
+                                                </div>
+                                                <pre className="host-result">
+                                                    {hostActionResult}
+                                                </pre>
+                                            </article>
+                                        ) : null}
                                     </div>
                                 </section>
 

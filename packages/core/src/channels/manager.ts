@@ -6,6 +6,7 @@ import type { MemoryStore } from '../memory.js';
 import type { Orchestrator } from '../orchestrator.js';
 import type { WillClawScheduler } from '../scheduler.js';
 
+import { DiscordChannel } from './discord.js';
 import { TelegramChannel } from './telegram.js';
 import type { ChannelAdapter, ChannelNotifier } from './types.js';
 
@@ -24,6 +25,19 @@ export class ChannelManager implements ChannelNotifier {
         if (this.config.channels.telegram.enabled) {
             const adapter = new TelegramChannel(
                 this.config.channels.telegram,
+                this.chatService,
+                this.orchestrator,
+                this.scheduler,
+                this.memoryStore,
+                this.logger,
+                this.workingDirectory,
+            );
+            this.adapters.set(adapter.name, adapter);
+        }
+
+        if (this.config.channels.discord.enabled) {
+            const adapter = new DiscordChannel(
+                this.config.channels.discord,
                 this.chatService,
                 this.orchestrator,
                 this.scheduler,

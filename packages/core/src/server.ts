@@ -21,6 +21,8 @@ import type { PromptAssembler } from './prompt.js';
 import type { WillClawScheduler } from './scheduler.js';
 import { listHostTools } from './tool-catalog.js';
 import type { ToolExecutionLogger } from './tool-logger.js';
+import type { BrowserTool } from './tools/browser.js';
+import type { ScreenTool } from './tools/screen.js';
 import type { WorkspaceMemoryManager } from './workspace-memory.js';
 
 const chatRequestSchema = z.object({
@@ -96,6 +98,99 @@ const compactMemorySchema = z
   })
   .optional();
 
+const browserContextSchema = z.object({
+    chatId: z.string().optional(),
+    browserApp: z.string().optional(),
+    timeoutMs: z.coerce.number().int().positive().optional(),
+    sessionName: z.string().optional(),
+});
+
+const browserOpenSchema = browserContextSchema.extend({
+    target: z.string().min(1),
+});
+
+const browserSnapshotSchema = browserContextSchema.extend({
+    interactive: z.boolean().optional(),
+    compact: z.boolean().optional(),
+    depth: z.coerce.number().int().positive().optional(),
+    selector: z.string().optional(),
+});
+
+const browserClickSchema = browserContextSchema.extend({
+    selector: z.string().min(1),
+    newTab: z.boolean().optional(),
+});
+
+const browserTypeSchema = browserContextSchema.extend({
+    text: z.string(),
+    selector: z.string().optional(),
+    clear: z.boolean().optional(),
+});
+
+const browserScreenshotSchema = browserContextSchema.extend({
+    filePath: z.string().min(1),
+    fullPage: z.boolean().optional(),
+    annotate: z.boolean().optional(),
+});
+
+const screenContextSchema = z.object({
+    chatId: z.string().optional(),
+    timeoutMs: z.coerce.number().int().positive().optional(),
+});
+
+const screenCaptureSchema = screenContextSchema.extend({
+    filePath: z.string().min(1),
+    app: z.string().optional(),
+    mode: z.enum(['screen', 'window', 'frontmost']).optional(),
+    windowTitle: z.string().optional(),
+    windowId: z.coerce.number().int().optional(),
+    screenIndex: z.coerce.number().int().min(0).optional(),
+    retina: z.boolean().optional(),
+});
+
+const screenSeeSchema = screenContextSchema.extend({
+    app: z.string().optional(),
+    mode: z.enum(['screen', 'window', 'frontmost']).optional(),
+    path: z.string().optional(),
+    windowTitle: z.string().optional(),
+    windowId: z.coerce.number().int().optional(),
+    screenIndex: z.coerce.number().int().min(0).optional(),
+    annotate: z.boolean().optional(),
+    analyze: z.string().optional(),
+    timeoutSeconds: z.coerce.number().int().positive().optional(),
+});
+
+const screenClickSchema = screenContextSchema.extend({
+    query: z.string().optional(),
+    elementId: z.string().optional(),
+    coords: z.string().optional(),
+    app: z.string().optional(),
+    windowTitle: z.string().optional(),
+    windowId: z.coerce.number().int().optional(),
+    snapshotId: z.string().optional(),
+    double: z.boolean().optional(),
+    right: z.boolean().optional(),
+});
+
+const screenTypeSchema = screenContextSchema.extend({
+    text: z.string(),
+    app: z.string().optional(),
+    windowTitle: z.string().optional(),
+    windowId: z.coerce.number().int().optional(),
+    snapshotId: z.string().optional(),
+    clear: z.boolean().optional(),
+    pressReturn: z.boolean().optional(),
+});
+
+const screenPressSchema = screenContextSchema.extend({
+    keys: z.array(z.string().min(1)).min(1),
+    app: z.string().optional(),
+    windowTitle: z.string().optional(),
+    windowId: z.coerce.number().int().optional(),
+    snapshotId: z.string().optional(),
+    count: z.coerce.number().int().positive().optional(),
+});
+
 const WEB_DIST_DIR = fileURLToPath(
     new URL('../../web/dist', import.meta.url),
 );
@@ -154,6 +249,8 @@ export interface WillClawRuntimeLike {
     orchestrator: Orchestrator;
     memoryStore: MemoryStore;
     toolLogger: ToolExecutionLogger;
+    browserTool: BrowserTool;
+    screenTool: ScreenTool;
     chatService: ChatService;
     backgroundTaskEngine: BackgroundTaskEngine;
     scheduler: WillClawScheduler;
@@ -174,6 +271,28 @@ function shouldRequireAuth(config: WillClawConfig): boolean {
 
 function encodeSseEvent(event: WillClawEvent): string {
     return `id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
+function buildBrowserToolContext(
+    payload: z.infer<typeof browserContextSchema>,
+): Parameters<BrowserTool['openUrl']>[1] {
+    return {
+        triggeredBy: 'web-ui',
+        ...(payload.chatId ? { chatId: payload.chatId } : {}),
+        ...(payload.browserApp ? { browserApp: payload.browserApp } : {}),
+        ...(payload.timeoutMs !== undefined ? { timeoutMs: payload.timeoutMs } : {}),
+        ...(payload.sessionName ? { sessionName: payload.sessionName } : {}),
+    };
+}
+
+function buildScreenToolContext(
+    payload: z.infer<typeof screenContextSchema>,
+): Parameters<ScreenTool['capture']>[1] {
+    return {
+        triggeredBy: 'web-ui',
+        ...(payload.chatId ? { chatId: payload.chatId } : {}),
+        ...(payload.timeoutMs !== undefined ? { timeoutMs: payload.timeoutMs } : {}),
+    };
 }
 
 export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
@@ -350,6 +469,253 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
             agent: agentName ?? null,
             tools: listHostTools(runtime.config, agentName),
         });
+    });
+
+    app.post('/api/tools/browser/open', async (c) => {
+        const payload = browserOpenSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.browserTool.openUrl(
+                payload.target,
+                buildBrowserToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/browser/snapshot', async (c) => {
+        const payload = browserSnapshotSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.browserTool.snapshot(
+                {
+                    ...(payload.interactive !== undefined
+                        ? { interactive: payload.interactive }
+                        : {}),
+                    ...(payload.compact !== undefined
+                        ? { compact: payload.compact }
+                        : {}),
+                    ...(payload.depth !== undefined ? { depth: payload.depth } : {}),
+                    ...(payload.selector ? { selector: payload.selector } : {}),
+                },
+                buildBrowserToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/browser/click', async (c) => {
+        const payload = browserClickSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.browserTool.click(
+                {
+                    selector: payload.selector,
+                    ...(payload.newTab !== undefined
+                        ? { newTab: payload.newTab }
+                        : {}),
+                },
+                buildBrowserToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/browser/type', async (c) => {
+        const payload = browserTypeSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.browserTool.type(
+                {
+                    text: payload.text,
+                    ...(payload.selector ? { selector: payload.selector } : {}),
+                    ...(payload.clear !== undefined
+                        ? { clear: payload.clear }
+                        : {}),
+                },
+                buildBrowserToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/browser/screenshot', async (c) => {
+        const payload = browserScreenshotSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.browserTool.screenshot(
+                {
+                    filePath: payload.filePath,
+                    ...(payload.fullPage !== undefined
+                        ? { fullPage: payload.fullPage }
+                        : {}),
+                    ...(payload.annotate !== undefined
+                        ? { annotate: payload.annotate }
+                        : {}),
+                },
+                buildBrowserToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/screen/capture', async (c) => {
+        const payload = screenCaptureSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.screenTool.capture(
+                {
+                    filePath: payload.filePath,
+                    ...(payload.app ? { app: payload.app } : {}),
+                    ...(payload.mode ? { mode: payload.mode } : {}),
+                    ...(payload.windowTitle
+                        ? { windowTitle: payload.windowTitle }
+                        : {}),
+                    ...(payload.windowId !== undefined
+                        ? { windowId: payload.windowId }
+                        : {}),
+                    ...(payload.screenIndex !== undefined
+                        ? { screenIndex: payload.screenIndex }
+                        : {}),
+                    ...(payload.retina !== undefined
+                        ? { retina: payload.retina }
+                        : {}),
+                },
+                buildScreenToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/screen/see', async (c) => {
+        const payload = screenSeeSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.screenTool.see(
+                {
+                    ...(payload.app ? { app: payload.app } : {}),
+                    ...(payload.mode ? { mode: payload.mode } : {}),
+                    ...(payload.path ? { path: payload.path } : {}),
+                    ...(payload.windowTitle
+                        ? { windowTitle: payload.windowTitle }
+                        : {}),
+                    ...(payload.windowId !== undefined
+                        ? { windowId: payload.windowId }
+                        : {}),
+                    ...(payload.screenIndex !== undefined
+                        ? { screenIndex: payload.screenIndex }
+                        : {}),
+                    ...(payload.annotate !== undefined
+                        ? { annotate: payload.annotate }
+                        : {}),
+                    ...(payload.analyze ? { analyze: payload.analyze } : {}),
+                    ...(payload.timeoutSeconds !== undefined
+                        ? { timeoutSeconds: payload.timeoutSeconds }
+                        : {}),
+                },
+                buildScreenToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/screen/click', async (c) => {
+        const payload = screenClickSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.screenTool.click(
+                {
+                    ...(payload.query ? { query: payload.query } : {}),
+                    ...(payload.elementId ? { elementId: payload.elementId } : {}),
+                    ...(payload.coords ? { coords: payload.coords } : {}),
+                    ...(payload.app ? { app: payload.app } : {}),
+                    ...(payload.windowTitle
+                        ? { windowTitle: payload.windowTitle }
+                        : {}),
+                    ...(payload.windowId !== undefined
+                        ? { windowId: payload.windowId }
+                        : {}),
+                    ...(payload.snapshotId
+                        ? { snapshotId: payload.snapshotId }
+                        : {}),
+                    ...(payload.double !== undefined
+                        ? { double: payload.double }
+                        : {}),
+                    ...(payload.right !== undefined
+                        ? { right: payload.right }
+                        : {}),
+                },
+                buildScreenToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/screen/type', async (c) => {
+        const payload = screenTypeSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.screenTool.type(
+                {
+                    text: payload.text,
+                    ...(payload.app ? { app: payload.app } : {}),
+                    ...(payload.windowTitle
+                        ? { windowTitle: payload.windowTitle }
+                        : {}),
+                    ...(payload.windowId !== undefined
+                        ? { windowId: payload.windowId }
+                        : {}),
+                    ...(payload.snapshotId
+                        ? { snapshotId: payload.snapshotId }
+                        : {}),
+                    ...(payload.clear !== undefined
+                        ? { clear: payload.clear }
+                        : {}),
+                    ...(payload.pressReturn !== undefined
+                        ? { pressReturn: payload.pressReturn }
+                        : {}),
+                },
+                buildScreenToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/screen/press', async (c) => {
+        const payload = screenPressSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.screenTool.press(
+                {
+                    keys: payload.keys,
+                    ...(payload.app ? { app: payload.app } : {}),
+                    ...(payload.windowTitle
+                        ? { windowTitle: payload.windowTitle }
+                        : {}),
+                    ...(payload.windowId !== undefined
+                        ? { windowId: payload.windowId }
+                        : {}),
+                    ...(payload.snapshotId
+                        ? { snapshotId: payload.snapshotId }
+                        : {}),
+                    ...(payload.count !== undefined
+                        ? { count: payload.count }
+                        : {}),
+                },
+                buildScreenToolContext(payload),
+            ),
+        );
     });
 
     app.get('/api/messages', (c) => {

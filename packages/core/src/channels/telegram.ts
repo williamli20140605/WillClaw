@@ -2,10 +2,11 @@ import type { Logger } from 'pino';
 
 import type { ChatService } from '../chat-service.js';
 import type { TelegramChannelConfig } from '../config.js';
-import type { MemoryStore, StoredMessage } from '../memory.js';
+import type { MemoryStore } from '../memory.js';
 import type { Orchestrator } from '../orchestrator.js';
 import type { WillClawScheduler } from '../scheduler.js';
 
+import { ChannelShellCommands } from './shell-commands.js';
 import type { ChannelAdapter } from './types.js';
 
 interface TelegramUser {
@@ -78,37 +79,6 @@ function splitTelegramText(content: string): string[] {
     return chunks;
 }
 
-function normalizeCommandName(text: string): string | null {
-    if (!text.startsWith('/')) {
-        return null;
-    }
-
-    const [head] = text.split(/\s+/, 1);
-    if (!head) {
-        return null;
-    }
-
-    return head.toLowerCase();
-}
-
-function readCommandArgs(text: string): string {
-    const firstSpace = text.indexOf(' ');
-    if (firstSpace < 0) {
-        return '';
-    }
-
-    return text.slice(firstSpace + 1).trim();
-}
-
-function summarizeMessage(message: StoredMessage): string {
-    const normalized = message.content.replace(/\s+/g, ' ').trim();
-    if (normalized.length <= 96) {
-        return normalized;
-    }
-
-    return `${normalized.slice(0, 95).trim()}...`;
-}
-
 export class TelegramChannel implements ChannelAdapter {
     readonly name = 'telegram';
 
@@ -117,6 +87,7 @@ export class TelegramChannel implements ChannelAdapter {
     private stopped = true;
     private loopPromise: Promise<void> | undefined;
     private activePoll: AbortController | undefined;
+    private readonly shellCommands: ChannelShellCommands;
 
     constructor(
         private readonly config: TelegramChannelConfig,
@@ -126,7 +97,14 @@ export class TelegramChannel implements ChannelAdapter {
         private readonly memoryStore: MemoryStore,
         private readonly logger: Logger,
         private readonly workingDirectory: string,
-    ) { }
+    ) {
+        this.shellCommands = new ChannelShellCommands(
+            this.chatService,
+            this.orchestrator,
+            this.scheduler,
+            this.memoryStore,
+        );
+    }
 
     async start(): Promise<boolean> {
         if (this.loopPromise) {
@@ -308,144 +286,20 @@ export class TelegramChannel implements ChannelAdapter {
         message: TelegramMessage,
     ): Promise<boolean> {
         const rawText = this.normalizeIncomingText(message.text?.trim() ?? '');
-        if (!rawText.startsWith('/')) {
-            return false;
-        }
-
-        const command = normalizeCommandName(rawText);
-        const args = readCommandArgs(rawText);
-        const chatId = String(message.chat.id);
-        const isGroup = message.chat.type !== 'private';
-        const userId = String(message.from?.id ?? '0');
-
-        switch (command) {
-            case '/status': {
-                const availability = await this.orchestrator.listAgents();
-                const available = availability.filter((agent) => agent.available);
-                const latestRun = await this.findLatestTrackedRun(chatId);
-                const lines = [
-                    'WillClaw is online.',
-                    `Available agents: ${available.length}/${availability.length}`,
-                    available.length > 0
-                        ? `Agents: ${available.map((agent) => agent.name).join(', ')}`
-                        : 'Agents: none available',
-                    latestRun
-                        ? `Latest run: ${latestRun.run.runId.slice(0, 8)} · ${latestRun.run.status} · ${latestRun.run.agent}`
-                        : 'Latest run: none',
-                ];
-                await this.sendTelegramMessage(token, message.chat.id, lines.join('\n'));
-                return true;
-            }
-            case '/undo': {
-                const latestUserMessage = this.findLatestUserMessage(chatId);
-                if (!latestUserMessage) {
-                    await this.sendTelegramMessage(
-                        token,
-                        message.chat.id,
-                        'Nothing to undo in this chat yet.',
-                    );
-                    return true;
-                }
-
-                await this.chatService.revokeMessage(latestUserMessage.id);
-                await this.sendTelegramMessage(
-                    token,
-                    message.chat.id,
-                    `Revoked message #${latestUserMessage.id}: ${summarizeMessage(latestUserMessage)}`,
-                );
-                return true;
-            }
-            case '/resend': {
-                const latestUserMessage = this.findLatestUserMessage(chatId);
-                if (!latestUserMessage) {
-                    await this.sendTelegramMessage(
-                        token,
-                        message.chat.id,
-                        'No user message found to resend.',
-                    );
-                    return true;
-                }
-
+        return await this.shellCommands.handle({
+            text: rawText,
+            channel: this.name,
+            chatId: String(message.chat.id),
+            userId: String(message.from?.id ?? '0'),
+            isGroup: message.chat.type !== 'private',
+            workingDirectory: this.workingDirectory,
+            reply: async (text) => {
+                await this.sendTelegramMessage(token, message.chat.id, text);
+            },
+            showTyping: async () => {
                 await this.sendChatAction(token, message.chat.id, 'typing');
-                const result = await this.chatService.resendMessage(latestUserMessage.id, {
-                    channel: this.name,
-                    chatId,
-                    userId,
-                    isGroup,
-                    workingDirectory: this.workingDirectory,
-                });
-                if (!result) {
-                    await this.sendTelegramMessage(
-                        token,
-                        message.chat.id,
-                        'Resend failed because the original message could not be found.',
-                    );
-                    return true;
-                }
-
-                for (const chunk of splitTelegramText(result.content)) {
-                    await this.sendTelegramMessage(token, message.chat.id, chunk);
-                }
-                return true;
-            }
-            case '/cancel': {
-                const latestRun = await this.findLatestTrackedRun(chatId);
-                if (!latestRun || !latestRun.active) {
-                    await this.sendTelegramMessage(
-                        token,
-                        message.chat.id,
-                        'No active run found in this chat.',
-                    );
-                    return true;
-                }
-
-                await this.chatService.cancelRun(latestRun.run.runId);
-                await this.sendTelegramMessage(
-                    token,
-                    message.chat.id,
-                    `Cancelled run ${latestRun.run.runId.slice(0, 8)}.`,
-                );
-                return true;
-            }
-            case '/heartbeat': {
-                await this.sendChatAction(token, message.chat.id, 'typing');
-                const result = await this.scheduler.runHeartbeatNow();
-                await this.sendTelegramMessage(
-                    token,
-                    message.chat.id,
-                    this.renderTaskResult('heartbeat', result),
-                );
-                return true;
-            }
-            case '/cron': {
-                if (!args) {
-                    const tasks = this.scheduler
-                        .listTasks()
-                        .filter((task) => task.kind === 'cron');
-                    const lines = [
-                        'Cron tasks:',
-                        ...tasks.map(
-                            (task) =>
-                                `- ${task.name} · ${task.schedule}${task.lastResult ? ` · ${task.lastResult}` : ''}`,
-                        ),
-                        'Run one with /cron <task-name>',
-                    ];
-                    await this.sendTelegramMessage(token, message.chat.id, lines.join('\n'));
-                    return true;
-                }
-
-                await this.sendChatAction(token, message.chat.id, 'typing');
-                const result = await this.scheduler.runCronNow(args);
-                await this.sendTelegramMessage(
-                    token,
-                    message.chat.id,
-                    this.renderTaskResult(`cron:${args}`, result),
-                );
-                return true;
-            }
-            default:
-                return false;
-        }
+            },
+        });
     }
 
     async sendMessage(chatId: string, text: string): Promise<void> {
@@ -531,84 +385,6 @@ export class TelegramChannel implements ChannelAdapter {
                 'Telegram sendChatAction failed',
             );
         }
-    }
-
-    private findLatestUserMessage(chatId: string): StoredMessage | null {
-        const messages = this.memoryStore.listMessages({
-            channel: this.name,
-            chatId,
-            limit: 40,
-            includeRevoked: false,
-        });
-
-        for (let index = messages.length - 1; index >= 0; index -= 1) {
-            const message = messages[index];
-            if (message?.role === 'user') {
-                return message;
-            }
-        }
-
-        return null;
-    }
-
-    private async findLatestTrackedRun(chatId: string): Promise<{
-        run: NonNullable<ReturnType<ChatService['getRunStatus']>['run']>;
-        active: boolean;
-    } | null> {
-        const messages = this.memoryStore.listMessages({
-            channel: this.name,
-            chatId,
-            limit: 40,
-            includeRevoked: true,
-        });
-
-        for (let index = messages.length - 1; index >= 0; index -= 1) {
-            const runId = messages[index]?.runId;
-            if (!runId) {
-                continue;
-            }
-
-            const status = this.chatService.getRunStatus(runId);
-            if (status.run) {
-                return {
-                    run: status.run,
-                    active: status.active,
-                };
-            }
-        }
-
-        return null;
-    }
-
-    private renderTaskResult(taskName: string, result: unknown): string {
-        if (
-            result &&
-            typeof result === 'object' &&
-            'content' in result &&
-            typeof result.content === 'string'
-        ) {
-            const lines = [`${taskName} completed.`];
-            if ('agent' in result && typeof result.agent === 'string') {
-                lines.push(`Agent: ${result.agent}`);
-            }
-            if ('suppressed' in result && result.suppressed === true) {
-                lines.push('Result: suppressed');
-            }
-            lines.push('');
-            lines.push(result.content);
-            return lines.join('\n');
-        }
-
-        if (
-            result &&
-            typeof result === 'object' &&
-            'filepath' in result &&
-            typeof result.filepath === 'string'
-        ) {
-            return `${taskName} completed.\n${result.filepath}`;
-        }
-
-        return `${taskName} completed.`;
     }
 
     private async sendTelegramMessage(

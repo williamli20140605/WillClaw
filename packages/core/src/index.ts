@@ -16,6 +16,7 @@ export {
     type ApiAgentPoolEntry,
     type BrowserToolProvider,
     type CliAgentPoolEntry,
+    type DiscordChannelConfig,
     type HostToolName,
     type ScreenToolProvider,
     type TelegramChannelConfig,
@@ -33,6 +34,7 @@ export {
     type RunStatusResult,
 } from './chat-service.js';
 export { ChannelManager } from './channels/manager.js';
+export { DiscordChannel } from './channels/discord.js';
 export { TelegramChannel } from './channels/telegram.js';
 export type { ChannelAdapter } from './channels/types.js';
 export {
@@ -134,18 +136,35 @@ export {
   type MemorySearchResult,
 } from './workspace-memory.js';
 export {
-  BrowserTool,
-  type BrowserOpenResult,
+    BrowserTool,
+    type BrowserClickOptions,
+    type BrowserClickResult,
+    type BrowserOpenResult,
+    type BrowserScreenshotOptions,
+    type BrowserScreenshotResult,
+    type BrowserSnapshotOptions,
+    type BrowserSnapshotResult,
     type BrowserToolContext,
+    type BrowserTypeOptions,
+    type BrowserTypeResult,
 } from './tools/browser.js';
 export {
     FileSystemTool,
     type FileSystemToolContext,
 } from './tools/filesystem.js';
 export {
+    type ScreenCaptureOptions,
     ScreenTool,
     type ScreenCaptureResult,
+    type ScreenClickOptions,
+    type ScreenClickResult,
+    type ScreenPressOptions,
+    type ScreenPressResult,
+    type ScreenSeeOptions,
+    type ScreenSeeResult,
     type ScreenToolContext,
+    type ScreenTypeOptions,
+    type ScreenTypeResult,
 } from './tools/screen.js';
 export {
     ShellTool,
