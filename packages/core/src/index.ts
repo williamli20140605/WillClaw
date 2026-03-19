@@ -177,6 +177,9 @@ export {
     type ScreenCaptureResult,
     type ScreenClickOptions,
     type ScreenClickResult,
+    type ScreenFrontmostAppResult,
+    type ScreenOpenAppOptions,
+    type ScreenOpenAppResult,
     type ScreenOcrOptions,
     type ScreenOcrResult,
     type ScreenPressOptions,
@@ -186,6 +189,8 @@ export {
     type ScreenToolContext,
     type ScreenTypeOptions,
     type ScreenTypeResult,
+    type ScreenActivateAppOptions,
+    type ScreenActivateAppResult,
 } from './tools/screen.js';
 export {
     ShellTool,

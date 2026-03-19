@@ -231,7 +231,12 @@ export class DiscordChannel implements ChannelAdapter {
                 await message.channel.sendTyping();
             }
 
-            const result = await this.chatService.handleChat({
+            const pendingAhead =
+                this.chatService.listQueues({
+                    channel: this.name,
+                    chatId: message.channelId,
+                })[0]?.total ?? 0;
+            const resultPromise = this.chatService.handleChat({
                 text,
                 channel: this.name,
                 chatId: message.channelId,
@@ -239,6 +244,13 @@ export class DiscordChannel implements ChannelAdapter {
                 isGroup: message.channel.type !== ChannelType.DM,
                 workingDirectory: this.workingDirectory,
             });
+            if (pendingAhead > 0) {
+                await this.sendMessage(
+                    message.channelId,
+                    `Queued behind ${pendingAhead} run(s). I will reply when it is your turn.`,
+                );
+            }
+            const result = await resultPromise;
 
             await this.sendMessage(message.channelId, result.content);
         } catch (error) {

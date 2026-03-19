@@ -225,6 +225,21 @@ export function renderHostedActionBridgeInstructions(options: {
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"ocr","mode":"screen","languages":["en-US","zh-Hans"]}`,
             );
         }
+        if (options.screenActions.includes('frontmost_app')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"frontmost_app"}`,
+            );
+        }
+        if (options.screenActions.includes('open_app')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"open_app","app":"Finder"}`,
+            );
+        }
+        if (options.screenActions.includes('activate_app')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"activate_app","app":"Terminal"}`,
+            );
+        }
         if (options.screenActions.includes('click')) {
             lines.push(
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"click","elementId":"B1","app":"Terminal"}`,
@@ -243,6 +258,7 @@ export function renderHostedActionBridgeInstructions(options: {
 
         lines.push(
             `Allowed screen actions right now: ${options.screenActions.join(', ')}.`,
+            'Use frontmost_app/open_app/activate_app when you need to move the host desktop to the right app before vision or input.',
             'Desktop click/type/press require macOS Accessibility permission for the host app running WillClaw.',
         );
     }
@@ -597,6 +613,52 @@ export class HostedActionService {
                     ...(result.captureProvider
                         ? { provider: result.captureProvider }
                         : {}),
+                };
+            }
+            case 'frontmost_app': {
+                const result = await this.screenTool.frontmostApp(toolContext);
+                return {
+                    tool: 'screen',
+                    action: 'frontmost_app',
+                    provider: result.provider,
+                    output: result.output,
+                    data: result.data,
+                };
+            }
+            case 'open_app': {
+                const app = readString(request.payload, 'app');
+                if (!app) {
+                    throw new Error('screen.open_app requires an app name');
+                }
+
+                const result = await this.screenTool.openApp(
+                    { app },
+                    toolContext,
+                );
+                return {
+                    tool: 'screen',
+                    action: 'open_app',
+                    provider: result.provider,
+                    output: result.output,
+                    data: result.data,
+                };
+            }
+            case 'activate_app': {
+                const app = readString(request.payload, 'app');
+                if (!app) {
+                    throw new Error('screen.activate_app requires an app name');
+                }
+
+                const result = await this.screenTool.activateApp(
+                    { app },
+                    toolContext,
+                );
+                return {
+                    tool: 'screen',
+                    action: 'activate_app',
+                    provider: result.provider,
+                    output: result.output,
+                    data: result.data,
                 };
             }
             case 'click': {

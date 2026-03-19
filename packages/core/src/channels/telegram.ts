@@ -251,7 +251,12 @@ export class TelegramChannel implements ChannelAdapter {
         await this.sendChatAction(token, message.chat.id, 'typing');
 
         try {
-            const result = await this.chatService.handleChat({
+            const pendingAhead =
+                this.chatService.listQueues({
+                    channel: this.name,
+                    chatId: String(message.chat.id),
+                })[0]?.total ?? 0;
+            const resultPromise = this.chatService.handleChat({
                 text,
                 channel: this.name,
                 chatId: String(message.chat.id),
@@ -259,6 +264,14 @@ export class TelegramChannel implements ChannelAdapter {
                 isGroup: message.chat.type !== 'private',
                 workingDirectory: this.workingDirectory,
             });
+            if (pendingAhead > 0) {
+                await this.sendTelegramMessage(
+                    token,
+                    message.chat.id,
+                    `Queued behind ${pendingAhead} run(s). I will reply when it is your turn.`,
+                );
+            }
+            const result = await resultPromise;
 
             for (const chunk of splitTelegramText(result.content)) {
                 await this.sendTelegramMessage(token, message.chat.id, chunk);

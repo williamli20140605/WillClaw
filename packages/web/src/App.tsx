@@ -2488,7 +2488,7 @@ export function App() {
                                 <section className="inspector-panel">
                                     <div className="section-header">
                                         <h3>Host Lab</h3>
-                                        <span>agent-browser / peekaboo</span>
+                                        <span>agent-browser / peekaboo / macOS</span>
                                     </div>
                                     <div className="stack-list">
                                         <article className="host-action-card">
@@ -2506,6 +2506,57 @@ export function App() {
                                                 value={browserTarget}
                                             />
                                             <div className="toolbar">
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={hostActionBusy}
+                                                    onClick={() =>
+                                                        void runHostAction(
+                                                            '/api/tools/screen/frontmost-app',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Frontmost App
+                                                </button>
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={
+                                                        hostActionBusy || !screenApp.trim()
+                                                    }
+                                                    onClick={() =>
+                                                        void runHostAction(
+                                                            '/api/tools/screen/open-app',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                                app: screenApp.trim(),
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Open App
+                                                </button>
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={
+                                                        hostActionBusy || !screenApp.trim()
+                                                    }
+                                                    onClick={() =>
+                                                        void runHostAction(
+                                                            '/api/tools/screen/activate-app',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                                app: screenApp.trim(),
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Activate App
+                                                </button>
                                                 <button
                                                     className="ghost-btn"
                                                     disabled={hostActionBusy}
@@ -2636,7 +2687,7 @@ export function App() {
                                                 </button>
                                             </div>
                                             <p className="muted">
-                                                Uses Peekaboo first, then falls back to system capture. OCR uses Apple Vision after capture.
+                                                Uses macOS app control plus Peekaboo-first desktop actions. OCR uses Apple Vision after capture.
                                             </p>
                                         </article>
 

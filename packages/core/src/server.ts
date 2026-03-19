@@ -203,6 +203,16 @@ const screenOcrSchema = screenContextSchema.extend({
     languages: z.array(z.string().min(1)).optional(),
 });
 
+const screenFrontmostAppSchema = screenContextSchema;
+
+const screenOpenAppSchema = screenContextSchema.extend({
+    app: z.string().min(1),
+});
+
+const screenActivateAppSchema = screenContextSchema.extend({
+    app: z.string().min(1),
+});
+
 const WEB_DIST_DIR = fileURLToPath(
     new URL('../../web/dist', import.meta.url),
 );
@@ -773,6 +783,48 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
                         ? { retina: payload.retina }
                         : {}),
                     ...(payload.languages ? { languages: payload.languages } : {}),
+                },
+                buildScreenToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/screen/frontmost-app', async (c) => {
+        const payload = screenFrontmostAppSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.screenTool.frontmostApp(
+                buildScreenToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/screen/open-app', async (c) => {
+        const payload = screenOpenAppSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.screenTool.openApp(
+                {
+                    app: payload.app,
+                },
+                buildScreenToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/screen/activate-app', async (c) => {
+        const payload = screenActivateAppSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.screenTool.activateApp(
+                {
+                    app: payload.app,
                 },
                 buildScreenToolContext(payload),
             ),

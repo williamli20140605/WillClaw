@@ -1512,9 +1512,10 @@ daemon:
 - workspace 现在会自动生成 `SKILLS.md`、`SKILLS_INDEX.md` 和 `skills/*`
 - CLI 新增 `sync-skills`，可将生成的 skills 刷到任意 workspace 目录
 - 已有聊天渠道骨架：`ChannelManager + Telegram polling adapter`
-- 已有 Telegram 壳层命令：`/status`、`/undo`、`/resend`、`/cancel`、`/heartbeat`、`/cron`
+- 已有共享渠道命令：`/status`、`/queue`、`/undo`、`/resend`、`/cancel`、`/heartbeat`、`/cron`
 - 已有 Discord adapter：DM 直通、guild mention gating、基础壳层命令复用
 - 已有 Feishu adapter：支持 webhook challenge、`im.message.receive_v1` 文本事件、mention gating、消息回复
+- 已有渠道 queue UX：同一 chat 已有 pending work 时，Telegram / Discord / Feishu 会先回 `Queued behind N run(s)`，轮到时再发送正式回复
 - 已有最小 ACP Server：独立端口、bearer token 鉴权、`/agents` discovery、`run sync/stream/async`、`run status/cancel`
 - 已有 Web UI 首版：React dashboard + Hono 静态托管
 - 已有 Web UI realtime：SSE 事件流 + active runs / recent events
@@ -1526,9 +1527,9 @@ daemon:
 - 已有 SSE 流式预览：CLI backend stdout、`direct-api` 的 Anthropic SSE、以及 ACP 的 SSE/NDJSON 兼容流都会推送 `chat.run.stream.delta`，Web UI 可在最终消息落库前显示临时 assistant 气泡
 - 已有 CLI 输出归一化：`opencode` / `gemini` 这类 JSON / linewise event stream 会提纯正文，不再把 `step_start`、`timestamp` 等元数据混进消息内容
 - 已有 provider doctor：CLI `willclaw doctor` 和 `/api/providers/health` 会检查 `agent-browser / peekaboo / system-open / screencapture` 的安装与权限状态
-- 已有 action-level provider doctor：会明确区分 `open / snapshot / capture / see / click / type / press` 哪些动作当前 healthy，hosted bridge 只向 agent 暴露健康动作
+- 已有 action-level provider doctor：会明确区分 `open / snapshot / capture / ocr / see / click / type / press / frontmost_app / open_app / activate_app` 哪些动作当前 healthy，hosted bridge 只向 agent 暴露健康动作
 - 已有结构化宿主 browser actions：`open / snapshot / click / type / screenshot`
-- 已有结构化宿主 screen actions：`capture / ocr / see / click / type / press`
+- 已有结构化宿主 screen actions：`capture / ocr / frontmost_app / open_app / activate_app / see / click / type / press`
 - 已有 host tool action API：`/api/tools/browser/*`、`/api/tools/screen/*`
 - 已有 agent-facing hosted browser/screen bridge：agent 可通过窄格式 `WILLCLAW_HOSTED_ACTION {...}` 请求 WillClaw 执行宿主动作，再继续完成任务
 - `direct-api` 默认策略现已允许 `browser/screen` hosted bridge
@@ -1581,7 +1582,7 @@ daemon:
 - [x] Chat-first layout（会话列表 / 主线程 / inspector）
 - [x] Route preview + process activity（route / agent attempt / fallback）
 - [x] CLI-backed streaming preview（SSE delta events + 临时 assistant 气泡）
-- [x] Telegram shell commands（`/status`、`/undo`、`/resend`、`/cancel`、`/heartbeat`、`/cron`）
+- [x] Channel shell commands（`/status`、`/queue`、`/undo`、`/resend`、`/cancel`、`/heartbeat`、`/cron`）
 
 **交付**：Telegram + Web UI 聊天可用，支持撤回、日志查看、记忆搜索。
 

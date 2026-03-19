@@ -55,6 +55,7 @@ Current implemented scope:
 - per-chat queued message execution so one thread is processed in order instead of racing concurrent runs
 - agent-facing hosted browser/screen bridge for narrow WillClaw-owned actions
 - hosted screen OCR via Apple Vision, available through REST, Web UI, and the narrow hosted bridge
+- minimal macOS app control via the screen/desktop bridge: frontmost app inspection, app open, and app activate
 - minimal ACP server with list/get/run endpoints, sync+stream+async modes, and bearer-token auth
 - LaunchAgent login auto-start commands
 
@@ -122,7 +123,7 @@ Implemented today:
 - Discord adapter
 - Feishu webhook adapter
 - outbound channel notifications for heartbeat / cron results
-- Telegram shell commands: \`/status\`, \`/undo\`, \`/resend\`, \`/cancel\`, \`/heartbeat\`, \`/cron\`
+- shared channel shell commands: \`/status\`, \`/queue\`, \`/undo\`, \`/resend\`, \`/cancel\`, \`/heartbeat\`, \`/cron\`
 
 Telegram behavior:
 - reads token from the configured env var
@@ -131,7 +132,8 @@ Telegram behavior:
 - private chats are handled directly
 - inbound text is sent to ChatService
 - assistant replies are pushed back to Telegram
-- shell commands can inspect status, revoke the latest user turn, resend it, cancel the latest active run, or trigger heartbeat / cron work
+- shell commands can inspect status, inspect the current queue, revoke the latest user turn, resend it, cancel the latest active run, or trigger heartbeat / cron work
+- if a new message arrives while the same chat already has pending work, Telegram sends an immediate queued notice before the final reply
 - background task notifications can be pushed to Telegram via the channel manager
 
 Discord behavior:
@@ -140,6 +142,7 @@ Discord behavior:
 - guild messages default to mention-gated handling
 - shell commands reuse the same channel command router as Telegram
 - replies are sent back to the originating text channel or DM
+- queued chats get an immediate "Queued behind N run(s)" acknowledgement before the final reply
 
 Feishu behavior:
 - receives event callbacks on \`/api/channels/feishu/events\`
@@ -149,6 +152,7 @@ Feishu behavior:
 - p2p chats are handled directly
 - group chats can be mention-gated
 - replies are sent back as message replies through the Feishu IM API
+- queued chats get an immediate "Queued behind N run(s)" acknowledgement before the final reply
 
 Design rules borrowed from OpenClaw-style gateways:
 - channel enablement is config-driven
@@ -255,6 +259,9 @@ Current browser actions:
 Current screen / desktop actions:
 - capture screenshot
 - OCR text from the current screen or a captured image
+- inspect the frontmost app
+- open an app
+- activate an app
 - see / inspect UI elements
 - click
 - type
@@ -279,7 +286,8 @@ Behavior notes:
 - CLI agents with native terminal/filesystem should not receive duplicate hosted copies
 - browser and screen are host capabilities; they are not assumed to exist inside every backend session
 - structured browser actions depend on \`agent-browser\`; \`system-open\` is only a coarse fallback for URL open
-- structured desktop actions depend on \`peekaboo\`; \`screencapture\` is only a coarse fallback for screenshot capture, while OCR uses Apple Vision through \`xcrun swift\`
+- structured desktop vision/actions depend on \`peekaboo\`; \`screencapture\` is only a coarse fallback for screenshot capture, while OCR uses Apple Vision through \`xcrun swift\`
+- app open / activate / frontmost inspection use macOS system APIs directly through \`open\` and AppleScript
 - provider health can be checked from the CLI and HTTP API before relying on agent-browser or peekaboo
 - for provider-specific workflows, read the narrower \`agent-browser\` or \`peekaboo\` skill`,
     },
@@ -329,6 +337,7 @@ Good fits:
 - \`direct-api\` heartbeat / cron tasks that need browser inspection
 - shell-side research helpers that need hosted screenshots
 - shell-side research helpers that need OCR from the host desktop
+- shell-side tasks that need to foreground Finder, Terminal, or another macOS app before taking the next hosted action
 - future channel commands that need WillClaw-owned browser or desktop actions
 
 Bad fits:

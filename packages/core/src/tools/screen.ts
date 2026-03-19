@@ -116,6 +116,36 @@ export interface ScreenOcrResult {
     captureProvider?: ScreenToolProvider;
 }
 
+export interface ScreenFrontmostAppResult {
+    provider: 'macos';
+    output: string;
+    appName: string;
+    pid?: number;
+    data?: unknown;
+}
+
+export interface ScreenOpenAppOptions {
+    app: string;
+}
+
+export interface ScreenOpenAppResult {
+    provider: 'macos';
+    output: string;
+    appName: string;
+    data?: unknown;
+}
+
+export interface ScreenActivateAppOptions {
+    app: string;
+}
+
+export interface ScreenActivateAppResult {
+    provider: 'macos';
+    output: string;
+    appName: string;
+    data?: unknown;
+}
+
 interface ScreenCommand {
     provider: ScreenToolProvider;
     command: string;
@@ -128,16 +158,26 @@ interface CommandExecutionResult {
     exitCode: number;
 }
 
-type ScreenAction = 'capture' | 'see' | 'click' | 'type' | 'press' | 'ocr';
+type ScreenAction =
+    | 'capture'
+    | 'see'
+    | 'click'
+    | 'type'
+    | 'press'
+    | 'ocr'
+    | 'frontmost_app'
+    | 'open_app'
+    | 'activate_app';
 
-function runCommand(
-    command: ScreenCommand,
+function runExecutable(
+    command: string,
+    args: string[],
     timeoutMs?: number,
 ): Promise<CommandExecutionResult> {
     return new Promise<CommandExecutionResult>((resolve, reject) => {
         execFile(
-            command.command,
-            command.args,
+            command,
+            args,
             {
                 timeout: timeoutMs,
                 maxBuffer: 10 * 1024 * 1024,
@@ -156,6 +196,28 @@ function runCommand(
             },
         );
     });
+}
+
+function runCommand(
+    command: ScreenCommand,
+    timeoutMs?: number,
+): Promise<CommandExecutionResult> {
+    return runExecutable(command.command, command.args, timeoutMs);
+}
+
+function escapeAppleScriptString(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function runAppleScript(
+    lines: string[],
+    timeoutMs?: number,
+): Promise<CommandExecutionResult> {
+    return runExecutable(
+        'osascript',
+        lines.flatMap((line) => ['-e', line]),
+        timeoutMs,
+    );
 }
 
 function parseCommandData(stdout: string): unknown {
@@ -388,6 +450,67 @@ export class ScreenTool {
         throw new Error(
             `Screen host tool failed across providers: ${failures.join('; ')}`,
         );
+    }
+
+    private async executeMacOsAction<T>(options: {
+        action: ScreenAction;
+        context: ScreenToolContext;
+        input: string;
+        run: () => Promise<{
+            result: T;
+            output?: string;
+            exitCode?: number;
+        }>;
+    }): Promise<T> {
+        this.ensureEnabled(options.action, options.context, options.input);
+
+        if (process.platform !== 'darwin') {
+            const error = `macOS desktop actions are only available on darwin, not ${process.platform}`;
+            this.toolLogger.log({
+                tool: 'screen',
+                action: options.action,
+                agent: options.context.triggeredBy,
+                chatId: options.context.chatId,
+                input: options.input,
+                durationMs: 0,
+                success: false,
+                error,
+            });
+            throw new Error(error);
+        }
+
+        const startedAt = Date.now();
+
+        try {
+            const outcome = await options.run();
+            this.toolLogger.log({
+                tool: 'screen',
+                action: options.action,
+                agent: options.context.triggeredBy,
+                chatId: options.context.chatId,
+                input: options.input,
+                output: outcome.output ?? 'provider=macos',
+                exitCode: outcome.exitCode ?? 0,
+                durationMs: Date.now() - startedAt,
+                success: true,
+            });
+            return outcome.result;
+        } catch (error) {
+            const detail =
+                error instanceof Error ? error.message : 'Unknown macOS action error';
+            this.toolLogger.log({
+                tool: 'screen',
+                action: options.action,
+                agent: options.context.triggeredBy,
+                chatId: options.context.chatId,
+                input: options.input,
+                output: 'provider=macos',
+                durationMs: Date.now() - startedAt,
+                success: false,
+                error: detail,
+            });
+            throw error;
+        }
     }
 
     async capture(
@@ -800,5 +923,126 @@ export class ScreenTool {
             });
             throw error;
         }
+    }
+
+    async frontmostApp(
+        context: ScreenToolContext,
+    ): Promise<ScreenFrontmostAppResult> {
+        return await this.executeMacOsAction<ScreenFrontmostAppResult>({
+            action: 'frontmost_app',
+            context,
+            input: '{}',
+            run: async () => {
+                const executed = await runAppleScript(
+                    [
+                        'tell application "System Events"',
+                        'set frontApp to first application process whose frontmost is true',
+                        'set appName to name of frontApp',
+                        'set appPid to unix id of frontApp',
+                        'end tell',
+                        'return appName & linefeed & (appPid as string)',
+                    ],
+                    context.timeoutMs,
+                );
+                const [appName, pidLine] = executed.stdout
+                    .trim()
+                    .split(/\r?\n/)
+                    .map((value) => value.trim());
+                if (!appName) {
+                    throw new Error('Unable to determine the frontmost macOS app');
+                }
+
+                const parsedPid = pidLine ? Number(pidLine) : undefined;
+                const pid = Number.isFinite(parsedPid) ? parsedPid : undefined;
+                const data = {
+                    appName,
+                    ...(pid !== undefined ? { pid } : {}),
+                };
+
+                return {
+                    result: {
+                        provider: 'macos',
+                        output: `Frontmost app: ${appName}`,
+                        appName,
+                        ...(pid !== undefined ? { pid } : {}),
+                        data,
+                    },
+                    output: JSON.stringify(data),
+                    exitCode: executed.exitCode,
+                };
+            },
+        });
+    }
+
+    async openApp(
+        options: ScreenOpenAppOptions,
+        context: ScreenToolContext,
+    ): Promise<ScreenOpenAppResult> {
+        const appName = options.app.trim();
+        if (!appName) {
+            throw new Error('screen.open_app requires an app name');
+        }
+
+        return await this.executeMacOsAction<ScreenOpenAppResult>({
+            action: 'open_app',
+            context,
+            input: JSON.stringify({ app: appName }),
+            run: async () => {
+                const executed = await runExecutable(
+                    'open',
+                    ['-a', appName],
+                    context.timeoutMs,
+                );
+
+                return {
+                    result: {
+                        provider: 'macos',
+                        output: `Opened ${appName}`,
+                        appName,
+                        data: { appName },
+                    },
+                    output: `Opened ${appName}`,
+                    exitCode: executed.exitCode,
+                };
+            },
+        });
+    }
+
+    async activateApp(
+        options: ScreenActivateAppOptions,
+        context: ScreenToolContext,
+    ): Promise<ScreenActivateAppResult> {
+        const appName = options.app.trim();
+        if (!appName) {
+            throw new Error('screen.activate_app requires an app name');
+        }
+
+        return await this.executeMacOsAction<ScreenActivateAppResult>({
+            action: 'activate_app',
+            context,
+            input: JSON.stringify({ app: appName }),
+            run: async () => {
+                const executed = await runAppleScript(
+                    [
+                        `tell application "${escapeAppleScriptString(appName)}"`,
+                        'activate',
+                        'end tell',
+                        `return "Activated ${escapeAppleScriptString(appName)}"`,
+                    ],
+                    context.timeoutMs,
+                );
+
+                return {
+                    result: {
+                        provider: 'macos',
+                        output: `Activated ${appName}`,
+                        appName,
+                        data: { appName },
+                    },
+                    output: executed.stdout.trim() || `Activated ${appName}`,
+                    exitCode: executed.exitCode,
+                };
+            },
+        });
     }
 }

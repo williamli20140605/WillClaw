@@ -48,6 +48,37 @@ export function getHealthyProviderActions(
     return [...allowed];
 }
 
+function createDesktopAppActionHealth(): ProviderActionHealth[] {
+    const macos = process.platform === 'darwin';
+
+    return [
+        {
+            action: 'frontmost_app',
+            available: macos,
+            healthy: macos,
+            detail: macos
+                ? 'Uses macOS System Events to inspect the frontmost app'
+                : `macOS desktop app inspection is not available on ${process.platform}`,
+        },
+        {
+            action: 'open_app',
+            available: macos,
+            healthy: macos,
+            detail: macos
+                ? 'Uses macOS open -a to launch or foreground an app'
+                : `macOS app launching is not available on ${process.platform}`,
+        },
+        {
+            action: 'activate_app',
+            available: macos,
+            healthy: macos,
+            detail: macos
+                ? 'Uses macOS AppleScript to activate a target app'
+                : `macOS app activation is not available on ${process.platform}`,
+        },
+    ];
+}
+
 async function commandExists(command: string): Promise<boolean> {
     try {
         await execFileAsync('which', [command]);
@@ -204,12 +235,15 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
             available: false,
             healthy: false,
             detail: 'peekaboo is not installed',
-            actions: ['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
-                action,
-                available: false,
-                healthy: false,
-                detail: 'peekaboo is not installed',
-            })),
+            actions: [
+                ...['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
+                    action,
+                    available: false,
+                    healthy: false,
+                    detail: 'peekaboo is not installed',
+                })),
+                ...createDesktopAppActionHealth(),
+            ],
             installHint: 'brew install steipete/tap/peekaboo',
         };
     }
@@ -276,6 +310,7 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
                     ? 'Accessibility permission is granted'
                     : 'Requires Accessibility permission',
             },
+            ...createDesktopAppActionHealth(),
         ];
 
         return {
@@ -306,12 +341,15 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
                 error instanceof Error
                     ? `peekaboo permission check failed: ${error.message}`
                     : 'peekaboo permission check failed',
-            actions: ['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
-                action,
-                available: true,
-                healthy: false,
-                detail: 'Peekaboo permission check failed',
-            })),
+            actions: [
+                ...['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
+                    action,
+                    available: true,
+                    healthy: false,
+                    detail: 'Peekaboo permission check failed',
+                })),
+                ...createDesktopAppActionHealth(),
+            ],
             installHint:
                 'Run `peekaboo permissions status` to inspect Screen Recording and Accessibility access',
         };
@@ -329,15 +367,18 @@ async function checkScreencapture(config: WillClawConfig): Promise<ProviderHealt
             available: false,
             healthy: false,
             detail: `screencapture is not available on ${process.platform}`,
-            actions: ['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
-                action,
-                available: false,
-                healthy: false,
-                detail:
-                    action === 'capture'
-                        ? `screencapture is not available on ${process.platform}`
-                        : 'screencapture only supports basic capture on macOS',
-            })),
+            actions: [
+                ...['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
+                    action,
+                    available: false,
+                    healthy: false,
+                    detail:
+                        action === 'capture'
+                            ? `screencapture is not available on ${process.platform}`
+                            : 'screencapture only supports basic capture on macOS',
+                })),
+                ...createDesktopAppActionHealth(),
+            ],
         };
     }
 
@@ -395,6 +436,7 @@ async function checkScreencapture(config: WillClawConfig): Promise<ProviderHealt
                 healthy: false,
                 detail: 'screencapture cannot send key presses',
             },
+            ...createDesktopAppActionHealth(),
         ],
     };
 }

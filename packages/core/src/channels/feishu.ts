@@ -329,7 +329,12 @@ export class FeishuChannel implements ChannelAdapter {
         }
 
         try {
-            const result = await this.chatService.handleChat({
+            const pendingAhead =
+                this.chatService.listQueues({
+                    channel: this.name,
+                    chatId: message.chat_id,
+                })[0]?.total ?? 0;
+            const resultPromise = this.chatService.handleChat({
                 text,
                 channel: this.name,
                 chatId: message.chat_id,
@@ -337,6 +342,13 @@ export class FeishuChannel implements ChannelAdapter {
                 isGroup: message.chat_type !== 'p2p',
                 workingDirectory: this.workingDirectory,
             });
+            if (pendingAhead > 0) {
+                await this.replyToMessage(
+                    message.message_id,
+                    `Queued behind ${pendingAhead} run(s). I will reply when it is your turn.`,
+                );
+            }
+            const result = await resultPromise;
 
             await this.replyToMessage(message.message_id, result.content);
         } catch (error) {

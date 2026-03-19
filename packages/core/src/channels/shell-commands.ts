@@ -59,6 +59,7 @@ export class ChannelShellCommands {
                     input.channel,
                     input.chatId,
                 );
+                const queue = this.findQueue(input.channel, input.chatId);
                 const lines = [
                     'WillClaw is online.',
                     `Available agents: ${available.length}/${availability.length}`,
@@ -68,6 +69,32 @@ export class ChannelShellCommands {
                     latestRun
                         ? `Latest run: ${latestRun.run.runId.slice(0, 8)} · ${latestRun.run.status} · ${latestRun.run.agent}`
                         : 'Latest run: none',
+                    queue
+                        ? `Queue: ${queue.total} pending (${queue.running} running, ${queue.queued} queued)`
+                        : 'Queue: idle',
+                ];
+                await input.reply(lines.join('\n'));
+                return true;
+            }
+            case '/queue': {
+                const queue = this.findQueue(input.channel, input.chatId);
+                if (!queue) {
+                    await input.reply('Queue is idle for this chat.');
+                    return true;
+                }
+
+                const lines = [
+                    `Queue for ${input.channel}:${input.chatId}`,
+                    `Running: ${queue.running} · Queued: ${queue.queued} · Total: ${queue.total}`,
+                    ...queue.runs.map((run) => {
+                        const message = this.memoryStore.getMessageById(
+                            run.userMessageId,
+                        );
+                        const label = message
+                            ? summarizeMessage(message)
+                            : `message #${run.userMessageId}`;
+                        return `${run.position}. ${run.status} · ${run.runId.slice(0, 8)} · ${label}`;
+                    }),
                 ];
                 await input.reply(lines.join('\n'));
                 return true;
@@ -228,6 +255,13 @@ export class ChannelShellCommands {
         }
 
         return null;
+    }
+
+    private findQueue(
+        channel: string,
+        chatId: string,
+    ): ReturnType<ChatService['listQueues']>[number] | null {
+        return this.chatService.listQueues({ channel, chatId })[0] ?? null;
     }
 
     private renderTaskResult(taskName: string, result: unknown): string {
