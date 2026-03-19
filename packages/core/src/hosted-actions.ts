@@ -220,6 +220,11 @@ export function renderHostedActionBridgeInstructions(options: {
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"see","mode":"frontmost","path":"/tmp/see.png"}`,
             );
         }
+        if (options.screenActions.includes('ocr')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"ocr","mode":"screen","languages":["en-US","zh-Hans"]}`,
+            );
+        }
         if (options.screenActions.includes('click')) {
             lines.push(
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"click","elementId":"B1","app":"Terminal"}`,
@@ -555,6 +560,43 @@ export class HostedActionService {
                     output: result.output,
                     data: result.data,
                     artifactPath: pathValue,
+                };
+            }
+            case 'ocr': {
+                const filePath = readString(request.payload, 'filePath');
+                const app = readString(request.payload, 'app');
+                const mode = readString(request.payload, 'mode');
+                const windowTitle = readString(request.payload, 'windowTitle');
+                const windowId = readNumber(request.payload, 'windowId');
+                const screenIndex = readNumber(request.payload, 'screenIndex');
+                const retina = readBoolean(request.payload, 'retina');
+                const languages = readStringArray(request.payload, 'languages');
+                const result = await this.screenTool.ocr(
+                    {
+                        ...(filePath ? { filePath } : {}),
+                        ...(app ? { app } : {}),
+                        ...(mode
+                            ? {
+                                mode: mode as 'screen' | 'window' | 'frontmost',
+                            }
+                            : {}),
+                        ...(windowTitle ? { windowTitle } : {}),
+                        ...(windowId !== undefined ? { windowId } : {}),
+                        ...(screenIndex !== undefined ? { screenIndex } : {}),
+                        ...(retina !== undefined ? { retina } : {}),
+                        ...(languages ? { languages } : {}),
+                    },
+                    toolContext,
+                );
+                return {
+                    tool: 'screen',
+                    action: 'ocr',
+                    output: result.output,
+                    data: result.data,
+                    artifactPath: result.filePath,
+                    ...(result.captureProvider
+                        ? { provider: result.captureProvider }
+                        : {}),
                 };
             }
             case 'click': {

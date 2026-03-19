@@ -7,7 +7,12 @@ import type { ChatMessage } from './agents/types.js';
 
 type MessageRole = 'user' | 'assistant' | 'system';
 type MessageStatus = 'active' | 'revoked';
-type CommandRunStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+type CommandRunStatus =
+    | 'queued'
+    | 'running'
+    | 'completed'
+    | 'failed'
+    | 'cancelled';
 
 export interface StoredMessage extends ChatMessage {
     id: number;
@@ -343,6 +348,7 @@ export class MemoryStore {
         includeRevoked?: boolean;
         from?: string;
         to?: string;
+        beforeMessageId?: number;
     }): StoredMessage[] {
         const clauses = ['1 = 1'];
         const params: Record<string, unknown> = {
@@ -373,6 +379,11 @@ export class MemoryStore {
             params.to = options.to;
         }
 
+        if (options?.beforeMessageId != null) {
+            clauses.push('id < @beforeMessageId');
+            params.beforeMessageId = options.beforeMessageId;
+        }
+
         const statement = this.db.prepare(`
       SELECT *
       FROM messages
@@ -390,11 +401,15 @@ export class MemoryStore {
         channel: string;
         chatId: string;
         limit: number;
+        beforeMessageId?: number;
     }): ChatMessage[] {
         return this.listMessages({
             channel: options.channel,
             chatId: options.chatId,
             limit: options.limit,
+            ...(options.beforeMessageId != null
+                ? { beforeMessageId: options.beforeMessageId }
+                : {}),
         }).map((message) => ({
             role: message.role,
             content: message.content,

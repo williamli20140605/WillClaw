@@ -192,6 +192,17 @@ const screenPressSchema = screenContextSchema.extend({
     count: z.coerce.number().int().positive().optional(),
 });
 
+const screenOcrSchema = screenContextSchema.extend({
+    filePath: z.string().optional(),
+    app: z.string().optional(),
+    mode: z.enum(['screen', 'window', 'frontmost']).optional(),
+    windowTitle: z.string().optional(),
+    windowId: z.coerce.number().int().optional(),
+    screenIndex: z.coerce.number().int().min(0).optional(),
+    retina: z.boolean().optional(),
+    languages: z.array(z.string().min(1)).optional(),
+});
+
 const WEB_DIST_DIR = fileURLToPath(
     new URL('../../web/dist', import.meta.url),
 );
@@ -732,6 +743,36 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
                     ...(payload.count !== undefined
                         ? { count: payload.count }
                         : {}),
+                },
+                buildScreenToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/screen/ocr', async (c) => {
+        const payload = screenOcrSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.screenTool.ocr(
+                {
+                    ...(payload.filePath ? { filePath: payload.filePath } : {}),
+                    ...(payload.app ? { app: payload.app } : {}),
+                    ...(payload.mode ? { mode: payload.mode } : {}),
+                    ...(payload.windowTitle
+                        ? { windowTitle: payload.windowTitle }
+                        : {}),
+                    ...(payload.windowId !== undefined
+                        ? { windowId: payload.windowId }
+                        : {}),
+                    ...(payload.screenIndex !== undefined
+                        ? { screenIndex: payload.screenIndex }
+                        : {}),
+                    ...(payload.retina !== undefined
+                        ? { retina: payload.retina }
+                        : {}),
+                    ...(payload.languages ? { languages: payload.languages } : {}),
                 },
                 buildScreenToolContext(payload),
             ),

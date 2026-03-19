@@ -194,6 +194,7 @@ async function checkSystemOpen(config: WillClawConfig): Promise<ProviderHealthEn
 async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntry> {
     const configured = config.tools.screen.providers.includes('peekaboo');
     const installed = await commandExists('peekaboo');
+    const visionAvailable = await commandExists('xcrun');
 
     if (!installed) {
         return {
@@ -203,7 +204,7 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
             available: false,
             healthy: false,
             detail: 'peekaboo is not installed',
-            actions: ['capture', 'see', 'click', 'type', 'press'].map((action) => ({
+            actions: ['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
                 action,
                 available: false,
                 healthy: false,
@@ -239,6 +240,17 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
                 detail: screenGranted
                     ? 'Screen Recording permission is granted'
                     : 'Requires Screen Recording permission',
+            },
+            {
+                action: 'ocr',
+                available: visionAvailable,
+                healthy: screenGranted && visionAvailable,
+                detail:
+                    !visionAvailable
+                        ? 'Requires xcrun/swift for Apple Vision OCR'
+                        : screenGranted
+                            ? 'Apple Vision OCR is available after capture'
+                            : 'Requires Screen Recording permission before OCR capture',
             },
             {
                 action: 'click',
@@ -294,7 +306,7 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
                 error instanceof Error
                     ? `peekaboo permission check failed: ${error.message}`
                     : 'peekaboo permission check failed',
-            actions: ['capture', 'see', 'click', 'type', 'press'].map((action) => ({
+            actions: ['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
                 action,
                 available: true,
                 healthy: false,
@@ -308,6 +320,7 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
 
 async function checkScreencapture(config: WillClawConfig): Promise<ProviderHealthEntry> {
     const configured = config.tools.screen.providers.includes('screencapture');
+    const visionAvailable = await commandExists('xcrun');
     if (process.platform !== 'darwin') {
         return {
             tool: 'screen',
@@ -316,7 +329,7 @@ async function checkScreencapture(config: WillClawConfig): Promise<ProviderHealt
             available: false,
             healthy: false,
             detail: `screencapture is not available on ${process.platform}`,
-            actions: ['capture', 'see', 'click', 'type', 'press'].map((action) => ({
+            actions: ['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
                 action,
                 available: false,
                 healthy: false,
@@ -352,6 +365,17 @@ async function checkScreencapture(config: WillClawConfig): Promise<ProviderHealt
                 available: false,
                 healthy: false,
                 detail: 'screencapture cannot analyze UI elements',
+            },
+            {
+                action: 'ocr',
+                available: installed && visionAvailable,
+                healthy: installed && visionAvailable,
+                detail:
+                    installed && visionAvailable
+                        ? 'Apple Vision OCR is available after screencapture capture'
+                        : !visionAvailable
+                            ? 'Requires xcrun/swift for Apple Vision OCR'
+                            : 'screencapture is not available on this host',
             },
             {
                 action: 'click',

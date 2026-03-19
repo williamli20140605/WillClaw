@@ -52,7 +52,9 @@ Current implemented scope:
 - React-based Web UI served from the Hono server root
 - SSE event hub for realtime UI updates
 - CLI-backed, direct-api, and ACP streaming previews over SSE before the final assistant message is persisted
+- per-chat queued message execution so one thread is processed in order instead of racing concurrent runs
 - agent-facing hosted browser/screen bridge for narrow WillClaw-owned actions
+- hosted screen OCR via Apple Vision, available through REST, Web UI, and the narrow hosted bridge
 - minimal ACP server with list/get/run endpoints, sync+stream+async modes, and bearer-token auth
 - LaunchAgent login auto-start commands
 
@@ -215,6 +217,7 @@ Implemented exports:
 
 Implemented memory maintenance:
 - run lifecycle state: cancel / revoke / edit / resend
+- per-chat message queueing with queued run state and sequential execution
 - workspace memory reindex
 - daily note ensure + generate
 - MEMORY.md compact/update
@@ -251,6 +254,7 @@ Current browser actions:
 
 Current screen / desktop actions:
 - capture screenshot
+- OCR text from the current screen or a captured image
 - see / inspect UI elements
 - click
 - type
@@ -275,7 +279,7 @@ Behavior notes:
 - CLI agents with native terminal/filesystem should not receive duplicate hosted copies
 - browser and screen are host capabilities; they are not assumed to exist inside every backend session
 - structured browser actions depend on \`agent-browser\`; \`system-open\` is only a coarse fallback for URL open
-- structured desktop actions depend on \`peekaboo\`; \`screencapture\` is only a coarse fallback for screenshot capture
+- structured desktop actions depend on \`peekaboo\`; \`screencapture\` is only a coarse fallback for screenshot capture, while OCR uses Apple Vision through \`xcrun swift\`
 - provider health can be checked from the CLI and HTTP API before relying on agent-browser or peekaboo
 - for provider-specific workflows, read the narrower \`agent-browser\` or \`peekaboo\` skill`,
     },
@@ -324,6 +328,7 @@ Bridge rules:
 Good fits:
 - \`direct-api\` heartbeat / cron tasks that need browser inspection
 - shell-side research helpers that need hosted screenshots
+- shell-side research helpers that need OCR from the host desktop
 - future channel commands that need WillClaw-owned browser or desktop actions
 
 Bad fits:
@@ -426,13 +431,14 @@ Current UI scope:
 - multi-thread web conversation list powered by \`/api/chats\`
 - web-channel chat composer
 - message timeline for the selected \`channel=web\` thread
+- queued vs running state for active runs in the current thread
 - assistant / system markdown rendering with code blocks, lists, tables, and quotes
 - revoke / edit / resend controls for user messages
 - inspector tabs for memory search, activity, and runtime state
 - scheduler trigger buttons
 - recent tool log panel scoped to the current chat
 - agent and host-tool status summary
-- runtime host lab for browser open/snapshot/screenshot and screen inspect/capture
+- runtime host lab for browser open/snapshot/screenshot and screen inspect/capture/OCR
 - SSE-backed realtime connection, active runs, and recent event stream
 - live streaming preview bubble for CLI and direct-api runs before the final assistant message lands
 - active run cancel action in the conversation header
@@ -461,6 +467,7 @@ Current REST surface includes:
 - \`/api/status\`
 - \`/api/agents\`
 - \`/api/tools/catalog\`
+- \`/api/providers/health\`
 - \`/api/events\`
 - \`/api/route-preview\`
 - \`/api/prompt-preview\`
@@ -482,6 +489,8 @@ Current REST surface includes:
 - \`/api/heartbeat/run\`
 - \`/api/cron/:taskName/run\`
 - \`/api/maintenance/:taskName/run\`
+- \`/api/tools/browser/*\`
+- \`/api/tools/screen/*\`
 - \`/api/logs/tools\`
 - \`/api/logs/tools/stats\`
 - \`/api/logs/tools/:id\`

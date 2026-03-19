@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import type { ScreenToolProvider, WillClawConfig } from '../config.js';
@@ -96,6 +97,25 @@ export interface ScreenPressResult {
     data?: unknown;
 }
 
+export interface ScreenOcrOptions {
+    filePath?: string;
+    app?: string;
+    mode?: 'screen' | 'window' | 'frontmost';
+    windowTitle?: string;
+    windowId?: number;
+    screenIndex?: number;
+    retina?: boolean;
+    languages?: string[];
+}
+
+export interface ScreenOcrResult {
+    engine: 'apple-vision';
+    filePath: string;
+    output: string;
+    data?: unknown;
+    captureProvider?: ScreenToolProvider;
+}
+
 interface ScreenCommand {
     provider: ScreenToolProvider;
     command: string;
@@ -108,7 +128,7 @@ interface CommandExecutionResult {
     exitCode: number;
 }
 
-type ScreenAction = 'capture' | 'see' | 'click' | 'type' | 'press';
+type ScreenAction = 'capture' | 'see' | 'click' | 'type' | 'press' | 'ocr';
 
 function runCommand(
     command: ScreenCommand,
@@ -148,6 +168,100 @@ function parseCommandData(stdout: string): unknown {
         return JSON.parse(trimmed);
     } catch {
         return undefined;
+    }
+}
+
+async function runVisionOcr(
+    filePath: string,
+    languages: string[] | undefined,
+    timeoutMs?: number,
+): Promise<unknown> {
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'willclaw-ocr-'));
+    const scriptPath = path.join(tempDir, 'ocr.swift');
+    const script = `
+import AppKit
+import Foundation
+import Vision
+
+let imagePath = CommandLine.arguments[1]
+let languagesArg = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "[]"
+let requestedLanguages = (try? JSONSerialization.jsonObject(with: Data(languagesArg.utf8))) as? [String] ?? []
+
+guard let image = NSImage(contentsOfFile: imagePath),
+      let tiffData = image.tiffRepresentation,
+      let bitmap = NSBitmapImageRep(data: tiffData),
+      let cgImage = bitmap.cgImage else {
+    fputs("Unable to load image at \\(imagePath)\\n", stderr)
+    exit(2)
+}
+
+let request = VNRecognizeTextRequest()
+request.recognitionLevel = .accurate
+request.usesLanguageCorrection = true
+if !requestedLanguages.isEmpty {
+    request.recognitionLanguages = requestedLanguages
+}
+if #available(macOS 13.0, *), requestedLanguages.isEmpty {
+    request.automaticallyDetectsLanguage = true
+}
+
+let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+try handler.perform([request])
+
+let lines = (request.results ?? []).compactMap { observation -> [String: Any]? in
+    guard let candidate = observation.topCandidates(1).first else {
+        return nil
+    }
+
+    let box = observation.boundingBox
+    return [
+        "text": candidate.string,
+        "confidence": candidate.confidence,
+        "boundingBox": [
+            "x": box.origin.x,
+            "y": box.origin.y,
+            "width": box.size.width,
+            "height": box.size.height
+        ]
+    ]
+}
+
+let fullText = lines.compactMap { $0["text"] as? String }.joined(separator: "\\n")
+let payload: [String: Any] = [
+    "text": fullText,
+    "lineCount": lines.count,
+    "lines": lines,
+]
+let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+print(String(decoding: data, as: UTF8.self))
+`;
+
+    await writeFile(scriptPath, script, 'utf8');
+
+    try {
+        const executed = await runCommand(
+            {
+                provider: 'peekaboo',
+                command: 'xcrun',
+                args: [
+                    'swift',
+                    scriptPath,
+                    filePath,
+                    JSON.stringify(languages ?? []),
+                ],
+            },
+            timeoutMs,
+        );
+
+        return parseCommandData(executed.stdout) ?? {
+            text: summarizeCommandOutput(executed.stdout, ''),
+        };
+    } finally {
+        await unlink(scriptPath).catch(() => undefined);
+        await rm(tempDir, {
+            force: true,
+            recursive: true,
+        }).catch(() => undefined);
     }
 }
 
@@ -593,5 +707,98 @@ export class ScreenTool {
                 };
             },
         });
+    }
+
+    async ocr(
+        options: ScreenOcrOptions,
+        context: ScreenToolContext,
+    ): Promise<ScreenOcrResult> {
+        this.ensureEnabled('ocr', context, JSON.stringify(options));
+        const startedAt = Date.now();
+        let captureProvider: ScreenToolProvider | undefined;
+
+        try {
+            const filePath = options.filePath
+                ? path.resolve(options.filePath)
+                : path.join(
+                    tmpdir(),
+                    `willclaw-ocr-${Date.now().toString(36)}.png`,
+                );
+
+            if (!options.filePath) {
+                const capture = await this.capture(
+                    {
+                        filePath,
+                        ...(options.app ? { app: options.app } : {}),
+                        ...(options.mode ? { mode: options.mode } : {}),
+                        ...(options.windowTitle
+                            ? { windowTitle: options.windowTitle }
+                            : {}),
+                        ...(options.windowId !== undefined
+                            ? { windowId: options.windowId }
+                            : {}),
+                        ...(options.screenIndex !== undefined
+                            ? { screenIndex: options.screenIndex }
+                            : {}),
+                        ...(options.retina !== undefined
+                            ? { retina: options.retina }
+                            : {}),
+                    },
+                    context,
+                );
+                captureProvider = capture.provider;
+            }
+
+            const data = await runVisionOcr(
+                filePath,
+                options.languages,
+                context.timeoutMs,
+            );
+            const extractedText =
+                data &&
+                typeof data === 'object' &&
+                !Array.isArray(data) &&
+                'text' in data &&
+                typeof data.text === 'string'
+                    ? data.text.trim()
+                    : '';
+            const output = extractedText || 'OCR completed with no text detected';
+
+            this.toolLogger.log({
+                tool: 'screen',
+                action: 'ocr',
+                agent: context.triggeredBy,
+                chatId: context.chatId,
+                input: JSON.stringify({
+                    ...options,
+                    filePath,
+                }),
+                output,
+                durationMs: Date.now() - startedAt,
+                success: true,
+            });
+
+            return {
+                engine: 'apple-vision',
+                filePath,
+                output,
+                ...(data !== undefined ? { data } : {}),
+                ...(captureProvider ? { captureProvider } : {}),
+            };
+        } catch (error) {
+            const detail =
+                error instanceof Error ? error.message : 'Unknown OCR failure';
+            this.toolLogger.log({
+                tool: 'screen',
+                action: 'ocr',
+                agent: context.triggeredBy,
+                chatId: context.chatId,
+                input: JSON.stringify(options),
+                durationMs: Date.now() - startedAt,
+                success: false,
+                error: detail,
+            });
+            throw error;
+        }
     }
 }

@@ -177,6 +177,8 @@ export {
     type ScreenCaptureResult,
     type ScreenClickOptions,
     type ScreenClickResult,
+    type ScreenOcrOptions,
+    type ScreenOcrResult,
     type ScreenPressOptions,
     type ScreenPressResult,
     type ScreenSeeOptions,

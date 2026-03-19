@@ -25,13 +25,32 @@ export class RunCancelledError extends Error {
     }
 }
 
-interface ActiveRunState {
+interface RunState {
     runId: string;
     channel: string;
     chatId: string;
     userId: string;
     userMessageId: number;
     cancelRequested: boolean;
+}
+
+type ActiveRunState = RunState;
+
+interface QueuedRunState extends RunState {
+    queueKey: string;
+    position: number;
+}
+
+interface PreparedChatExecution {
+    request: ChatServiceRequest;
+    builtinCommand: ParsedSearchCommand | InvalidSearchCommand | null;
+    channel: string;
+    chatId: string;
+    userId: string;
+    runId: string;
+    userMessageId: number;
+    queueKey: string;
+    queuePosition: number;
 }
 
 export interface ChatServiceRequest extends RunChatRequest {
@@ -78,6 +97,9 @@ export interface EditMessageResult {
 
 export class ChatService {
     private readonly activeRuns = new Map<string, ActiveRunState>();
+    private readonly queuedRuns = new Map<string, QueuedRunState>();
+    private readonly chatQueueOrder = new Map<string, string[]>();
+    private readonly chatQueueTails = new Map<string, Promise<void>>();
 
     constructor(
         private readonly config: WillClawConfig,
@@ -95,13 +117,6 @@ export class ChatService {
         const chatId = request.chatId ?? 'default';
         const userId = request.userId ?? 'local-user';
         const runId = request.runId ?? randomUUID();
-        const history =
-            request.history ??
-            this.memoryStore.getChatHistory({
-                channel,
-                chatId,
-                limit: this.config.memory.max_history_messages,
-            });
         const builtinCommand = this.memorySearchService.parseCommand(request.text);
         const userMessageInput: Parameters<MemoryStore['saveMessage']>[0] = {
             timestamp: new Date().toISOString(),
@@ -120,19 +135,111 @@ export class ChatService {
 
         await this.exportMessage(userMessage);
         this.publishMessageEvent('message.created', userMessage);
+        const queueKey = this.getQueueKey(channel, chatId);
+        const queuePosition = this.enqueueQueuedRun(queueKey, runId);
+        const queued = queuePosition > 1;
         this.memoryStore.saveCommandRun({
             runId,
             agent: builtinCommand ? 'willclaw-command' : 'orchestrator',
             chatId,
             prompt: request.text,
-            status: 'running',
+            status: queued ? 'queued' : 'running',
         });
+        if (queued) {
+            this.queuedRuns.set(runId, {
+                runId,
+                channel,
+                chatId,
+                userId,
+                userMessageId: userMessage.id,
+                cancelRequested: false,
+                queueKey,
+                position: queuePosition,
+            });
+            this.eventHub.publish('chat.run.queued', {
+                runId,
+                channel,
+                chatId,
+                userId,
+                userMessageId: userMessage.id,
+                executionMode: request.executionMode ?? 'foreground',
+                text: request.text,
+                builtinCommand: Boolean(builtinCommand),
+                position: queuePosition,
+                ahead: queuePosition - 1,
+            });
+        }
+
+        const prepared: PreparedChatExecution = {
+            request,
+            builtinCommand,
+            channel,
+            chatId,
+            userId,
+            runId,
+            userMessageId: userMessage.id,
+            queueKey,
+            queuePosition,
+        };
+        const previousTail = this.chatQueueTails.get(queueKey) ?? Promise.resolve();
+        const executionPromise = previousTail
+            .catch(() => undefined)
+            .then(async () => await this.executePreparedChat(prepared));
+        const tailPromise = executionPromise
+            .then(() => undefined, () => undefined)
+            .finally(() => {
+                this.removeQueuedRun(queueKey, runId);
+                if (this.chatQueueTails.get(queueKey) === tailPromise) {
+                    this.chatQueueTails.delete(queueKey);
+                }
+            });
+        this.chatQueueTails.set(queueKey, tailPromise);
+
+        return await executionPromise;
+    }
+
+    private async executePreparedChat(
+        prepared: PreparedChatExecution,
+    ): Promise<ChatServiceResult> {
+        const {
+            request,
+            builtinCommand,
+            channel,
+            chatId,
+            userId,
+            runId,
+            userMessageId,
+            queueKey,
+            queuePosition,
+        } = prepared;
+        const history =
+            request.history ??
+            this.buildQueuedChatHistory({
+                channel,
+                chatId,
+                queueKey,
+                runId,
+                currentUserMessageId: userMessageId,
+            });
+        const queuedState = this.queuedRuns.get(runId);
+        if (queuedState?.cancelRequested) {
+            this.queuedRuns.delete(runId);
+            throw new RunCancelledError(runId);
+        }
+
+        if (queuedState) {
+            this.memoryStore.updateCommandRun(runId, {
+                status: 'running',
+            });
+            this.queuedRuns.delete(runId);
+        }
+
         this.activeRuns.set(runId, {
             runId,
             channel,
             chatId,
             userId,
-            userMessageId: userMessage.id,
+            userMessageId,
             cancelRequested: false,
         });
         this.eventHub.publish('chat.run.started', {
@@ -140,10 +247,12 @@ export class ChatService {
             channel,
             chatId,
             userId,
-            userMessageId: userMessage.id,
+            userMessageId,
             executionMode: request.executionMode ?? 'foreground',
             text: request.text,
             builtinCommand: Boolean(builtinCommand),
+            queuePosition,
+            queued: queuePosition > 1,
         });
 
         try {
@@ -151,7 +260,7 @@ export class ChatService {
                 return await this.handleBuiltInCommand(
                     builtinCommand,
                     request,
-                    userMessage.id,
+                    userMessageId,
                     runId,
                     channel,
                     chatId,
@@ -160,7 +269,7 @@ export class ChatService {
 
             const result = await this.orchestrator.runChat({
                 ...request,
-                history,
+                ...(history ? { history } : {}),
                 runId,
                 onTextStream: (update) => {
                     if (!update.content) {
@@ -260,7 +369,7 @@ export class ChatService {
                 ...result,
                 channel,
                 chatId,
-                userMessageId: userMessage.id,
+                userMessageId,
                 assistantMessageId: assistantMessage.id,
             };
 
@@ -283,7 +392,8 @@ export class ChatService {
 
             return response;
         } catch (error) {
-            const cancelled = this.isRunCancelled(runId) || error instanceof RunCancelledError;
+            const cancelled =
+                this.isRunCancelled(runId) || error instanceof RunCancelledError;
             const failureMessage =
                 error instanceof Error ? error.message : 'Unknown failure';
             const currentRun = this.memoryStore.getCommandRun(runId);
@@ -379,7 +489,10 @@ export class ChatService {
     getRunStatus(runId: string): RunStatusResult {
         return {
             run: this.memoryStore.getCommandRun(runId),
-            active: this.activeRuns.has(runId) || this.orchestrator.isRunActive(runId),
+            active:
+                this.activeRuns.has(runId) ||
+                this.queuedRuns.has(runId) ||
+                this.orchestrator.isRunActive(runId),
         };
     }
 
@@ -390,14 +503,19 @@ export class ChatService {
         },
     ): Promise<CancelRunResult> {
         const state = this.activeRuns.get(runId);
+        const queuedState = this.queuedRuns.get(runId);
         if (state) {
             state.cancelRequested = true;
+        }
+        if (queuedState) {
+            queuedState.cancelRequested = true;
+            this.removeQueuedRun(queuedState.queueKey, runId);
         }
 
         const cancelled = await this.orchestrator.cancelRun(runId);
         const run = this.memoryStore.getCommandRun(runId);
 
-        if (!run && !state) {
+        if (!run && !state && !queuedState) {
             return {
                 run: null,
                 active: false,
@@ -407,6 +525,8 @@ export class ChatService {
 
         const canCancel =
             Boolean(state) ||
+            Boolean(queuedState) ||
+            run?.status === 'queued' ||
             run?.status === 'running' ||
             this.orchestrator.isRunActive(runId);
         if (!canCancel) {
@@ -421,26 +541,40 @@ export class ChatService {
             run &&
             (this.memoryStore.updateCommandRun(runId, {
                 status: 'cancelled',
-                stderr: 'Cancelled by user request',
+                stderr: queuedState
+                    ? 'Cancelled while queued by user request'
+                    : 'Cancelled by user request',
             }) ??
                 run);
         const noteMessage =
             options?.annotate === false
                 ? null
                 : await this.createRunLifecycleNote(
-                    state,
+                    state ?? queuedState,
                     updatedRun ?? run,
-                    `Cancelled run \`${runId}\`.`,
+                    queuedState
+                        ? `Cancelled queued run \`${runId}\`.`
+                        : `Cancelled run \`${runId}\`.`,
                     {
                         subtype: 'run_cancelled',
                         runId,
+                        ...(queuedState ? { queued: true } : {}),
                     },
                 );
+        this.eventHub.publish('chat.run.cancelled', {
+            runId,
+            channel: state?.channel ?? queuedState?.channel ?? null,
+            chatId: state?.chatId ?? queuedState?.chatId ?? null,
+            error: queuedState
+                ? 'Cancelled while queued by user request'
+                : 'Cancelled by user request',
+            ...(queuedState ? { queued: true } : {}),
+        });
 
         const response: CancelRunResult = {
             run: updatedRun ?? run,
             active: false,
-            cancelled: cancelled || Boolean(state),
+            cancelled: cancelled || Boolean(state) || Boolean(queuedState),
         };
         if (noteMessage) {
             response.noteMessageId = noteMessage.id;
@@ -566,11 +700,77 @@ export class ChatService {
     }
 
     private isRunCancelled(runId: string): boolean {
-        return this.activeRuns.get(runId)?.cancelRequested ?? false;
+        return (
+            this.activeRuns.get(runId)?.cancelRequested ??
+            this.queuedRuns.get(runId)?.cancelRequested ??
+            false
+        );
+    }
+
+    private getQueueKey(channel: string, chatId: string): string {
+        return `${channel}::${chatId}`;
+    }
+
+    private enqueueQueuedRun(queueKey: string, runId: string): number {
+        const queue = this.chatQueueOrder.get(queueKey) ?? [];
+        queue.push(runId);
+        this.chatQueueOrder.set(queueKey, queue);
+        return queue.length;
+    }
+
+    private removeQueuedRun(queueKey: string, runId: string): void {
+        const queue = this.chatQueueOrder.get(queueKey);
+        if (!queue) {
+            return;
+        }
+
+        const nextQueue = queue.filter((entry) => entry !== runId);
+        if (nextQueue.length === 0) {
+            this.chatQueueOrder.delete(queueKey);
+            return;
+        }
+
+        this.chatQueueOrder.set(queueKey, nextQueue);
+    }
+
+    private buildQueuedChatHistory(input: {
+        channel: string;
+        chatId: string;
+        queueKey: string;
+        runId: string;
+        currentUserMessageId: number;
+    }): RunChatRequest['history'] {
+        const queue = this.chatQueueOrder.get(input.queueKey) ?? [];
+        const currentIndex = queue.indexOf(input.runId);
+        const excludedRunIds = new Set<string>(
+            currentIndex >= 0 ? queue.slice(currentIndex) : [input.runId],
+        );
+        const windowSize = this.config.memory.max_history_messages + queue.length + 8;
+        const messages = this.memoryStore.listMessages({
+            channel: input.channel,
+            chatId: input.chatId,
+            limit: windowSize,
+        });
+
+        return messages
+            .filter((message) => {
+                if (message.id === input.currentUserMessageId) {
+                    return false;
+                }
+
+                return !(
+                    message.runId && excludedRunIds.has(message.runId)
+                );
+            })
+            .slice(-this.config.memory.max_history_messages)
+            .map((message) => ({
+                role: message.role,
+                content: message.content,
+            }));
     }
 
     private async createRunLifecycleNote(
-        state: ActiveRunState | undefined,
+        state: RunState | undefined,
         run: StoredCommandRun | null,
         content: string,
         metadata: Record<string, unknown>,

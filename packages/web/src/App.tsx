@@ -162,7 +162,7 @@ interface ActiveRun {
     channel: string;
     chatId: string;
     startedAt: string;
-    status: 'running' | 'completed' | 'failed' | 'cancelled';
+    status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
     phase: string;
     agent?: string;
     executionMode?: string;
@@ -471,6 +471,16 @@ function describeRealtimeEvent(event: RealtimeEvent): {
                 title: 'Run started',
                 detail: readPayloadString(event.payload, 'executionMode') ?? 'foreground',
             };
+        case 'chat.run.queued': {
+            const ahead = event.payload.ahead;
+            return {
+                title: 'Run queued',
+                detail:
+                    typeof ahead === 'number' && Number.isFinite(ahead)
+                        ? `${ahead} ahead`
+                        : 'Waiting for earlier work',
+            };
+        }
         case 'chat.run.completed':
             return {
                 title: 'Run completed',
@@ -770,6 +780,7 @@ export function App() {
         const source = new EventSource('/api/events');
         const eventTypes = [
             'ready',
+            'chat.run.queued',
             'chat.run.started',
             'chat.run.stream.delta',
             'chat.run.completed',
@@ -802,6 +813,44 @@ export function App() {
                     case 'ready':
                         setRealtimeConnected(true);
                         break;
+                    case 'chat.run.queued': {
+                        const runId = readPayloadString(event.payload, 'runId');
+                        const channel = readPayloadString(event.payload, 'channel');
+                        const chatId = readPayloadString(event.payload, 'chatId');
+                        const executionMode = readPayloadString(
+                            event.payload,
+                            'executionMode',
+                        );
+                        const ahead = event.payload.ahead;
+                        if (!runId || !channel || !chatId) {
+                            break;
+                        }
+
+                        setActiveRuns((current) =>
+                            upsertActiveRun(current, {
+                                runId,
+                                channel,
+                                chatId,
+                                startedAt: event.timestamp,
+                                status: 'queued',
+                                phase:
+                                    typeof ahead === 'number' &&
+                                    Number.isFinite(ahead)
+                                        ? `queued · ${ahead} ahead`
+                                        : 'queued',
+                                streamContent: '',
+                                ...(executionMode ? { executionMode } : {}),
+                            }),
+                        );
+
+                        if (channel === WEB_CHANNEL) {
+                            void loadChatList();
+                            if (chatId === selectedChatId) {
+                                void loadMessagesPanel(chatId);
+                            }
+                        }
+                        break;
+                    }
                     case 'chat.run.started': {
                         const runId = readPayloadString(event.payload, 'runId');
                         const channel = readPayloadString(event.payload, 'channel');
@@ -821,7 +870,7 @@ export function App() {
                                 chatId,
                                 startedAt: event.timestamp,
                                 status: 'running',
-                                phase: 'queued',
+                                phase: 'running',
                                 streamContent: '',
                                 ...(executionMode ? { executionMode } : {}),
                             }),
@@ -1448,11 +1497,17 @@ export function App() {
                             <article className="metric-card">
                                 <label>Run state</label>
                                 <strong>
-                                    {currentActiveRun ? 'Running' : 'Idle'}
+                                    {currentActiveRun
+                                        ? currentActiveRun.status === 'queued'
+                                            ? 'Queued'
+                                            : 'Running'
+                                        : 'Idle'}
                                 </strong>
                                 <p>
                                     {currentActiveRun
-                                        ? `Started ${formatRelativeTime(currentActiveRun.startedAt)}`
+                                        ? currentActiveRun.status === 'queued'
+                                            ? `Waiting ${formatRelativeTime(currentActiveRun.startedAt)}`
+                                            : `Started ${formatRelativeTime(currentActiveRun.startedAt)}`
                                         : 'No active run in this chat'}
                                 </p>
                             </article>
@@ -1744,7 +1799,11 @@ export function App() {
                         {currentActiveRun ? (
                             <div className="run-banner">
                                 <div>
-                                    <strong>Run in progress</strong>
+                                    <strong>
+                                        {currentActiveRun.status === 'queued'
+                                            ? 'Run queued'
+                                            : 'Run in progress'}
+                                    </strong>
                                     <div className="run-banner__meta">
                                         {currentActiveRun.phase}
                                         {currentActiveRun.latestError
@@ -2430,9 +2489,27 @@ export function App() {
                                                 >
                                                     Capture
                                                 </button>
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={hostActionBusy}
+                                                    onClick={() =>
+                                                        void runHostAction(
+                                                            '/api/tools/screen/ocr',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                                ...(screenApp.trim()
+                                                                    ? { app: screenApp.trim() }
+                                                                    : { mode: 'screen' }),
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    OCR
+                                                </button>
                                             </div>
                                             <p className="muted">
-                                                Uses Peekaboo first, then falls back to system capture when possible.
+                                                Uses Peekaboo first, then falls back to system capture. OCR uses Apple Vision after capture.
                                             </p>
                                         </article>
 

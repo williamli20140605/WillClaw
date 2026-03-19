@@ -1497,6 +1497,7 @@ daemon:
 - `Phase 0` 已完成：monorepo、TS/ESLint/Prettier、config schema、CLI 骨架、日志、workspace 初始化
 - `Phase 1` 已完成：Prompt Assembler、Agent 接口与多 backend、Orchestrator、SQLite memory、FTS5 搜索、History Exporter、Command Completion Monitor、Tool Execution Logger、Hono REST API
 - 已有运行生命周期后端：`run status / cancel / revoke / edit / resend`
+- 已有 per-chat message queue：同一 chat 的并发消息会先落库，再以 `queued -> running` 顺序串行执行
 - 已有 heartbeat / cron 执行引擎 + `node-cron` 调度 + 手动触发 API
 - 已有 workspace memory 索引：消息搜索 + `MEMORY.md / memory/*.md` 文件搜索
 - 已有手动 memory maintenance API：daily note ensure/generate、`MEMORY.md` compact
@@ -1520,21 +1521,22 @@ daemon:
 - 已有 Web UI Markdown 渲染：assistant / system 消息支持代码块、列表、表格、引用
 - 已有 Web UI chat-first 重构：三栏布局（会话列表 / 主线程 / inspector）+ `/api/chats`
 - 已有 Web UI 过程感：`/api/route-preview` + route / agent attempt / fallback 活动流
+- 已有 Web UI queue 状态：当前 thread 的 active run 会区分 `queued` 和 `running`
 - 已有 SSE 流式预览：CLI backend stdout、`direct-api` 的 Anthropic SSE、以及 ACP 的 SSE/NDJSON 兼容流都会推送 `chat.run.stream.delta`，Web UI 可在最终消息落库前显示临时 assistant 气泡
 - 已有 CLI 输出归一化：`opencode` / `gemini` 这类 JSON / linewise event stream 会提纯正文，不再把 `step_start`、`timestamp` 等元数据混进消息内容
 - 已有 provider doctor：CLI `willclaw doctor` 和 `/api/providers/health` 会检查 `agent-browser / peekaboo / system-open / screencapture` 的安装与权限状态
 - 已有 action-level provider doctor：会明确区分 `open / snapshot / capture / see / click / type / press` 哪些动作当前 healthy，hosted bridge 只向 agent 暴露健康动作
 - 已有结构化宿主 browser actions：`open / snapshot / click / type / screenshot`
-- 已有结构化宿主 screen actions：`capture / see / click / type / press`
+- 已有结构化宿主 screen actions：`capture / ocr / see / click / type / press`
 - 已有 host tool action API：`/api/tools/browser/*`、`/api/tools/screen/*`
 - 已有 agent-facing hosted browser/screen bridge：agent 可通过窄格式 `WILLCLAW_HOSTED_ACTION {...}` 请求 WillClaw 执行宿主动作，再继续完成任务
 - `direct-api` 默认策略现已允许 `browser/screen` hosted bridge
-- 已有 Web UI Host Lab：可直接触发 browser open/snapshot/screenshot 与 screen inspect/capture
+- 已有 Web UI Host Lab：可直接触发 browser open/snapshot/screenshot 与 screen inspect/capture/OCR
 - 已有 macOS 登录自启：`launch-agent install / uninstall / status / print`
 
 尚未完成：
 
-- 更完整 macOS GUI 自动化、OCR
+- 更完整 macOS GUI 自动化
 - 将 provider 安装与健康检查做成正式 setup 流程
 
 ### Phase 0 — 脚手架（1-2 天）
@@ -1612,7 +1614,7 @@ daemon:
 
 ### Phase 5 — macOS + Browser（2-3 天）
 
-- [ ] 屏幕截图 + OCR
+- [x] 屏幕截图 + OCR
 - [ ] 鼠标键盘模拟
 - [ ] 应用控制
 - [ ] Playwright 集成
@@ -1624,8 +1626,9 @@ daemon:
 - [x] Screen host tool provider 顺序（`peekaboo -> screencapture`）
 - [x] 最小 browser open / screen capture 宿主工具封装
 - [x] 结构化 browser hosted actions：`snapshot / click / type / screenshot`
-- [x] 结构化 screen hosted actions：`see / click / type / press`
+- [x] 结构化 screen hosted actions：`ocr / see / click / type / press`
 - [x] `/api/tools/browser/*` + `/api/tools/screen/*`
+- [x] `screen.ocr` 接入 Apple Vision + action-level doctor + hosted bridge + Web UI Host Lab
 - [x] `launch-agent install / uninstall / status / print`（登录自启，不走 daemon 命名）
 
 **交付**：登录自启、宿主 browser/screen 可行动、macOS 更完整控制。
