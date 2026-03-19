@@ -1522,6 +1522,7 @@ daemon:
 - 已有 Web UI chat-first 重构：三栏布局（会话列表 / 主线程 / inspector）+ `/api/chats`
 - 已有 Web UI 过程感：`/api/route-preview` + route / agent attempt / fallback 活动流
 - 已有 Web UI queue 状态：当前 thread 的 active run 会区分 `queued` 和 `running`
+- 已有 queue introspection：`/api/queues` 可返回每个 chat 的 `running / queued / total` 与队列顺位
 - 已有 SSE 流式预览：CLI backend stdout、`direct-api` 的 Anthropic SSE、以及 ACP 的 SSE/NDJSON 兼容流都会推送 `chat.run.stream.delta`，Web UI 可在最终消息落库前显示临时 assistant 气泡
 - 已有 CLI 输出归一化：`opencode` / `gemini` 这类 JSON / linewise event stream 会提纯正文，不再把 `step_start`、`timestamp` 等元数据混进消息内容
 - 已有 provider doctor：CLI `willclaw doctor` 和 `/api/providers/health` 会检查 `agent-browser / peekaboo / system-open / screencapture` 的安装与权限状态

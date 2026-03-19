@@ -809,6 +809,18 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
         );
     });
 
+    app.get('/api/queues', (c) => {
+        const channel = c.req.query('channel');
+        const chatId = c.req.query('chatId');
+
+        return c.json(
+            runtime.chatService.listQueues({
+                ...(channel ? { channel } : {}),
+                ...(chatId ? { chatId } : {}),
+            }),
+        );
+    });
+
     app.get('/api/runs/:runId', (c) => {
         return c.json(runtime.chatService.getRunStatus(c.req.param('runId')));
     });

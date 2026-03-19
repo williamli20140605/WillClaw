@@ -432,6 +432,7 @@ Current UI scope:
 - web-channel chat composer
 - message timeline for the selected \`channel=web\` thread
 - queued vs running state for active runs in the current thread
+- runtime queue panel for the selected thread
 - assistant / system markdown rendering with code blocks, lists, tables, and quotes
 - revoke / edit / resend controls for user messages
 - inspector tabs for memory search, activity, and runtime state
@@ -475,6 +476,7 @@ Current REST surface includes:
 - \`/api/runs/:runId\`
 - \`/api/runs/:runId/cancel\`
 - \`/api/chats\`
+- \`/api/queues\`
 - \`/api/messages\`
 - \`/api/messages/:id/revoke\`
 - \`/api/messages/:id/edit\`

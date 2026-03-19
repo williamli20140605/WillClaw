@@ -73,6 +73,26 @@ export interface RunStatusResult {
     active: boolean;
 }
 
+export interface QueuedRunInfo {
+    runId: string;
+    channel: string;
+    chatId: string;
+    userId: string;
+    userMessageId: number;
+    status: 'queued' | 'running';
+    position: number;
+    ahead: number;
+}
+
+export interface ChatQueueSummary {
+    channel: string;
+    chatId: string;
+    total: number;
+    queued: number;
+    running: number;
+    runs: QueuedRunInfo[];
+}
+
 export interface CancelRunResult extends RunStatusResult {
     cancelled: boolean;
     noteMessageId?: number;
@@ -494,6 +514,62 @@ export class ChatService {
                 this.queuedRuns.has(runId) ||
                 this.orchestrator.isRunActive(runId),
         };
+    }
+
+    listQueues(options?: {
+        channel?: string;
+        chatId?: string;
+    }): ChatQueueSummary[] {
+        const summaries = new Map<string, ChatQueueSummary>();
+
+        for (const [queueKey, runIds] of this.chatQueueOrder.entries()) {
+            for (const [index, runId] of runIds.entries()) {
+                const runningState = this.activeRuns.get(runId);
+                const queuedState = this.queuedRuns.get(runId);
+                const state = runningState ?? queuedState;
+                if (!state) {
+                    continue;
+                }
+
+                if (options?.channel && state.channel !== options.channel) {
+                    continue;
+                }
+
+                if (options?.chatId && state.chatId !== options.chatId) {
+                    continue;
+                }
+
+                const summary =
+                    summaries.get(queueKey) ??
+                    {
+                        channel: state.channel,
+                        chatId: state.chatId,
+                        total: 0,
+                        queued: 0,
+                        running: 0,
+                        runs: [],
+                    };
+
+                const status = runningState ? 'running' : 'queued';
+                const runInfo: QueuedRunInfo = {
+                    runId,
+                    channel: state.channel,
+                    chatId: state.chatId,
+                    userId: state.userId,
+                    userMessageId: state.userMessageId,
+                    status,
+                    position: index + 1,
+                    ahead: index,
+                };
+
+                summary.total += 1;
+                summary[status] += 1;
+                summary.runs.push(runInfo);
+                summaries.set(queueKey, summary);
+            }
+        }
+
+        return [...summaries.values()];
     }
 
     async cancelRun(

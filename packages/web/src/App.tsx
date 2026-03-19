@@ -150,6 +150,26 @@ interface CronPayload {
     maintenance: SchedulerTaskStatus[];
 }
 
+interface QueueRunSummary {
+    runId: string;
+    channel: string;
+    chatId: string;
+    userId: string;
+    userMessageId: number;
+    status: 'queued' | 'running';
+    position: number;
+    ahead: number;
+}
+
+interface QueueSummary {
+    channel: string;
+    chatId: string;
+    total: number;
+    queued: number;
+    running: number;
+    runs: QueueRunSummary[];
+}
+
 interface RealtimeEvent {
     id: string;
     type: string;
@@ -569,6 +589,7 @@ export function App() {
     const [messages, setMessages] = useState<StoredMessage[]>([]);
     const [toolLogs, setToolLogs] = useState<ToolLogEntry[]>([]);
     const [cronState, setCronState] = useState<CronPayload | null>(null);
+    const [queueSummaries, setQueueSummaries] = useState<QueueSummary[]>([]);
     const [composerText, setComposerText] = useState('');
     const [executionMode, setExecutionMode] = useState<'foreground' | 'background'>(
         'foreground',
@@ -672,6 +693,15 @@ export function App() {
         });
     }
 
+    async function loadQueuePanel(): Promise<void> {
+        const payload = await readJson<QueueSummary[]>(
+            `/api/queues?channel=${WEB_CHANNEL}`,
+        );
+        startTransition(() => {
+            setQueueSummaries(payload);
+        });
+    }
+
     async function loadShellPanels(): Promise<void> {
         try {
             await Promise.all([
@@ -679,6 +709,7 @@ export function App() {
                 loadProviderHealthPanel(),
                 loadChatList(),
                 loadSchedulerPanel(),
+                loadQueuePanel(),
             ]);
             setDashboardError('');
         } catch (error) {
@@ -845,6 +876,7 @@ export function App() {
 
                         if (channel === WEB_CHANNEL) {
                             void loadChatList();
+                            void loadQueuePanel();
                             if (chatId === selectedChatId) {
                                 void loadMessagesPanel(chatId);
                             }
@@ -878,6 +910,7 @@ export function App() {
 
                         if (channel === WEB_CHANNEL) {
                             void loadChatList();
+                            void loadQueuePanel();
                             if (chatId === selectedChatId) {
                                 void loadMessagesPanel(chatId);
                             }
@@ -1035,6 +1068,7 @@ export function App() {
 
                         if (channel === WEB_CHANNEL) {
                             void loadChatList();
+                            void loadQueuePanel();
                         }
 
                         if (channel === WEB_CHANNEL && chatId === selectedChatId) {
@@ -1050,6 +1084,7 @@ export function App() {
 
                         if (channel === WEB_CHANNEL) {
                             void loadChatList();
+                            void loadQueuePanel();
                         }
 
                         if (channel === WEB_CHANNEL && chatId === selectedChatId) {
@@ -1330,6 +1365,11 @@ export function App() {
             : chats;
     const selectedChat =
         chatList.find((chat) => chat.chatId === selectedChatId) ?? null;
+    const queueSummaryByChatId = new Map(
+        queueSummaries.map((summary) => [summary.chatId, summary] as const),
+    );
+    const selectedChatQueue = queueSummaryByChatId.get(selectedChatId) ?? null;
+    const selectedQueueLeadRun = selectedChatQueue?.runs[0] ?? null;
     const currentActiveRun =
         activeRuns.find(
             (entry) =>
@@ -1442,7 +1482,10 @@ export function App() {
                             </div>
                         ) : (
                             <div className="session-list">
-                                {chatList.map((chat) => (
+                                {chatList.map((chat) => {
+                                    const chatQueue = queueSummaryByChatId.get(chat.chatId);
+
+                                    return (
                                     <button
                                         className="session-card"
                                         data-active={chat.chatId === selectedChatId}
@@ -1476,9 +1519,20 @@ export function App() {
                                             {chat.agent ? (
                                                 <span className="chip">{chat.agent}</span>
                                             ) : null}
+                                            {chatQueue?.queued ? (
+                                                <span className="chip" data-tone="accent">
+                                                    {chatQueue.queued} queued
+                                                </span>
+                                            ) : null}
+                                            {chatQueue?.running ? (
+                                                <span className="chip" data-tone="teal">
+                                                    {chatQueue.running} running
+                                                </span>
+                                            ) : null}
                                         </div>
                                     </button>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -1501,6 +1555,10 @@ export function App() {
                                         ? currentActiveRun.status === 'queued'
                                             ? 'Queued'
                                             : 'Running'
+                                        : selectedQueueLeadRun
+                                            ? selectedQueueLeadRun.status === 'running'
+                                                ? 'Running'
+                                                : 'Queued'
                                         : 'Idle'}
                                 </strong>
                                 <p>
@@ -1508,6 +1566,10 @@ export function App() {
                                         ? currentActiveRun.status === 'queued'
                                             ? `Waiting ${formatRelativeTime(currentActiveRun.startedAt)}`
                                             : `Started ${formatRelativeTime(currentActiveRun.startedAt)}`
+                                        : selectedQueueLeadRun
+                                            ? selectedQueueLeadRun.status === 'running'
+                                                ? 'A queued run is already executing for this thread.'
+                                                : `${selectedQueueLeadRun.ahead} run(s) ahead in this thread.`
                                         : 'No active run in this chat'}
                                 </p>
                             </article>
@@ -1552,15 +1614,26 @@ export function App() {
                                 {realtimeConnected ? 'live stream' : 'reconnecting'}
                             </span>
                             <span className="chip">{selectedChatId}</span>
+                            {selectedChatQueue ? (
+                                <span className="chip" data-tone="accent">
+                                    queue {selectedChatQueue.total}
+                                </span>
+                            ) : null}
                             {lastRun?.chatId === selectedChatId ? (
                                 <span className="chip" data-tone="teal">
                                     last: {lastRun.agent}
                                 </span>
                             ) : null}
-                            {currentActiveRun ? (
+                            {currentActiveRun ?? selectedQueueLeadRun ? (
                                 <button
                                     className="danger-btn"
-                                    onClick={() => void handleCancelRun(currentActiveRun.runId)}
+                                    onClick={() =>
+                                        void handleCancelRun(
+                                            currentActiveRun?.runId ??
+                                                selectedQueueLeadRun?.runId ??
+                                                '',
+                                        )
+                                    }
                                     type="button"
                                 >
                                     Cancel run
@@ -2356,6 +2429,60 @@ export function App() {
                                             </article>
                                         ))}
                                     </div>
+                                </section>
+
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Queue</h3>
+                                        <span>
+                                            {selectedChatQueue
+                                                ? `${selectedChatQueue.total} pending`
+                                                : 'idle'}
+                                        </span>
+                                    </div>
+                                    {selectedChatQueue ? (
+                                        <div className="stack-list">
+                                            {selectedChatQueue.runs.map((run) => (
+                                                <article
+                                                    className="task-card"
+                                                    key={run.runId}
+                                                >
+                                                    <strong>
+                                                        {run.status === 'running'
+                                                            ? 'Running now'
+                                                            : `Queued #${run.position}`}
+                                                    </strong>
+                                                    <div className="chip-row">
+                                                        <span
+                                                            className="chip"
+                                                            data-tone={
+                                                                run.status === 'running'
+                                                                    ? 'teal'
+                                                                    : 'accent'
+                                                            }
+                                                        >
+                                                            {run.status}
+                                                        </span>
+                                                        <span className="chip">
+                                                            run {run.runId.slice(0, 8)}
+                                                        </span>
+                                                        <span className="chip">
+                                                            msg #{run.userMessageId}
+                                                        </span>
+                                                    </div>
+                                                    <p className="muted">
+                                                        {run.status === 'running'
+                                                            ? 'This run is currently executing for the selected thread.'
+                                                            : `${run.ahead} run(s) ahead in this thread.`}
+                                                    </p>
+                                                </article>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="empty">
+                                            No queued work in this thread right now.
+                                        </div>
+                                    )}
                                 </section>
 
                                 <section className="inspector-panel">
