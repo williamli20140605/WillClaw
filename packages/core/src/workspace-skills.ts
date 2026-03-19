@@ -123,7 +123,7 @@ Implemented today:
 - Discord adapter
 - Feishu webhook adapter
 - outbound channel notifications for heartbeat / cron results
-- shared channel shell commands: \`/status\`, \`/queue\`, \`/undo\`, \`/resend\`, \`/cancel\`, \`/heartbeat\`, \`/cron\`
+- shared channel shell commands: \`/status\`, \`/queue\`, \`/undo\`, \`/edit\`, \`/resend\`, \`/cancel\`, \`/heartbeat\`, \`/cron\`
 
 Telegram behavior:
 - reads token from the configured env var
@@ -132,7 +132,8 @@ Telegram behavior:
 - private chats are handled directly
 - inbound text is sent to ChatService
 - assistant replies are pushed back to Telegram
-- shell commands can inspect status, inspect the current queue, revoke the latest user turn, resend it, cancel the latest active run, or trigger heartbeat / cron work
+- shell commands can inspect status, inspect the current queue, revoke the latest user turn, edit and resend it, resend it unchanged, cancel the latest active run, or trigger heartbeat / cron work
+- Telegram edited messages can be translated into the same logical edit flow instead of being treated as a brand-new user turn
 - if a new message arrives while the same chat already has pending work, Telegram sends an immediate queued notice before the final reply
 - background task notifications can be pushed to Telegram via the channel manager
 

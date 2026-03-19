@@ -478,11 +478,12 @@ agents:
 └──────────────────────────────────────┘
 ```
 
-**Telegram / Discord 的撤回**：
+**Telegram / Discord 的撤回 / 编辑**：
 
 - Telegram：bot 收到用户编辑消息的事件 → 触发重新处理
 - Discord：监听 messageUpdate 事件
 - 主动撤回在 Telegram/Discord 中不直接支持（bot 无法删用户消息），但可以通过 `/undo` 命令实现逻辑撤回
+- 主动编辑现在可以通过 `/edit <text>` 走 WillClaw 的逻辑编辑链路；原生 message edit 事件仍可后续增强
 
 ### SQLite Schema 变更
 
@@ -1467,6 +1468,7 @@ daemon:
 | `/reindex`                         | 重建 FTS5 搜索索引                                       |
 | `/reload`                          | 重新加载 workspace .md 文件                              |
 | `/undo`                            | 撤回上一条消息（所有渠道通用）                           |
+| `/edit <text>`                     | 编辑上一条用户消息并重新发送                             |
 | `/cron`                            | 列出定时任务 + 下次执行时间                              |
 | `/cron run <n>`                    | 手动触发 cron 任务                                       |
 | `/heartbeat`                       | 立即触发一次心跳                                         |
@@ -1512,7 +1514,8 @@ daemon:
 - workspace 现在会自动生成 `SKILLS.md`、`SKILLS_INDEX.md` 和 `skills/*`
 - CLI 新增 `sync-skills`，可将生成的 skills 刷到任意 workspace 目录
 - 已有聊天渠道骨架：`ChannelManager + Telegram polling adapter`
-- 已有共享渠道命令：`/status`、`/queue`、`/undo`、`/resend`、`/cancel`、`/heartbeat`、`/cron`
+- 已有共享渠道命令：`/status`、`/queue`、`/undo`、`/edit`、`/resend`、`/cancel`、`/heartbeat`、`/cron`
+- 已有 Telegram edited-message bridge：用户直接编辑上一条 Telegram 消息时，可自动转成 WillClaw 的逻辑 `/edit` 流程
 - 已有 Discord adapter：DM 直通、guild mention gating、基础壳层命令复用
 - 已有 Feishu adapter：支持 webhook challenge、`im.message.receive_v1` 文本事件、mention gating、消息回复
 - 已有渠道 queue UX：同一 chat 已有 pending work 时，Telegram / Discord / Feishu 会先回 `Queued behind N run(s)`，轮到时再发送正式回复
@@ -1574,7 +1577,7 @@ daemon:
 - [ ] Web UI WebSocket handler
 - [x] Web UI 前端（React）
 - [x] Web UI SSE handler / realtime event stream
-- [x] **消息撤回 / 编辑 / 重发 UI / 渠道交互层**（Web 已接；Telegram / Discord 侧还没接完）
+- [x] **消息撤回 / 编辑 / 重发 UI / 渠道交互层**（Web 已接；channel shell 已有 `/undo /edit /resend`，原生消息编辑事件仍可继续增强）
 - [x] **Tool Log Panel**（Web UI 工具日志面板）
 - [x] **Search Panel**（Web UI 搜索面板）
 - [x] Agent 执行状态实时显示（SSE + active runs）
@@ -1582,7 +1585,7 @@ daemon:
 - [x] Chat-first layout（会话列表 / 主线程 / inspector）
 - [x] Route preview + process activity（route / agent attempt / fallback）
 - [x] CLI-backed streaming preview（SSE delta events + 临时 assistant 气泡）
-- [x] Channel shell commands（`/status`、`/queue`、`/undo`、`/resend`、`/cancel`、`/heartbeat`、`/cron`）
+- [x] Channel shell commands（`/status`、`/queue`、`/undo`、`/edit`、`/resend`、`/cancel`、`/heartbeat`、`/cron`）
 
 **交付**：Telegram + Web UI 聊天可用，支持撤回、日志查看、记忆搜索。
 

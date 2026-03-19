@@ -115,6 +115,45 @@ export class ChannelShellCommands {
                 );
                 return true;
             }
+            case '/edit': {
+                if (!args) {
+                    await input.reply('Usage: /edit <new message text>');
+                    return true;
+                }
+
+                const latestUserMessage = this.findLatestUserMessage(
+                    input.channel,
+                    input.chatId,
+                );
+                if (!latestUserMessage) {
+                    await input.reply('No user message found to edit.');
+                    return true;
+                }
+
+                if (input.showTyping) {
+                    await input.showTyping();
+                }
+
+                const result = await this.chatService.editMessage(
+                    latestUserMessage.id,
+                    {
+                        text: args,
+                        isGroup: input.isGroup,
+                        workingDirectory: input.workingDirectory,
+                    },
+                );
+                if (!result) {
+                    await input.reply(
+                        'Edit failed because the original message could not be found.',
+                    );
+                    return true;
+                }
+
+                await input.reply(
+                    `Edited message #${latestUserMessage.id}.\n\n${result.result.content}`,
+                );
+                return true;
+            }
             case '/resend': {
                 const latestUserMessage = this.findLatestUserMessage(
                     input.channel,

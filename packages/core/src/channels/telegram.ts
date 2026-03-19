@@ -172,11 +172,12 @@ export class TelegramChannel implements ChannelAdapter {
                 for (const update of updates) {
                     this.offset = update.update_id + 1;
                     const message = update.message ?? update.edited_message;
+                    const edited = !update.message && Boolean(update.edited_message);
                     if (!message) {
                         continue;
                     }
 
-                    await this.handleMessage(token, message);
+                    await this.handleMessage(token, message, edited);
                 }
             } catch (error) {
                 if (this.stopped) {
@@ -198,6 +199,7 @@ export class TelegramChannel implements ChannelAdapter {
     private async handleMessage(
         token: string,
         message: TelegramMessage,
+        edited = false,
     ): Promise<void> {
         const sender = message.from;
         const rawText = message.text?.trim();
@@ -224,6 +226,44 @@ export class TelegramChannel implements ChannelAdapter {
         const text = this.normalizeIncomingText(rawText);
         if (!text) {
             return;
+        }
+
+        if (edited && !text.startsWith('/')) {
+            try {
+                const handled = await this.shellCommands.handle({
+                    text: `/edit ${text}`,
+                    channel: this.name,
+                    chatId: String(message.chat.id),
+                    userId: String(message.from?.id ?? '0'),
+                    isGroup: message.chat.type !== 'private',
+                    workingDirectory: this.workingDirectory,
+                    reply: async (content) => {
+                        await this.sendTelegramMessage(token, message.chat.id, content);
+                    },
+                    showTyping: async () => {
+                        await this.sendChatAction(token, message.chat.id, 'typing');
+                    },
+                });
+                if (handled) {
+                    return;
+                }
+            } catch (error) {
+                this.logger.error(
+                    {
+                        channel: this.name,
+                        chatId: message.chat.id,
+                        userId: sender.id,
+                        error:
+                            error instanceof Error ? error.message : String(error),
+                    },
+                    'Telegram edited-message handling failed',
+                );
+                await this.sendMessage(
+                    String(message.chat.id),
+                    `WillClaw edit error: ${error instanceof Error ? error.message : 'Unknown failure'}`,
+                );
+                return;
+            }
         }
 
         try {
