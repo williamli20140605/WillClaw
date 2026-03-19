@@ -5,6 +5,7 @@ import {
     GatewayIntentBits,
     Partials,
     type Message,
+    type PartialMessage,
 } from 'discord.js';
 
 import type { ChatService } from '../chat-service.js';
@@ -108,7 +109,7 @@ export class DiscordChannel implements ChannelAdapter {
                 GatewayIntentBits.DirectMessages,
                 GatewayIntentBits.MessageContent,
             ],
-            partials: [Partials.Channel],
+            partials: [Partials.Channel, Partials.Message],
         });
 
         client.once('ready', () => {
@@ -122,6 +123,9 @@ export class DiscordChannel implements ChannelAdapter {
         });
         client.on('messageCreate', (message) => {
             void this.handleMessage(message);
+        });
+        client.on('messageUpdate', (_before, after) => {
+            void this.handleMessageUpdate(after);
         });
 
         await client.login(token);
@@ -158,7 +162,43 @@ export class DiscordChannel implements ChannelAdapter {
         return process.env[this.config.token_env];
     }
 
-    private async handleMessage(message: Message): Promise<void> {
+    private async handleMessageUpdate(
+        message: Message | PartialMessage,
+    ): Promise<void> {
+        const resolved = await this.resolveMessage(message);
+        if (!resolved) {
+            return;
+        }
+
+        await this.handleMessage(resolved, true);
+    }
+
+    private async resolveMessage(
+        message: Message | PartialMessage,
+    ): Promise<Message | null> {
+        if (!message.partial) {
+            return message;
+        }
+
+        try {
+            return await message.fetch();
+        } catch (error) {
+            this.logger.warn(
+                {
+                    channel: this.name,
+                    chatId: message.channelId,
+                    error: error instanceof Error ? error.message : String(error),
+                },
+                'Discord edited message could not be fetched',
+            );
+            return null;
+        }
+    }
+
+    private async handleMessage(
+        message: Message,
+        edited = false,
+    ): Promise<void> {
         if (message.author.bot) {
             return;
         }
@@ -187,6 +227,45 @@ export class DiscordChannel implements ChannelAdapter {
         const text = this.normalizeIncomingText(rawText);
         if (!text) {
             return;
+        }
+
+        if (edited && !text.startsWith('/')) {
+            try {
+                const handled = await this.shellCommands.handle({
+                    text: `/edit ${text}`,
+                    channel: this.name,
+                    chatId: message.channelId,
+                    userId: message.author.id,
+                    isGroup: message.channel.type !== ChannelType.DM,
+                    workingDirectory: this.workingDirectory,
+                    reply: async (content) => {
+                        await this.sendMessage(message.channelId, content);
+                    },
+                    showTyping: async () => {
+                        if (isSendableChannel(message.channel)) {
+                            await message.channel.sendTyping();
+                        }
+                    },
+                });
+                if (handled) {
+                    return;
+                }
+            } catch (error) {
+                this.logger.error(
+                    {
+                        channel: this.name,
+                        chatId: message.channelId,
+                        userId: message.author.id,
+                        error: error instanceof Error ? error.message : String(error),
+                    },
+                    'Discord edited-message handling failed',
+                );
+                await this.sendMessage(
+                    message.channelId,
+                    `WillClaw edit error: ${error instanceof Error ? error.message : 'Unknown failure'}`,
+                );
+                return;
+            }
         }
 
         try {

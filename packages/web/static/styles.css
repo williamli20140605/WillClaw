@@ -595,6 +595,13 @@ button:disabled {
   margin-top: 14px;
 }
 
+.message-lineage {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
 .message-actions,
 .inline-actions,
 .toolbar,

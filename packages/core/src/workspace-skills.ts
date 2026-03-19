@@ -143,6 +143,7 @@ Discord behavior:
 - guild messages default to mention-gated handling
 - shell commands reuse the same channel command router as Telegram
 - replies are sent back to the originating text channel or DM
+- Discord message updates can be translated into the same logical edit flow instead of being treated as a brand-new user turn
 - queued chats get an immediate "Queued behind N run(s)" acknowledgement before the final reply
 
 Feishu behavior:
@@ -455,6 +456,8 @@ Current UI scope:
 - active run cancel action in the conversation header
 - composer route preview via \`/api/route-preview\`
 - activity tab now shows route selection, agent attempts, and fallback events in human-readable form
+- edited / revoked message lineage is visible in the timeline with `edited from` and `superseded by` cues
+- conversation titles and previews prefer real user/assistant content instead of the latest system note
 
 Current limits:
 - not every host-side event is streamed yet

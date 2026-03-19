@@ -436,7 +436,26 @@ export class MemoryStore {
         }
 
         const statement = this.db.prepare(`
-      WITH ranked AS (
+      WITH filtered AS (
+        SELECT *
+        FROM messages
+        WHERE ${clauses.join(' AND ')}
+      ),
+      latest AS (
+        SELECT
+          channel,
+          chat_id,
+          timestamp AS updated_at,
+          ROW_NUMBER() OVER (
+            PARTITION BY channel, chat_id
+            ORDER BY timestamp DESC, id DESC
+          ) AS latest_rank,
+          COUNT(*) OVER (
+            PARTITION BY channel, chat_id
+          ) AS message_count
+        FROM filtered
+      ),
+      preview_ranked AS (
         SELECT
           channel,
           chat_id,
@@ -447,26 +466,32 @@ export class MemoryStore {
           run_id,
           ROW_NUMBER() OVER (
             PARTITION BY channel, chat_id
-            ORDER BY timestamp DESC, id DESC
-          ) AS rank_in_chat,
-          COUNT(*) OVER (
-            PARTITION BY channel, chat_id
-          ) AS message_count
-        FROM messages
-        WHERE ${clauses.join(' AND ')}
+            ORDER BY
+              CASE
+                WHEN role = 'system' THEN 1
+                ELSE 0
+              END ASC,
+              timestamp DESC,
+              id DESC
+          ) AS preview_rank
+        FROM filtered
       )
       SELECT
-        channel,
-        chat_id,
-        timestamp,
-        role,
-        content,
-        agent,
-        run_id,
-        message_count
-      FROM ranked
-      WHERE rank_in_chat = 1
-      ORDER BY timestamp DESC
+        latest.channel,
+        latest.chat_id,
+        latest.updated_at AS timestamp,
+        preview.role,
+        preview.content,
+        preview.agent,
+        preview.run_id,
+        latest.message_count
+      FROM latest
+      JOIN preview_ranked AS preview
+        ON preview.channel = latest.channel
+       AND preview.chat_id = latest.chat_id
+      WHERE latest.latest_rank = 1
+        AND preview.preview_rank = 1
+      ORDER BY latest.updated_at DESC
       LIMIT @limit
     `);
 

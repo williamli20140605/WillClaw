@@ -309,6 +309,41 @@ function messageLabel(message: StoredMessage): string {
     return 'You';
 }
 
+function buildEditedSuccessorMap(messages: StoredMessage[]): Map<number, StoredMessage> {
+    const map = new Map<number, StoredMessage>();
+
+    for (const message of messages) {
+        if (message.editOf != null) {
+            map.set(message.editOf, message);
+        }
+    }
+
+    return map;
+}
+
+function describeMessageLineage(
+    message: StoredMessage,
+    editedSuccessor: StoredMessage | null,
+): string | null {
+    if (message.editOf != null && editedSuccessor) {
+        return `This message replaces #${message.editOf} and was later superseded by #${editedSuccessor.id}.`;
+    }
+
+    if (message.editOf != null) {
+        return `This message replaces #${message.editOf}.`;
+    }
+
+    if (editedSuccessor) {
+        return `This message was superseded by edited message #${editedSuccessor.id}.`;
+    }
+
+    if (message.status === 'revoked') {
+        return 'This message was revoked.';
+    }
+
+    return null;
+}
+
 function conversationTitle(chat: ChatSummary | null, fallbackChatId: string): string {
     const preview = chat ? summarizeText(chat.preview, 42) : '';
     if (preview) {
@@ -1368,6 +1403,7 @@ export function App() {
     const queueSummaryByChatId = new Map(
         queueSummaries.map((summary) => [summary.chatId, summary] as const),
     );
+    const editedSuccessorById = buildEditedSuccessorMap(messages);
     const selectedChatQueue = queueSummaryByChatId.get(selectedChatId) ?? null;
     const selectedQueueLeadRun = selectedChatQueue?.runs[0] ?? null;
     const currentActiveRun =
@@ -1661,151 +1697,184 @@ export function App() {
                             </div>
                         ) : (
                             messages.map((message, index) => (
-                                <div
-                                    className="message-row"
-                                    data-role={message.role}
-                                    key={message.id}
-                                    style={{
-                                        animationDelay: `${Math.min(index * 30, 240)}ms`,
-                                    }}
-                                >
-                                    <article
-                                        className="message-bubble"
-                                        data-role={message.role}
-                                        data-revoked={message.status === 'revoked'}
-                                    >
-                                        <div className="message-top">
-                                            <strong>{messageLabel(message)}</strong>
-                                            <span>
-                                                #{message.id} ·{' '}
-                                                {formatTimestamp(message.timestamp)}
-                                            </span>
-                                        </div>
-                                        <MessageBody message={message} />
-                                        <div className="message-footer">
-                                            <div className="chip-row">
-                                                {message.runId ? (
-                                                    <span className="chip">
-                                                        run {message.runId.slice(0, 8)}
-                                                    </span>
-                                                ) : null}
-                                                {message.durationMs ? (
-                                                    <span className="chip">
-                                                        {formatDuration(message.durationMs)}
-                                                    </span>
-                                                ) : null}
-                                                {message.status === 'revoked' ? (
-                                                    <span
-                                                        className="chip"
-                                                        data-tone="danger"
-                                                    >
-                                                        revoked
-                                                    </span>
-                                                ) : null}
-                                                {(() => {
-                                                    const route = extractAssistantRouteMetadata(
-                                                        message,
-                                                    );
-                                                    if (!route) {
-                                                        return null;
-                                                    }
+                                (() => {
+                                    const editedSuccessor =
+                                        editedSuccessorById.get(message.id) ?? null;
+                                    const lineage = describeMessageLineage(
+                                        message,
+                                        editedSuccessor,
+                                    );
 
-                                                    return (
-                                                        <>
-                                                            {route.selectedAgent ? (
-                                                                <span
-                                                                    className="chip"
-                                                                    data-tone="teal"
-                                                                >
-                                                                    route {route.selectedAgent}
-                                                                </span>
-                                                            ) : null}
-                                                            {route.reason ? (
-                                                                <span className="chip">
-                                                                    {routeReasonLabel(
-                                                                        route.reason,
-                                                                    )}
-                                                                </span>
-                                                            ) : null}
-                                                            {route.attemptedAgents.length > 1 ? (
-                                                                <span className="chip">
-                                                                    {route.attemptedAgents.length}{' '}
-                                                                    attempts
-                                                                </span>
-                                                            ) : null}
-                                                        </>
-                                                    );
-                                                })()}
-                                            </div>
-
-                                            {message.role === 'user' &&
-                                            message.status === 'active' ? (
-                                                <div className="message-actions">
-                                                    <button
-                                                        className="quiet-btn"
-                                                        onClick={() => {
-                                                            setEditingMessageId(message.id);
-                                                            setEditingText(message.content);
-                                                        }}
-                                                        type="button"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        className="ghost-btn"
-                                                        onClick={() =>
-                                                            void handleResend(message.id)
-                                                        }
-                                                        type="button"
-                                                    >
-                                                        Resend
-                                                    </button>
-                                                    <button
-                                                        className="danger-btn"
-                                                        onClick={() =>
-                                                            void handleRevoke(message.id)
-                                                        }
-                                                        type="button"
-                                                    >
-                                                        Revoke
-                                                    </button>
+                                    return (
+                                        <div
+                                            className="message-row"
+                                            data-role={message.role}
+                                            key={message.id}
+                                            style={{
+                                                animationDelay: `${Math.min(index * 30, 240)}ms`,
+                                            }}
+                                        >
+                                            <article
+                                                className="message-bubble"
+                                                data-role={message.role}
+                                                data-revoked={message.status === 'revoked'}
+                                            >
+                                                <div className="message-top">
+                                                    <strong>{messageLabel(message)}</strong>
+                                                    <span>
+                                                        #{message.id} ·{' '}
+                                                        {formatTimestamp(message.timestamp)}
+                                                    </span>
                                                 </div>
-                                            ) : null}
-                                        </div>
+                                                <MessageBody message={message} />
+                                                <div className="message-footer">
+                                                    <div className="chip-row">
+                                                        {message.runId ? (
+                                                            <span className="chip">
+                                                                run {message.runId.slice(0, 8)}
+                                                            </span>
+                                                        ) : null}
+                                                        {message.durationMs ? (
+                                                            <span className="chip">
+                                                                {formatDuration(message.durationMs)}
+                                                            </span>
+                                                        ) : null}
+                                                        {message.status === 'revoked' ? (
+                                                            <span
+                                                                className="chip"
+                                                                data-tone="danger"
+                                                            >
+                                                                revoked
+                                                            </span>
+                                                        ) : null}
+                                                        {message.editOf != null ? (
+                                                            <span
+                                                                className="chip"
+                                                                data-tone="accent"
+                                                            >
+                                                                edited from #{message.editOf}
+                                                            </span>
+                                                        ) : null}
+                                                        {editedSuccessor ? (
+                                                            <span
+                                                                className="chip"
+                                                                data-tone="accent"
+                                                            >
+                                                                superseded by #
+                                                                {editedSuccessor.id}
+                                                            </span>
+                                                        ) : null}
+                                                        {(() => {
+                                                            const route = extractAssistantRouteMetadata(
+                                                                message,
+                                                            );
+                                                            if (!route) {
+                                                                return null;
+                                                            }
 
-                                        {editingMessageId === message.id ? (
-                                            <div className="inline-editor">
-                                                <textarea
-                                                    value={editingText}
-                                                    onChange={(event) =>
-                                                        setEditingText(event.target.value)
-                                                    }
-                                                />
-                                                <div className="inline-actions">
-                                                    <button
-                                                        className="btn"
-                                                        onClick={() =>
-                                                            void handleEditSave(message.id)
-                                                        }
-                                                        type="button"
-                                                    >
-                                                        Save edit
-                                                    </button>
-                                                    <button
-                                                        className="ghost-btn"
-                                                        onClick={() => {
-                                                            setEditingMessageId(null);
-                                                            setEditingText('');
-                                                        }}
-                                                        type="button"
-                                                    >
-                                                        Cancel
-                                                    </button>
+                                                            return (
+                                                                <>
+                                                                    {route.selectedAgent ? (
+                                                                        <span
+                                                                            className="chip"
+                                                                            data-tone="teal"
+                                                                        >
+                                                                            route {route.selectedAgent}
+                                                                        </span>
+                                                                    ) : null}
+                                                                    {route.reason ? (
+                                                                        <span className="chip">
+                                                                            {routeReasonLabel(
+                                                                                route.reason,
+                                                                            )}
+                                                                        </span>
+                                                                    ) : null}
+                                                                    {route.attemptedAgents.length > 1 ? (
+                                                                        <span className="chip">
+                                                                            {route.attemptedAgents.length}{' '}
+                                                                            attempts
+                                                                        </span>
+                                                                    ) : null}
+                                                                </>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                    {lineage ? (
+                                                        <p className="message-lineage">
+                                                            {lineage}
+                                                        </p>
+                                                    ) : null}
+
+                                                    {message.role === 'user' &&
+                                                    message.status === 'active' ? (
+                                                        <div className="message-actions">
+                                                            <button
+                                                                className="quiet-btn"
+                                                                onClick={() => {
+                                                                    setEditingMessageId(message.id);
+                                                                    setEditingText(message.content);
+                                                                }}
+                                                                type="button"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                className="ghost-btn"
+                                                                onClick={() =>
+                                                                    void handleResend(message.id)
+                                                                }
+                                                                type="button"
+                                                            >
+                                                                Resend
+                                                            </button>
+                                                            <button
+                                                                className="danger-btn"
+                                                                onClick={() =>
+                                                                    void handleRevoke(message.id)
+                                                                }
+                                                                type="button"
+                                                            >
+                                                                Revoke
+                                                            </button>
+                                                        </div>
+                                                    ) : null}
                                                 </div>
-                                            </div>
-                                        ) : null}
-                                    </article>
-                                </div>
+
+                                                {editingMessageId === message.id ? (
+                                                    <div className="inline-editor">
+                                                        <textarea
+                                                            value={editingText}
+                                                            onChange={(event) =>
+                                                                setEditingText(event.target.value)
+                                                            }
+                                                        />
+                                                        <div className="inline-actions">
+                                                            <button
+                                                                className="btn"
+                                                                onClick={() =>
+                                                                    void handleEditSave(message.id)
+                                                                }
+                                                                type="button"
+                                                            >
+                                                                Save edit
+                                                            </button>
+                                                            <button
+                                                                className="ghost-btn"
+                                                                onClick={() => {
+                                                                    setEditingMessageId(null);
+                                                                    setEditingText('');
+                                                                }}
+                                                                type="button"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                            </article>
+                                        </div>
+                                    );
+                                })()
                             ))
                         )}
                         {currentActiveRun?.streamContent ? (
