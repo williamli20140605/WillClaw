@@ -775,6 +775,11 @@ export function App() {
     );
     const [screenApp, setScreenApp] = useState('');
     const [screenInputText, setScreenInputText] = useState('hello from WillClaw');
+    const [screenSendClear, setScreenSendClear] = useState(false);
+    const [screenSendPressReturn, setScreenSendPressReturn] = useState(false);
+    const [screenSendInspectAfter, setScreenSendInspectAfter] = useState(true);
+    const [screenSendLaunchIfNeeded, setScreenSendLaunchIfNeeded] =
+        useState(true);
     const [hostActionBusy, setHostActionBusy] = useState(false);
     const [hostActionResult, setHostActionResult] = useState('');
 
@@ -3399,6 +3404,72 @@ export function App() {
                                                 rows={4}
                                                 value={screenInputText}
                                             />
+                                            <div className="field-option-grid">
+                                                <label
+                                                    className="field-option"
+                                                    htmlFor="screen-send-launch"
+                                                >
+                                                    <input
+                                                        checked={screenSendLaunchIfNeeded}
+                                                        id="screen-send-launch"
+                                                        onChange={(event) =>
+                                                            setScreenSendLaunchIfNeeded(
+                                                                event.target.checked,
+                                                            )
+                                                        }
+                                                        type="checkbox"
+                                                    />
+                                                    <span>Launch app if needed</span>
+                                                </label>
+                                                <label
+                                                    className="field-option"
+                                                    htmlFor="screen-send-clear"
+                                                >
+                                                    <input
+                                                        checked={screenSendClear}
+                                                        id="screen-send-clear"
+                                                        onChange={(event) =>
+                                                            setScreenSendClear(
+                                                                event.target.checked,
+                                                            )
+                                                        }
+                                                        type="checkbox"
+                                                    />
+                                                    <span>Clear before typing</span>
+                                                </label>
+                                                <label
+                                                    className="field-option"
+                                                    htmlFor="screen-send-return"
+                                                >
+                                                    <input
+                                                        checked={screenSendPressReturn}
+                                                        id="screen-send-return"
+                                                        onChange={(event) =>
+                                                            setScreenSendPressReturn(
+                                                                event.target.checked,
+                                                            )
+                                                        }
+                                                        type="checkbox"
+                                                    />
+                                                    <span>Press Return after typing</span>
+                                                </label>
+                                                <label
+                                                    className="field-option"
+                                                    htmlFor="screen-send-inspect"
+                                                >
+                                                    <input
+                                                        checked={screenSendInspectAfter}
+                                                        id="screen-send-inspect"
+                                                        onChange={(event) =>
+                                                            setScreenSendInspectAfter(
+                                                                event.target.checked,
+                                                            )
+                                                        }
+                                                        type="checkbox"
+                                                    />
+                                                    <span>Inspect after send</span>
+                                                </label>
+                                            </div>
                                             <div className="toolbar">
                                                 <button
                                                     className="ghost-btn"
@@ -3414,7 +3485,13 @@ export function App() {
                                                                 chatId: selectedChatId,
                                                                 app: screenApp.trim(),
                                                                 text: screenInputText,
-                                                                inspectAfter: true,
+                                                                clear: screenSendClear,
+                                                                pressReturn:
+                                                                    screenSendPressReturn,
+                                                                inspectAfter:
+                                                                    screenSendInspectAfter,
+                                                                launchIfNeeded:
+                                                                    screenSendLaunchIfNeeded,
                                                                 languages: ['en-US', 'zh-Hans'],
                                                             },
                                                         )
@@ -3484,6 +3561,9 @@ export function App() {
                                             <p className="muted">
                                                 Uses macOS app control plus Peekaboo-first desktop actions. OCR uses Apple Vision after capture.
                                             </p>
+                                            <div className="hint-text">
+                                                Send Text brings the target app to the front, so your mouse and keyboard focus may jump briefly while it runs.
+                                            </div>
                                         </article>
 
                                         {hostActionResult ? (
@@ -3751,7 +3831,12 @@ scopes: ${latestManagedToken.scopes.join(', ')}`}
                                             <div className="stack-list">
                                                 {authTokenSummaries.slice(0, 4).map((token) => (
                                                     <div
-                                                        key={token.id}
+                                                        key={[
+                                                            token.source,
+                                                            token.id,
+                                                            token.createdAt ?? '',
+                                                            token.tokenPreview ?? '',
+                                                        ].join(':')}
                                                         className="provider-action-list"
                                                     >
                                                         <strong>{token.id}</strong>

@@ -708,6 +708,35 @@ button:disabled {
   color: var(--ink);
 }
 
+.field-option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  margin-bottom: 12px;
+}
+
+.field-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+}
+
+.field-option input {
+  margin: 0;
+  accent-color: var(--teal);
+}
+
+.field-option span {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
 .host-action-card,
 .host-result-card,
 .provider-card {
