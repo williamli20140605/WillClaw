@@ -8,7 +8,7 @@ import { Hono } from 'hono';
 import type { Logger } from 'pino';
 import { z } from 'zod';
 
-import { AuthManager, type AuthIdentity } from './auth.js';
+import { type AuthIdentity, type AuthManager } from './auth.js';
 import type { ChatService } from './chat-service.js';
 import type { ChannelManager } from './channels/manager.js';
 import { RunCancelledError } from './chat-service.js';
@@ -56,6 +56,13 @@ const authSessionRequestSchema = z
 const authPairingRequestSchema = z.object({
     code: z.string().min(1),
 });
+
+const authTokenCreateSchema = z
+    .object({
+        id: z.string().min(1).optional(),
+        scopes: z.array(z.enum(AUTH_SCOPES)).min(1).optional(),
+    })
+    .optional();
 
 const pairingInviteCreateSchema = z.object({
     kind: z.enum(['web', 'channel']),
@@ -135,6 +142,17 @@ const browserSnapshotSchema = browserContextSchema.extend({
     compact: z.boolean().optional(),
     depth: z.coerce.number().int().positive().optional(),
     selector: z.string().optional(),
+});
+
+const browserInspectPageSchema = browserContextSchema.extend({
+    target: z.string().min(1),
+    interactive: z.boolean().optional(),
+    compact: z.boolean().optional(),
+    depth: z.coerce.number().int().positive().optional(),
+    selector: z.string().optional(),
+    screenshot: z.boolean().optional(),
+    screenshotPath: z.string().optional(),
+    fullPage: z.boolean().optional(),
 });
 
 const browserClickSchema = browserContextSchema.extend({
@@ -306,6 +324,7 @@ export interface WillClawRuntimeLike {
     toolLogger: ToolExecutionLogger;
     browserTool: BrowserTool;
     screenTool: ScreenTool;
+    authManager: AuthManager;
     chatService: ChatService;
     channelManager: ChannelManager;
     pairingManager: PairingManager;
@@ -320,7 +339,7 @@ export interface WillClawHttpServer {
     close(): Promise<void>;
 }
 
-function isAuthRoute(pathname: string): boolean {
+function isPublicAuthRoute(pathname: string): boolean {
     return (
         pathname === '/api/auth/status' ||
         pathname === '/api/auth/session' ||
@@ -332,8 +351,19 @@ function getApiRequiredScopes(
     method: string,
     pathname: string,
 ): AuthScope[] | null {
-    if (pathname === '/api/channels/feishu/events' || isAuthRoute(pathname)) {
+    if (
+        pathname === '/api/channels/feishu/events' ||
+        isPublicAuthRoute(pathname)
+    ) {
         return null;
+    }
+
+    if (
+        pathname === '/api/auth/tokens' ||
+        pathname === '/api/auth/sessions' ||
+        pathname.startsWith('/api/auth/sessions/')
+    ) {
+        return ['api:session'];
     }
 
     if (pathname === '/api/events') {
@@ -366,6 +396,17 @@ function getApiRateLimitBucket(pathname: string): string {
 
     if (pathname === '/api/auth/pairing') {
         return 'auth:pairing';
+    }
+
+    if (pathname === '/api/auth/tokens') {
+        return 'auth:tokens';
+    }
+
+    if (
+        pathname === '/api/auth/sessions' ||
+        pathname.startsWith('/api/auth/sessions/')
+    ) {
+        return 'auth:sessions';
     }
 
     if (pathname === '/api/events') {
@@ -458,7 +499,7 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
     const app = new Hono<{
         Variables: AppVariables;
     }>();
-    const authManager = new AuthManager(runtime.config);
+    const authManager = runtime.authManager;
 
     app.use('/api/*', async (c, next) => {
         const requiredScopes = getApiRequiredScopes(c.req.method, c.req.path);
@@ -605,6 +646,53 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
         });
     });
 
+    app.get('/api/auth/tokens', (c) => {
+        return c.json({
+            tokens: authManager.listTokens(),
+        });
+    });
+
+    app.post('/api/auth/tokens', async (c) => {
+        const payload = authTokenCreateSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        const created = authManager.createManagedToken({
+            ...(payload?.id ? { id: payload.id } : {}),
+            ...(payload?.scopes ? { scopes: payload.scopes } : {}),
+        });
+
+        return c.json(created, 201);
+    });
+
+    app.delete('/api/auth/tokens/:tokenId', (c) => {
+        const token = authManager.revokeTokenById(c.req.param('tokenId'));
+        if (!token) {
+            return c.json({ error: 'Managed auth token not found' }, 404);
+        }
+
+        return c.json({
+            revoked: token,
+        });
+    });
+
+    app.get('/api/auth/sessions', (c) => {
+        return c.json({
+            sessions: authManager.listSessions(),
+        });
+    });
+
+    app.delete('/api/auth/sessions/:sessionId', (c) => {
+        const session = authManager.revokeSessionById(c.req.param('sessionId'));
+        if (!session) {
+            return c.json({ error: 'Session not found' }, 404);
+        }
+
+        return c.json({
+            revoked: session,
+        });
+    });
+
     app.get('/api/pairing', async (c) => {
         return c.json({
             enabled: runtime.pairingManager.isEnabled(),
@@ -748,7 +836,12 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
             return c.json({ error: 'Route preview text is required' }, 400);
         }
 
-        return c.json(runtime.orchestrator.inspectRoute(text));
+        const currentMode = c.req.query('currentMode') ?? undefined;
+        return c.json(
+            runtime.orchestrator.inspectRoute(text, {
+                ...(currentMode ? { currentMode } : {}),
+            }),
+        );
     });
 
     app.get('/api/events', (c) => {
@@ -859,6 +952,38 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
                         : {}),
                     ...(payload.depth !== undefined ? { depth: payload.depth } : {}),
                     ...(payload.selector ? { selector: payload.selector } : {}),
+                },
+                buildBrowserToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/browser/inspect-page', async (c) => {
+        const payload = browserInspectPageSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.browserTool.inspectPage(
+                {
+                    target: payload.target,
+                    ...(payload.interactive !== undefined
+                        ? { interactive: payload.interactive }
+                        : {}),
+                    ...(payload.compact !== undefined
+                        ? { compact: payload.compact }
+                        : {}),
+                    ...(payload.depth !== undefined ? { depth: payload.depth } : {}),
+                    ...(payload.selector ? { selector: payload.selector } : {}),
+                    ...(payload.screenshot !== undefined
+                        ? { screenshot: payload.screenshot }
+                        : {}),
+                    ...(payload.screenshotPath
+                        ? { screenshotPath: payload.screenshotPath }
+                        : {}),
+                    ...(payload.fullPage !== undefined
+                        ? { fullPage: payload.fullPage }
+                        : {}),
                 },
                 buildBrowserToolContext(payload),
             ),

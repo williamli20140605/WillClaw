@@ -93,6 +93,7 @@ async function checkAgentBrowser(config: WillClawConfig): Promise<ProviderHealth
     const installed = await commandExists('agent-browser');
     const actions: ProviderActionHealth[] = [
         'open',
+        'inspect_page',
         'snapshot',
         'click',
         'type',
@@ -147,6 +148,12 @@ async function checkSystemOpen(config: WillClawConfig): Promise<ProviderHealthEn
                     detail: `system-open is not implemented on ${process.platform}`,
                 },
                 {
+                    action: 'inspect_page',
+                    available: false,
+                    healthy: false,
+                    detail: 'system-open cannot inspect page structure',
+                },
+                {
                     action: 'snapshot',
                     available: false,
                     healthy: false,
@@ -183,6 +190,12 @@ async function checkSystemOpen(config: WillClawConfig): Promise<ProviderHealthEn
             detail: installed
                 ? `${command} can open URLs`
                 : `${command} is not available on this host`,
+        },
+        {
+            action: 'inspect_page',
+            available: false,
+            healthy: false,
+            detail: 'system-open cannot inspect page structure',
         },
         {
             action: 'snapshot',

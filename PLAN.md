@@ -1523,6 +1523,8 @@ daemon:
 - 已有最小 ACP Server：独立端口、bearer token 鉴权、`/agents` discovery、`run sync/stream/async`、`run status/cancel`
 - 已有 scope-based auth：可为 REST / Web UI / ACP 配置多 bearer token，按 `api:read / api:write / api:tools / api:events / api:session / acp` 分配权限
 - 已有 Web UI session login：受保护 workspace 会先显示 unlock gate，再将 bearer token 升级成 HttpOnly session cookie 供 API + SSE 使用
+- 已有 managed auth tokens：共享 `AuthManager` 会将受管 token 以 hash 形式落盘到本地 data store，可通过 `/api/auth/tokens` 创建/列出/撤销，并在撤销时级联失效由该 token 签发的 session
+- 已有 auth management panel：`/api/auth/tokens`、`/api/auth/sessions` 和 session revoke，可在 Web UI inspector 中创建/撤销 managed token、查看 token 元信息与当前活跃 session
 - 已有 pairing manager：pairing code 以 hash 形式持久化到本地 data store，可创建一次性 `web` / `channel` 邀请码
 - 已有 Web pairing login：`/api/auth/pairing` 可用一次性 pairing code 换取 Web UI session cookie
 - 已有 channel pairing onboarding：Telegram / Discord / Feishu 支持 `/pair <code>` 自助加入动态 allowlist
@@ -1535,6 +1537,7 @@ daemon:
 - 已有 Web UI Markdown 渲染：assistant / system 消息支持代码块、列表、表格、引用
 - 已有 Web UI chat-first 重构：三栏布局（会话列表 / 主线程 / inspector）+ `/api/chats`
 - 已有 Web UI 过程感：`/api/route-preview` + route / agent attempt / fallback 活动流
+- 已有 smarter router：路由会区分 `hosted_tools / read_only_coding / mode_hint / long_context / coding / simple_qa` 等意图，并按意图选择 agent 与 fallback 链
 - 已有 Web UI queue 状态：当前 thread 的 active run 会区分 `queued` 和 `running`
 - 已有首个 desktop workflow：`screen.inspect_app` 会前台激活目标 app，再执行抓屏 + OCR，并接入 REST / hosted bridge / Web UI Host Lab
 - 已有 queue introspection：`/api/queues` 可返回每个 chat 的 `running / queued / total` 与队列顺位
@@ -1545,6 +1548,7 @@ daemon:
 - 已有 provider doctor：CLI `willclaw doctor` 和 `/api/providers/health` 会检查 `agent-browser / peekaboo / system-open / screencapture` 的安装与权限状态
 - 已有 action-level provider doctor：会明确区分 `open / snapshot / capture / ocr / see / click / type / press / frontmost_app / open_app / activate_app` 哪些动作当前 healthy，hosted bridge 只向 agent 暴露健康动作
 - 已有结构化宿主 browser actions：`open / snapshot / click / type / screenshot`
+- 已有首个高层 browser workflow：`browser.inspect_page` 会打开目标页面、抓取 accessibility snapshot，并可按需追加 screenshot，接入 REST / hosted bridge / Web UI Host Lab
 - 已有结构化宿主 screen actions：`capture / ocr / frontmost_app / open_app / activate_app / see / click / type / press`
 - 已有 host tool action API：`/api/tools/browser/*`、`/api/tools/screen/*`
 - 已有 agent-facing hosted browser/screen bridge：agent 可通过窄格式 `WILLCLAW_HOSTED_ACTION {...}` 请求 WillClaw 执行宿主动作，再继续完成任务
@@ -1630,6 +1634,12 @@ daemon:
 
 **交付**：5 个 CLI/API agent + ACP agent 全部可用。
 
+补充进度：
+
+- [x] 意图感知路由：`hosted_tools / read_only_coding / mode_hint / long_context / coding / simple_qa`
+- [x] route preview 会返回更细的路由原因与 mode hint
+- [x] fallback chain 已按路由原因拆分，而不是所有请求共用一条顺序
+
 ### Phase 5 — macOS + Browser（2-3 天）
 
 - [x] 屏幕截图 + OCR
@@ -1644,6 +1654,7 @@ daemon:
 - [x] Screen host tool provider 顺序（`peekaboo -> screencapture`）
 - [x] 最小 browser open / screen capture 宿主工具封装
 - [x] 结构化 browser hosted actions：`snapshot / click / type / screenshot`
+- [x] `browser.inspect_page` 复合 workflow：`open + snapshot (+ optional screenshot)`
 - [x] 结构化 screen hosted actions：`ocr / see / click / type / press`
 - [x] `/api/tools/browser/*` + `/api/tools/screen/*`
 - [x] `screen.ocr` 接入 Apple Vision + action-level doctor + hosted bridge + Web UI Host Lab
@@ -1671,7 +1682,9 @@ daemon:
 - **Web UI 不暴露公网**：默认 127.0.0.1
 - **ACP Server 默认关闭**：需要手动开启
 - **Scope-based Token Auth**：REST / Web UI / ACP 可分配不同 bearer token 与 scope，不必共用单一 owner token
+- **Managed Token Store**：受管 bearer token 只在创建时明文返回，之后只以 hash 形式落盘，可单独撤销并级联失效相关 session
 - **Web UI Session Cookie**：浏览器使用 HttpOnly session cookie 访问 `/api/*` 与 SSE，不需要长期把 bearer token 暴露在前端运行时
+- **Session Management**：带 `api:session` 的浏览器 session 可列出活跃 session 并做 revoke，不必回到 config 文件手动处理
 - **Pairing Codes**：一次性 pairing code 只以 hash 形式落盘，可限制用途为 Web UI 或指定聊天渠道
 - **Pairing Revocation**：pairing invite 和动态 channel grant 都支持显式撤销，避免邀请码或临时授权长期悬挂
 - **Rate Limiting**：REST / ACP / Feishu webhook 有内存级速率限制，默认按 token 或来源 IP 计数

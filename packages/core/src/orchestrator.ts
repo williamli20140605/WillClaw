@@ -36,14 +36,6 @@ import type {
     ExecutionMode,
 } from './agents/types.js';
 
-const FALLBACK_ORDER = [
-    'claude-code',
-    'codex',
-    'opencode',
-    'gemini',
-    'direct-api',
-];
-
 function stripExplicitAgent(
     text: string,
     configuredAgents: Iterable<string>,
@@ -85,10 +77,53 @@ function looksLikeCodingRequest(text: string): boolean {
     );
 }
 
+function looksLikeHostedToolRequest(text: string): boolean {
+    return /browser|screenshot|screen|ocr|desktop|窗口|界面|ui|网页|website|click|type into|press key|打开应用|activate app|open app/i.test(
+        text,
+    );
+}
+
+function looksLikeReadOnlyCodingRequest(text: string): boolean {
+    return (
+        looksLikeCodingRequest(text) &&
+        !looksLikeMutatingRequest(text) &&
+        /review|analy[sz]e|explain|understand|summarize|find|inspect|diff|trace|read|代码审查|分析|解释|排查|定位/i.test(
+            text,
+        )
+    );
+}
+
 function looksLikeMutatingRequest(text: string): boolean {
     return /write|edit|modify|change|update|create|delete|remove|install|implement|fix|写|改|修改|更新|创建|删除|安装|实现|修复/i.test(
         text,
     );
+}
+
+function normalizeModeHint(
+    currentMode: string | undefined,
+): 'hosted_tools' | 'long_context' | 'coding' | 'simple_qa' | null {
+    const normalized = currentMode?.trim().toLowerCase();
+    if (!normalized) {
+        return null;
+    }
+
+    if (/browser|desktop|screen|research|ops|agentic/.test(normalized)) {
+        return 'hosted_tools';
+    }
+
+    if (/long|context|analysis/.test(normalized)) {
+        return 'long_context';
+    }
+
+    if (/coding|build|debug|implement|edit/.test(normalized)) {
+        return 'coding';
+    }
+
+    if (/chat|qa|assistant/.test(normalized)) {
+        return 'simple_qa';
+    }
+
+    return null;
 }
 
 export interface RunChatRequest {
@@ -128,10 +163,19 @@ export interface RoutePlan {
     explicitAgent?: string;
     fallbackChain: string[];
     allowFallback: boolean;
-    reason: 'explicit' | 'long_context' | 'coding' | 'simple_qa';
+    reason:
+        | 'explicit'
+        | 'mode_hint'
+        | 'hosted_tools'
+        | 'long_context'
+        | 'read_only_coding'
+        | 'coding'
+        | 'simple_qa';
     looksLikeCoding: boolean;
     looksLikeLongContext: boolean;
     looksLikeMutating: boolean;
+    looksLikeHostedTools: boolean;
+    modeHint?: 'hosted_tools' | 'long_context' | 'coding' | 'simple_qa';
 }
 
 export class Orchestrator {
@@ -182,7 +226,11 @@ export class Orchestrator {
             throw new Error('Chat text cannot be empty.');
         }
 
-        const routePlan = this.inspectRoute(trimmedText);
+        const routePlan = this.inspectRoute(trimmedText, {
+            ...(request.currentMode
+                ? { currentMode: request.currentMode }
+                : {}),
+        });
         const attemptedAgents: string[] = [];
         const attemptedErrors: string[] = [];
         const promptOptions: NonNullable<
@@ -227,6 +275,8 @@ export class Orchestrator {
             looksLikeCoding: routePlan.looksLikeCoding,
             looksLikeLongContext: routePlan.looksLikeLongContext,
             looksLikeMutating: routePlan.looksLikeMutating,
+            looksLikeHostedTools: routePlan.looksLikeHostedTools,
+            modeHint: routePlan.modeHint ?? null,
             executionMode: agentRequest.executionMode ?? 'foreground',
         });
 
@@ -445,27 +495,47 @@ export class Orchestrator {
         );
     }
 
-    inspectRoute(text: string): RoutePlan {
+    inspectRoute(
+        text: string,
+        options?: {
+            currentMode?: string;
+        },
+    ): RoutePlan {
         const trimmedText = text.trim();
         const explicit = stripExplicitAgent(trimmedText, this.agents.keys());
         const strippedText = explicit.text || trimmedText;
         const looksLikeLongContext = looksLikeLongContextRequest(strippedText);
         const looksLikeCoding = looksLikeCodingRequest(strippedText);
         const looksLikeMutating = looksLikeMutatingRequest(strippedText);
+        const looksLikeHostedTools = looksLikeHostedToolRequest(strippedText);
+        const looksLikeReadOnlyCoding = looksLikeReadOnlyCodingRequest(strippedText);
+        const modeHint = normalizeModeHint(options?.currentMode);
         const selectedAgent = explicit.explicitAgent
             ? explicit.explicitAgent
-            : this.selectAgent(strippedText);
+            : this.selectAgent({
+                looksLikeCoding,
+                looksLikeHostedTools,
+                looksLikeLongContext,
+                looksLikeReadOnlyCoding,
+                modeHint,
+            });
         const allowFallback =
             !explicit.explicitAgent &&
             (!looksLikeMutating ||
                 this.config.agents.safety.mutating_fallback);
-        const reason = explicit.explicitAgent
+        const reason: RoutePlan['reason'] = explicit.explicitAgent
             ? 'explicit'
-            : looksLikeLongContext
-                ? 'long_context'
-                : looksLikeCoding
-                    ? 'coding'
-                    : 'simple_qa';
+            : modeHint
+                ? 'mode_hint'
+                : looksLikeHostedTools
+                    ? 'hosted_tools'
+                    : looksLikeLongContext
+                        ? 'long_context'
+                        : looksLikeReadOnlyCoding
+                            ? 'read_only_coding'
+                            : looksLikeCoding
+                                ? 'coding'
+                                : 'simple_qa';
 
         return {
             text: trimmedText,
@@ -474,12 +544,18 @@ export class Orchestrator {
             ...(explicit.explicitAgent
                 ? { explicitAgent: explicit.explicitAgent }
                 : {}),
-            fallbackChain: this.buildFallbackChain(selectedAgent, allowFallback),
+            fallbackChain: this.buildFallbackChain(
+                selectedAgent,
+                allowFallback,
+                reason,
+            ),
             allowFallback,
             reason,
             looksLikeCoding,
             looksLikeLongContext,
             looksLikeMutating,
+            looksLikeHostedTools,
+            ...(modeHint ? { modeHint } : {}),
         };
     }
 
@@ -760,15 +836,46 @@ export class Orchestrator {
         };
     }
 
-    private selectAgent(text: string): string {
-        if (looksLikeLongContextRequest(text)) {
+    private selectAgent(signals: {
+            looksLikeCoding: boolean;
+            looksLikeHostedTools: boolean;
+            looksLikeLongContext: boolean;
+            looksLikeReadOnlyCoding: boolean;
+            modeHint: 'hosted_tools' | 'long_context' | 'coding' | 'simple_qa' | null;
+        },
+    ): string {
+        if (signals.modeHint === 'hosted_tools' || signals.looksLikeHostedTools) {
+            return this.pickFirstConfigured([
+                'direct-api',
+                this.config.agents.routing.simple_qa ?? this.config.agents.default,
+                this.config.agents.default,
+            ]);
+        }
+
+        if (signals.modeHint === 'long_context' || signals.looksLikeLongContext) {
             return (
                 this.config.agents.routing.long_context ?? this.config.agents.default
             );
         }
 
-        if (looksLikeCodingRequest(text)) {
+        if (signals.looksLikeReadOnlyCoding) {
+            return this.pickFirstConfigured([
+                'codex',
+                this.config.agents.routing.coding ?? this.config.agents.default,
+                this.config.agents.default,
+            ]);
+        }
+
+        if (signals.modeHint === 'coding' || signals.looksLikeCoding) {
             return this.config.agents.routing.coding ?? this.config.agents.default;
+        }
+
+        if (signals.modeHint === 'simple_qa') {
+            return this.pickFirstConfigured([
+                this.config.agents.routing.simple_qa ?? this.config.agents.default,
+                'direct-api',
+                this.config.agents.default,
+            ]);
         }
 
         return this.config.agents.routing.simple_qa ?? this.config.agents.default;
@@ -777,6 +884,7 @@ export class Orchestrator {
     private buildFallbackChain(
         preferredAgent: string,
         allowFallback: boolean,
+        reason: RoutePlan['reason'],
     ): string[] {
         if (!allowFallback) {
             return [preferredAgent];
@@ -785,10 +893,41 @@ export class Orchestrator {
         const configuredAgents = Object.entries(this.config.agents.pool)
             .filter(([, entry]) => entry.enabled)
             .map(([name]) => name);
-        const ordered = [preferredAgent, ...FALLBACK_ORDER, ...configuredAgents];
+        const ordered = [
+            preferredAgent,
+            ...this.getFallbackOrderForReason(reason),
+            ...configuredAgents,
+        ];
 
         return [...new Set(ordered)].filter((name) =>
             configuredAgents.includes(name),
         );
+    }
+
+    private getFallbackOrderForReason(reason: RoutePlan['reason']): string[] {
+        switch (reason) {
+            case 'hosted_tools':
+            case 'mode_hint':
+                return ['direct-api', 'gemini', 'claude-code', 'codex', 'opencode'];
+            case 'long_context':
+                return ['gemini', 'direct-api', 'claude-code', 'codex', 'opencode'];
+            case 'read_only_coding':
+                return ['codex', 'claude-code', 'gemini', 'opencode', 'direct-api'];
+            case 'coding':
+                return ['claude-code', 'codex', 'opencode', 'gemini', 'direct-api'];
+            case 'simple_qa':
+            default:
+                return ['direct-api', 'gemini', 'claude-code', 'codex', 'opencode'];
+        }
+    }
+
+    private pickFirstConfigured(candidates: string[]): string {
+        for (const candidate of candidates) {
+            if (this.config.agents.pool[candidate]?.enabled) {
+                return candidate;
+            }
+        }
+
+        return this.config.agents.default;
     }
 }

@@ -11,6 +11,17 @@ export {
     syncWillClawSkills,
 } from './app.js';
 export {
+    AuthManager,
+    type AuthAuthorization,
+    type CreatedAuthToken,
+    type AuthIdentity,
+    type AuthSession,
+    type AuthSessionSummary,
+    type AuthStatusPayload,
+    type AuthTokenSummary,
+    type RateLimitResult,
+} from './auth.js';
+export {
     BROWSER_TOOL_PROVIDERS,
     SCREEN_TOOL_PROVIDERS,
     loadWillClawConfig,
@@ -166,6 +177,8 @@ export {
     BrowserTool,
     type BrowserClickOptions,
     type BrowserClickResult,
+    type BrowserInspectPageOptions,
+    type BrowserInspectPageResult,
     type BrowserOpenResult,
     type BrowserScreenshotOptions,
     type BrowserScreenshotResult,

@@ -1,4 +1,6 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 import type { AuthScope, WillClawConfig } from './config.js';
 import { AUTH_SCOPES } from './config.js';
@@ -20,6 +22,33 @@ export interface AuthSession {
     createdAt: string;
 }
 
+export interface AuthTokenSummary {
+    id: string;
+    scopes: AuthScope[];
+    legacy: boolean;
+    source: 'configured' | 'managed';
+    active: boolean;
+    tokenPreview?: string;
+    createdAt?: string;
+    revokedAt?: string;
+}
+
+export interface CreatedAuthToken {
+    id: string;
+    token: string;
+    scopes: AuthScope[];
+    createdAt: string;
+    tokenPreview: string;
+}
+
+export interface AuthSessionSummary {
+    id: string;
+    tokenId: string;
+    scopes: AuthScope[];
+    createdAt: string;
+    expiresAt: string;
+}
+
 export interface AuthStatusPayload {
     authRequired: boolean;
     authenticated: boolean;
@@ -33,9 +62,23 @@ export interface AuthStatusPayload {
 
 interface ResolvedAuthToken {
     id: string;
-    token: string;
+    token?: string;
+    tokenHash?: string;
+    tokenPreview?: string;
     scopes: AuthScope[];
     legacy: boolean;
+    source: 'configured' | 'managed';
+    createdAt?: string;
+    revokedAt?: string;
+}
+
+interface StoredManagedToken {
+    id: string;
+    tokenHash: string;
+    tokenPreview: string;
+    scopes: AuthScope[];
+    createdAt: string;
+    revokedAt?: string;
 }
 
 interface SessionRecord {
@@ -116,6 +159,10 @@ function constantTimeEquals(left: string, right: string): boolean {
     return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
+function hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+}
+
 function serializeCookie(
     name: string,
     value: string,
@@ -161,6 +208,7 @@ function buildConfiguredTokens(config: WillClawConfig): ResolvedAuthToken[] {
             token: config.server.auth_token,
             scopes: [...ALL_SCOPES],
             legacy: true,
+            source: 'configured',
         });
     }
 
@@ -174,10 +222,24 @@ function buildConfiguredTokens(config: WillClawConfig): ResolvedAuthToken[] {
             token: token.token,
             scopes: dedupeScopes(token.scopes),
             legacy: false,
+            source: 'configured',
         });
     }
 
     return configured;
+}
+
+function renderManagedTokenSummary(token: StoredManagedToken): AuthTokenSummary {
+    return {
+        id: token.id,
+        scopes: [...token.scopes],
+        legacy: false,
+        source: 'managed',
+        active: !token.revokedAt,
+        tokenPreview: token.tokenPreview,
+        createdAt: token.createdAt,
+        ...(token.revokedAt ? { revokedAt: token.revokedAt } : {}),
+    };
 }
 
 function defaultIdentity(match: ResolvedAuthToken, source: AuthIdentity['source']): AuthIdentity {
@@ -204,7 +266,9 @@ function getRequestIp(request: Request): string {
 }
 
 export class AuthManager {
-    private readonly tokens: ResolvedAuthToken[];
+    private readonly configuredTokens: ResolvedAuthToken[];
+    private readonly managedTokensFile: string;
+    private managedTokens: StoredManagedToken[] = [];
     private readonly sessions = new Map<string, SessionRecord>();
     private readonly rateLimits = new Map<string, RateLimitBucket>();
     private readonly sessionCookieName: string;
@@ -214,7 +278,8 @@ export class AuthManager {
     private readonly rateLimitMaxRequests: number;
 
     constructor(private readonly config: WillClawConfig) {
-        this.tokens = buildConfiguredTokens(config);
+        this.configuredTokens = buildConfiguredTokens(config);
+        this.managedTokensFile = config.server.auth.managed_tokens_file;
         this.sessionCookieName = config.server.auth.session.cookie_name;
         this.sessionTtlMs =
             config.server.auth.session.ttl_hours * 60 * 60 * 1000;
@@ -222,10 +287,11 @@ export class AuthManager {
         this.rateLimitWindowMs =
             config.server.auth.rate_limit.window_seconds * 1000;
         this.rateLimitMaxRequests = config.server.auth.rate_limit.max_requests;
+        this.loadManagedTokens();
     }
 
     isEnabled(): boolean {
-        return this.tokens.length > 0;
+        return this.getResolvedTokens().length > 0;
     }
 
     getSessionCookieName(): string {
@@ -265,6 +331,103 @@ export class AuthManager {
             source: identity.source,
             ...(session ? { expiresAt: new Date(session.expiresAt).toISOString() } : {}),
         };
+    }
+
+    listTokens(): AuthTokenSummary[] {
+        return [
+            ...this.configuredTokens.map((token) => ({
+            id: token.id,
+            scopes: [...token.scopes],
+            legacy: token.legacy,
+                source: token.source,
+                active: true,
+            })),
+            ...this.managedTokens.map(renderManagedTokenSummary),
+        ];
+    }
+
+    listSessions(): AuthSessionSummary[] {
+        this.pruneExpired();
+
+        return [...this.sessions.values()]
+            .sort((left, right) => right.createdAt - left.createdAt)
+            .map((session) => ({
+                id: session.id,
+                tokenId: session.tokenId,
+                scopes: [...session.scopes],
+                createdAt: new Date(session.createdAt).toISOString(),
+                expiresAt: new Date(session.expiresAt).toISOString(),
+            }));
+    }
+
+    revokeSessionById(sessionId: string): AuthSessionSummary | null {
+        this.pruneExpired();
+
+        const session = this.sessions.get(sessionId);
+        if (!session) {
+            return null;
+        }
+
+        this.sessions.delete(sessionId);
+        return {
+            id: session.id,
+            tokenId: session.tokenId,
+            scopes: [...session.scopes],
+            createdAt: new Date(session.createdAt).toISOString(),
+            expiresAt: new Date(session.expiresAt).toISOString(),
+        };
+    }
+
+    createManagedToken(options?: {
+        id?: string;
+        scopes?: AuthScope[];
+    }): CreatedAuthToken {
+        const requestedId = options?.id?.trim();
+        const id = requestedId || `managed-${randomUUID().slice(0, 8)}`;
+        if (this.listTokens().some((token) => token.id === id && token.active)) {
+            throw new Error(`Auth token id already exists: ${id}`);
+        }
+
+        const scopes = dedupeScopes(options?.scopes?.length ? options.scopes : ['api:read', 'api:write']);
+        const token = `wc_auth_${randomBytes(18).toString('base64url')}`;
+        const createdAt = new Date().toISOString();
+        const managedToken: StoredManagedToken = {
+            id,
+            tokenHash: hashToken(token),
+            tokenPreview: token.slice(-6),
+            scopes,
+            createdAt,
+        };
+
+        this.managedTokens.unshift(managedToken);
+        this.persistManagedTokens();
+
+        return {
+            id,
+            token,
+            scopes: [...scopes],
+            createdAt,
+            tokenPreview: managedToken.tokenPreview,
+        };
+    }
+
+    revokeTokenById(tokenId: string): AuthTokenSummary | null {
+        const token = this.managedTokens.find((entry) => entry.id === tokenId);
+        if (!token) {
+            return null;
+        }
+
+        if (!token.revokedAt) {
+            token.revokedAt = new Date().toISOString();
+            for (const [sessionId, session] of this.sessions.entries()) {
+                if (session.tokenId === token.id) {
+                    this.sessions.delete(sessionId);
+                }
+            }
+            this.persistManagedTokens();
+        }
+
+        return renderManagedTokenSummary(token);
     }
 
     authorize(
@@ -330,11 +493,13 @@ export class AuthManager {
             return null;
         }
 
-        const scopes = authorization.identity.scopes.filter(
-            (scope) => scope !== 'api:session',
-        );
         const normalizedScopes: AuthScope[] =
-            scopes.length > 0 ? dedupeScopes(scopes) : ['api:read'];
+            authorization.identity.scopes.length > 0
+                ? dedupeScopes(authorization.identity.scopes)
+                : ['api:read'];
+        if (!normalizedScopes.some((scope) => scope !== 'api:session')) {
+            normalizedScopes.push('api:read');
+        }
 
         return this.createSessionRecord({
             tokenId: authorization.identity.tokenId,
@@ -535,13 +700,71 @@ export class AuthManager {
     }
 
     private findTokenByValue(token: string): ResolvedAuthToken | null {
-        for (const candidate of this.tokens) {
-            if (constantTimeEquals(candidate.token, token)) {
+        const hashed = hashToken(token);
+
+        for (const candidate of this.getResolvedTokens()) {
+            const matchesConfigured =
+                candidate.token !== undefined &&
+                constantTimeEquals(candidate.token, token);
+            const matchesManaged =
+                candidate.tokenHash !== undefined &&
+                constantTimeEquals(candidate.tokenHash, hashed);
+
+            if (matchesConfigured || matchesManaged) {
                 return candidate;
             }
         }
 
         return null;
+    }
+
+    private getResolvedTokens(): ResolvedAuthToken[] {
+        return [
+            ...this.configuredTokens,
+            ...this.managedTokens
+                .filter((token) => !token.revokedAt)
+                .map((token) => ({
+                    id: token.id,
+                    tokenHash: token.tokenHash,
+                    tokenPreview: token.tokenPreview,
+                    scopes: [...token.scopes],
+                    legacy: false,
+                    source: 'managed' as const,
+                    createdAt: token.createdAt,
+                })),
+        ];
+    }
+
+    private loadManagedTokens(): void {
+        mkdirSync(path.dirname(this.managedTokensFile), {
+            recursive: true,
+        });
+
+        try {
+            const raw = readFileSync(this.managedTokensFile, 'utf8');
+            const parsed = JSON.parse(raw) as { tokens?: StoredManagedToken[] };
+            this.managedTokens = Array.isArray(parsed.tokens)
+                ? parsed.tokens
+                : [];
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+                this.managedTokens = [];
+            }
+        }
+    }
+
+    private persistManagedTokens(): void {
+        writeFileSync(
+            this.managedTokensFile,
+            JSON.stringify(
+                {
+                    tokens: this.managedTokens,
+                },
+                null,
+                2,
+            ),
+            'utf8',
+        );
     }
 
     private pruneExpired(): void {

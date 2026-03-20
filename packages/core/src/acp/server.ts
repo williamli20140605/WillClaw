@@ -7,7 +7,7 @@ import type { Logger } from 'pino';
 import { z } from 'zod';
 
 import type { ChatMessage } from '../agents/types.js';
-import { AuthManager } from '../auth.js';
+import type { AuthManager } from '../auth.js';
 import type { ChatService, ChatServiceResult } from '../chat-service.js';
 import { RunCancelledError } from '../chat-service.js';
 import type { WillClawConfig } from '../config.js';
@@ -44,6 +44,7 @@ export interface AcpServerRuntimeLike {
     logger: Logger;
     eventHub: WillClawEventHub;
     chatService: ChatService;
+    authManager: AuthManager;
 }
 
 export interface AcpHttpServer {
@@ -161,7 +162,7 @@ function toAcpRunResult(result: ChatServiceResult) {
 export function createWillClawAcpApp(runtime: AcpServerRuntimeLike): Hono {
     const app = new Hono();
     const runs = new Map<string, AcpRunState>();
-    const authManager = new AuthManager(runtime.config);
+    const authManager = runtime.authManager;
 
     app.use('*', async (c, next) => {
         const authorization = authManager.authorize(c.req.raw, ['acp']);

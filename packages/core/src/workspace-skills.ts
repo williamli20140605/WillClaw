@@ -54,8 +54,12 @@ Current implemented scope:
 - CLI-backed, direct-api, and ACP streaming previews over SSE before the final assistant message is persisted
 - per-chat queued message execution so one thread is processed in order instead of racing concurrent runs
 - agent-facing hosted browser/screen bridge for narrow WillClaw-owned actions
+- shared auth manager for REST + ACP + Web UI session issuance
+- managed bearer tokens persisted hashed-at-rest with create/revoke flows
+- intent-aware router heuristics for hosted tools, read-only coding, and mode hints
 - hosted screen OCR via Apple Vision, available through REST, Web UI, and the narrow hosted bridge
 - minimal macOS app control via the screen/desktop bridge: frontmost app inspection, app open, and app activate
+- higher-level browser inspection via \`inspect_page\`
 - minimal ACP server with list/get/run endpoints, sync+stream+async modes, and bearer-token auth
 - LaunchAgent login auto-start commands
 
@@ -183,7 +187,9 @@ Supported agents:
 
 Routing behavior:
 - \`@agent-name\` in user text forces an explicit backend
-- otherwise WillClaw uses heuristics for coding vs long-context vs simple QA
+- otherwise WillClaw uses intent-aware heuristics for hosted tools vs read-only coding vs long-context vs coding vs simple QA
+- routing reasons currently include \`explicit\`, \`mode_hint\`, \`hosted_tools\`, \`long_context\`, \`read_only_coding\`, \`coding\`, and \`simple_qa\`
+- mode hints can bias routing toward hosted-tool or research-style backends without forcing a specific agent name
 - read-only requests may fallback across the configured chain
 - mutating fallback stays disabled unless config explicitly enables it
 - JSON-oriented CLI backends such as \`opencode\` and \`gemini\` should have their structured/event-stream stdout normalized before it becomes assistant message content
@@ -261,6 +267,7 @@ Current browser actions:
 - click
 - type / fill
 - screenshot
+- inspect page in one step: open + snapshot + optional screenshot
 
 Current screen / desktop actions:
 - capture screenshot
@@ -292,6 +299,7 @@ Behavior notes:
 - CLI agents with native terminal/filesystem should not receive duplicate hosted copies
 - browser and screen are host capabilities; they are not assumed to exist inside every backend session
 - structured browser actions depend on \`agent-browser\`; \`system-open\` is only a coarse fallback for URL open
+- \`inspect_page\` is the first higher-level browser workflow: open the page, snapshot it, and optionally attach a screenshot in one hosted step
 - structured desktop vision/actions depend on \`peekaboo\`; \`screencapture\` is only a coarse fallback for screenshot capture, while OCR uses Apple Vision through \`xcrun swift\`
 - app open / activate / frontmost inspection use macOS system APIs directly through \`open\` and AppleScript
 - \`inspect_app\` is the first higher-level desktop workflow: foreground an app, capture the visible screen, then OCR it in one hosted step
@@ -334,6 +342,7 @@ Current default usage by backend type:
 Bridge rules:
 - only expose capabilities the selected agent actually needs
 - only expose actions that are currently healthy according to provider doctor results
+- route intent matters: hosted-tool requests are good fits for the bridge, while ordinary CLI coding loops are not
 - prefer the smallest possible action payload
 - use browser/session continuity within one run when possible
 - keep artifacts and outputs auditable through WillClaw tool logs
@@ -342,6 +351,7 @@ Bridge rules:
 
 Good fits:
 - \`direct-api\` heartbeat / cron tasks that need browser inspection
+- shell-side tasks that can use a single \`inspect_page\` step instead of manually chaining open/snapshot/screenshot
 - shell-side research helpers that need hosted screenshots
 - shell-side research helpers that need OCR from the host desktop
 - shell-side tasks that need to foreground Finder, Terminal, or another macOS app before taking the next hosted action
@@ -457,6 +467,7 @@ Current UI scope:
 - recent tool log panel scoped to the current chat
 - agent and host-tool status summary
 - runtime host lab for browser open/snapshot/screenshot and screen inspect/capture/OCR
+- runtime host lab can also run browser \`inspect page\` for one-step open + snapshot (+ screenshot)
 - runtime host lab can also run \`inspect app\` for one-step foreground + capture + OCR
 - SSE-backed realtime connection, active runs, and recent event stream
 - live streaming preview bubble for CLI and direct-api runs before the final assistant message lands
@@ -468,6 +479,7 @@ Current UI scope:
 - auth-aware Web UI boot: protected workspaces show an unlock screen first, then switch to an HttpOnly session cookie for API + SSE access
 - authenticated shells show the active token identity in the top bar and allow explicit logout
 - runtime inspector includes a Pairing panel for minting one-time web/channel invites and checking current grants
+- runtime inspector includes an Auth panel for token metadata, managed token create/revoke, and active session revocation when the session carries \`api:session\`
 
 Current limits:
 - not every host-side event is streamed yet
@@ -491,6 +503,10 @@ Current REST surface includes:
 - \`/api/auth/status\`
 - \`/api/auth/session\`
 - \`/api/auth/pairing\`
+- \`/api/auth/tokens\`
+- \`/api/auth/tokens/:tokenId\`
+- \`/api/auth/sessions\`
+- \`/api/auth/sessions/:sessionId\`
 - \`/api/pairing\`
 - \`/api/pairing/invites\`
 - \`/api/pairing/invites/:inviteId/revoke\`
@@ -522,6 +538,7 @@ Current REST surface includes:
 - \`/api/cron/:taskName/run\`
 - \`/api/maintenance/:taskName/run\`
 - \`/api/tools/browser/*\`
+- \`/api/tools/browser/inspect-page\`
 - \`/api/tools/screen/*\`
 - \`/api/tools/screen/inspect-app\`
 - \`/api/logs/tools\`
@@ -531,6 +548,8 @@ Current REST surface includes:
 Behavior notes:
 - \`/\` now serves the bundled Web UI when \`packages/web/dist\` exists
 - REST auth is scope-based: separate tokens can target read/write/tools/events/acp, while the Web UI upgrades a bearer token into an HttpOnly session cookie
+- managed bearer tokens can be created and revoked through the API; they are stored hashed at rest and only returned in plain text at creation time
+- sessions minted from bearer-token login now retain \`api:session\` so the browser shell can inspect token metadata, mint/revoke managed tokens, and revoke active sessions when appropriate
 - pairing invites are hashed at rest, can be revoked, and can be redeemed either from the Web UI unlock gate or via channel-side \`/pair <code>\`
 - API + ACP requests are protected by in-memory rate limiting when auth is enabled
 - Feishu webhooks can validate \`x-lark-signature\`, enforce signature freshness, and reject replayed requests when an encrypt key is configured

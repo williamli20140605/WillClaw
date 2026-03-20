@@ -76,6 +76,24 @@ export interface BrowserScreenshotResult {
     data?: unknown;
 }
 
+export interface BrowserInspectPageOptions {
+    target: string;
+    interactive?: boolean;
+    compact?: boolean;
+    depth?: number;
+    selector?: string;
+    screenshot?: boolean;
+    screenshotPath?: string;
+    fullPage?: boolean;
+}
+
+export interface BrowserInspectPageResult {
+    target: string;
+    open: BrowserOpenResult;
+    snapshot: BrowserSnapshotResult;
+    screenshot?: BrowserScreenshotResult;
+}
+
 interface BrowserCommand {
     provider: BrowserToolProvider;
     command: string;
@@ -94,7 +112,8 @@ type BrowserAction =
     | 'snapshot'
     | 'click'
     | 'type'
-    | 'screenshot';
+    | 'screenshot'
+    | 'inspect_page';
 
 function normalizeBrowserTarget(target: string): string {
     const url = new URL(target);
@@ -583,5 +602,50 @@ export class BrowserTool {
                 };
             },
         });
+    }
+
+    async inspectPage(
+        options: BrowserInspectPageOptions,
+        context: BrowserToolContext,
+    ): Promise<BrowserInspectPageResult> {
+        const open = await this.openUrl(options.target, context);
+        const snapshot = await this.snapshot(
+            {
+                ...(options.interactive !== undefined
+                    ? { interactive: options.interactive }
+                    : { interactive: true }),
+                ...(options.compact !== undefined
+                    ? { compact: options.compact }
+                    : { compact: true }),
+                ...(options.depth !== undefined ? { depth: options.depth } : {}),
+                ...(options.selector ? { selector: options.selector } : {}),
+            },
+            context,
+        );
+
+        const screenshot =
+            options.screenshot || options.screenshotPath
+                ? await this.screenshot(
+                    {
+                        filePath:
+                            options.screenshotPath ??
+                            path.join(
+                                '/tmp',
+                                `willclaw-browser-inspect-${Date.now().toString(36)}.png`,
+                            ),
+                        ...(options.fullPage !== undefined
+                            ? { fullPage: options.fullPage }
+                            : { fullPage: true }),
+                    },
+                    context,
+                )
+                : undefined;
+
+        return {
+            target: open.target,
+            open,
+            snapshot,
+            ...(screenshot ? { screenshot } : {}),
+        };
     }
 }

@@ -73,6 +73,9 @@ const authRateLimitSchema = z
 const serverAuthSchema = z
     .object({
         tokens: z.array(authTokenSchema).default([]),
+        managed_tokens_file: z
+            .string()
+            .default('~/.willclaw/data/auth-tokens.json'),
         session: authSessionSchema,
         pairing: authPairingSchema,
         rate_limit: authRateLimitSchema,
@@ -432,6 +435,7 @@ export interface WillClawConfig extends RawWillClawConfig {
     };
     server: RawWillClawConfig['server'] & {
         auth: RawWillClawConfig['server']['auth'] & {
+            managed_tokens_file: string;
             pairing: RawWillClawConfig['server']['auth']['pairing'] & {
                 store_file: string;
             };
@@ -492,6 +496,10 @@ function normalizeConfigPaths(
             ...config.server,
             auth: {
                 ...config.server.auth,
+                managed_tokens_file: resolveConfiguredPath(
+                    config.server.auth.managed_tokens_file,
+                    paths,
+                ),
                 pairing: {
                     ...config.server.auth.pairing,
                     store_file: resolveConfiguredPath(

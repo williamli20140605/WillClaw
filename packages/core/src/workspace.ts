@@ -45,6 +45,7 @@ function renderDefaultConfig(paths: WillClawPaths): string {
   auth_token: "\${WILLCLAW_AUTH_TOKEN}"
   auth:
     tokens: []
+    managed_tokens_file: "~/.willclaw/data/auth-tokens.json"
     session:
       cookie_name: willclaw_session
       ttl_hours: 24

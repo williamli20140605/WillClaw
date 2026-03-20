@@ -170,6 +170,11 @@ export function renderHostedActionBridgeInstructions(options: {
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"snapshot","interactive":true,"compact":true}`,
             );
         }
+        if (options.browserActions.includes('inspect_page')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"inspect_page","target":"https://example.com","interactive":true,"compact":true}`,
+            );
+        }
         if (options.browserActions.includes('click')) {
             lines.push(
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"click","selector":"@e2"}`,
@@ -200,6 +205,7 @@ export function renderHostedActionBridgeInstructions(options: {
         } else {
             lines.push(
                 'Structured browser actions depend on agent-browser; plain URL open can still fall back to system-open.',
+                'Use inspect_page when you want WillClaw to open a URL and return a structured page snapshot in one hosted step.',
             );
         }
     }
@@ -428,6 +434,51 @@ export class HostedActionService {
                     provider: result.provider,
                     output: result.output,
                     data: result.data,
+                };
+            }
+            case 'inspect_page': {
+                const target = readString(request.payload, 'target');
+                if (!target) {
+                    throw new Error('browser.inspect_page requires a target URL');
+                }
+
+                const interactive = readBoolean(request.payload, 'interactive');
+                const compact = readBoolean(request.payload, 'compact');
+                const depth = readNumber(request.payload, 'depth');
+                const selector = readString(request.payload, 'selector');
+                const screenshot = readBoolean(request.payload, 'screenshot');
+                const screenshotPath = readString(request.payload, 'screenshotPath');
+                const fullPage = readBoolean(request.payload, 'fullPage');
+                const result = await this.browserTool.inspectPage(
+                    {
+                        target,
+                        ...(interactive !== undefined ? { interactive } : {}),
+                        ...(compact !== undefined ? { compact } : {}),
+                        ...(depth !== undefined ? { depth } : {}),
+                        ...(selector ? { selector } : {}),
+                        ...(screenshot !== undefined ? { screenshot } : {}),
+                        ...(screenshotPath ? { screenshotPath } : {}),
+                        ...(fullPage !== undefined ? { fullPage } : {}),
+                    },
+                    toolContext,
+                );
+
+                return {
+                    tool: 'browser',
+                    action: 'inspect_page',
+                    provider: result.snapshot.provider,
+                    output: result.snapshot.output,
+                    data: {
+                        target: result.target,
+                        open: result.open,
+                        snapshot: result.snapshot,
+                        ...(result.screenshot
+                            ? { screenshot: result.screenshot }
+                            : {}),
+                    },
+                    ...(result.screenshot
+                        ? { artifactPath: result.screenshot.filePath }
+                        : {}),
                 };
             }
             case 'click': {

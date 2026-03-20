@@ -7,6 +7,15 @@ type SchedulerResult = 'completed' | 'failed' | 'suppressed';
 type SearchScope = 'all' | 'messages' | 'files' | 'memory' | 'daily_note';
 type InspectorTab = 'search' | 'activity' | 'runtime';
 
+const AUTH_SCOPE_OPTIONS = [
+    'api:read',
+    'api:write',
+    'api:tools',
+    'api:events',
+    'api:session',
+    'acp',
+] as const;
+
 interface AgentAvailability {
     name: string;
     type: string;
@@ -104,6 +113,33 @@ interface AuthStatusPayload {
     tokenId?: string;
     source?: 'bearer' | 'session';
     expiresAt?: string;
+}
+
+interface AuthTokenSummary {
+    id: string;
+    scopes: string[];
+    legacy: boolean;
+    source: 'configured' | 'managed';
+    active: boolean;
+    tokenPreview?: string;
+    createdAt?: string;
+    revokedAt?: string;
+}
+
+interface AuthSessionSummary {
+    id: string;
+    tokenId: string;
+    scopes: string[];
+    createdAt: string;
+    expiresAt: string;
+}
+
+interface CreatedAuthToken {
+    id: string;
+    token: string;
+    scopes: string[];
+    createdAt: string;
+    tokenPreview: string;
 }
 
 interface ChatSummary {
@@ -253,10 +289,19 @@ interface RoutePlan {
     explicitAgent?: string;
     fallbackChain: string[];
     allowFallback: boolean;
-    reason: 'explicit' | 'long_context' | 'coding' | 'simple_qa';
+    reason:
+        | 'explicit'
+        | 'mode_hint'
+        | 'hosted_tools'
+        | 'long_context'
+        | 'read_only_coding'
+        | 'coding'
+        | 'simple_qa';
     looksLikeCoding: boolean;
     looksLikeLongContext: boolean;
     looksLikeMutating: boolean;
+    looksLikeHostedTools?: boolean;
+    modeHint?: 'hosted_tools' | 'long_context' | 'coding' | 'simple_qa';
 }
 
 interface AssistantRouteMetadata {
@@ -704,6 +749,18 @@ export function App() {
     const [recentEvents, setRecentEvents] = useState<RealtimeEvent[]>([]);
     const [inspectorTab, setInspectorTab] = useState<InspectorTab>('search');
     const [providerHealth, setProviderHealth] = useState<ProviderHealthEntry[]>([]);
+    const [authTokenSummaries, setAuthTokenSummaries] = useState<AuthTokenSummary[]>(
+        [],
+    );
+    const [authSessions, setAuthSessions] = useState<AuthSessionSummary[]>([]);
+    const [authAdminBusy, setAuthAdminBusy] = useState(false);
+    const [managedTokenId, setManagedTokenId] = useState('');
+    const [managedTokenScopes, setManagedTokenScopes] = useState<string[]>([
+        'api:read',
+        'api:write',
+    ]);
+    const [latestManagedToken, setLatestManagedToken] =
+        useState<CreatedAuthToken | null>(null);
     const [pairingState, setPairingState] = useState<PairingPayload | null>(null);
     const [pairingBusy, setPairingBusy] = useState(false);
     const [pairingKind, setPairingKind] = useState<'web' | 'channel'>('web');
@@ -720,6 +777,7 @@ export function App() {
     const authReady = authStatus !== null;
     const authAllowsDashboard =
         authReady && (!authStatus.authRequired || authStatus.authenticated);
+    const canManageAuth = authStatus?.scopes.includes('api:session') ?? false;
 
     async function loadAuthStatus(): Promise<AuthStatusPayload> {
         const payload = await readJson<AuthStatusPayload>('/api/auth/status');
@@ -743,6 +801,24 @@ export function App() {
         startTransition(() => {
             setProviderHealth(payload);
         });
+    }
+
+    async function loadAuthAdminPanel(): Promise<void> {
+        try {
+            const [tokensPayload, sessionsPayload] = await Promise.all([
+                readJson<{ tokens: AuthTokenSummary[] }>('/api/auth/tokens'),
+                readJson<{ sessions: AuthSessionSummary[] }>('/api/auth/sessions'),
+            ]);
+            startTransition(() => {
+                setAuthTokenSummaries(tokensPayload.tokens);
+                setAuthSessions(sessionsPayload.sessions);
+            });
+        } catch {
+            startTransition(() => {
+                setAuthTokenSummaries([]);
+                setAuthSessions([]);
+            });
+        }
     }
 
     async function loadPairingPanel(): Promise<void> {
@@ -821,6 +897,7 @@ export function App() {
     async function loadShellPanels(): Promise<void> {
         try {
             await Promise.all([
+                loadAuthAdminPanel(),
                 loadStatusPanel(),
                 loadProviderHealthPanel(),
                 loadPairingPanel(),
@@ -978,6 +1055,80 @@ export function App() {
             );
         } finally {
             setAuthBusy(false);
+        }
+    }
+
+    async function handleRevokeAuthSession(sessionId: string): Promise<void> {
+        setAuthAdminBusy(true);
+        setActionError('');
+
+        try {
+            await readJson<{ revoked: AuthSessionSummary }>(
+                `/api/auth/sessions/${sessionId}`,
+                {
+                    method: 'DELETE',
+                },
+            );
+            await loadAuthAdminPanel();
+        } catch (error) {
+            setActionError(
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to revoke session.',
+            );
+        } finally {
+            setAuthAdminBusy(false);
+        }
+    }
+
+    async function handleCreateManagedToken(): Promise<void> {
+        setAuthAdminBusy(true);
+        setActionError('');
+
+        try {
+            const payload = await readJson<CreatedAuthToken>('/api/auth/tokens', {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                },
+                body: JSON.stringify({
+                    ...(managedTokenId.trim() ? { id: managedTokenId.trim() } : {}),
+                    scopes: managedTokenScopes,
+                }),
+            });
+            startTransition(() => {
+                setLatestManagedToken(payload);
+                setManagedTokenId('');
+            });
+            await loadAuthAdminPanel();
+        } catch (error) {
+            setActionError(
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to create managed auth token.',
+            );
+        } finally {
+            setAuthAdminBusy(false);
+        }
+    }
+
+    async function handleRevokeAuthToken(tokenId: string): Promise<void> {
+        setAuthAdminBusy(true);
+        setActionError('');
+
+        try {
+            await readJson<{ revoked: AuthTokenSummary }>(`/api/auth/tokens/${tokenId}`, {
+                method: 'DELETE',
+            });
+            await loadAuthAdminPanel();
+        } catch (error) {
+            setActionError(
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to revoke managed auth token.',
+            );
+        } finally {
+            setAuthAdminBusy(false);
         }
     }
 
@@ -3050,6 +3201,24 @@ export function App() {
                                                     disabled={hostActionBusy}
                                                     onClick={() =>
                                                         void runHostAction(
+                                                            '/api/tools/browser/inspect-page',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                                target: browserTarget.trim(),
+                                                                interactive: true,
+                                                                compact: true,
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Inspect Page
+                                                </button>
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={hostActionBusy}
+                                                    onClick={() =>
+                                                        void runHostAction(
                                                             '/api/tools/browser/snapshot',
                                                             {
                                                                 chatId: selectedChatId,
@@ -3328,6 +3497,200 @@ ${pairingInvite.channels.length > 0 ? `channels: ${pairingInvite.channels.join('
                                                 ))}
                                                 {(pairingState?.grants.length ?? 0) === 0 ? (
                                                     <div className="empty">No paired channel users yet.</div>
+                                                ) : null}
+                                            </div>
+                                        </article>
+                                    </div>
+                                </section>
+
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Auth</h3>
+                                        <span>
+                                            {canManageAuth ? 'session scope' : 'read-only'}
+                                        </span>
+                                    </div>
+                                    <div className="stack-list">
+                                        <article className="host-action-card">
+                                            <label className="field-label" htmlFor="managed-token-id">
+                                                Managed token id (optional)
+                                            </label>
+                                            <input
+                                                className="field-input"
+                                                disabled={!canManageAuth || authAdminBusy}
+                                                id="managed-token-id"
+                                                onChange={(event) =>
+                                                    setManagedTokenId(event.target.value)
+                                                }
+                                                placeholder="ops-web"
+                                                type="text"
+                                                value={managedTokenId}
+                                            />
+                                            <div className="chip-row">
+                                                {AUTH_SCOPE_OPTIONS.map((scope) => (
+                                                    <button
+                                                        className="ghost-btn"
+                                                        data-tone={
+                                                            managedTokenScopes.includes(scope)
+                                                                ? 'teal'
+                                                                : undefined
+                                                        }
+                                                        disabled={!canManageAuth || authAdminBusy}
+                                                        key={scope}
+                                                        onClick={() => {
+                                                            startTransition(() => {
+                                                                setManagedTokenScopes((current) =>
+                                                                    current.includes(scope)
+                                                                        ? current.filter((entry) => entry !== scope)
+                                                                        : [...current, scope],
+                                                                );
+                                                            });
+                                                        }}
+                                                        type="button"
+                                                    >
+                                                        {scope}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <div className="toolbar">
+                                                <button
+                                                    className="btn"
+                                                    disabled={
+                                                        !canManageAuth ||
+                                                        authAdminBusy ||
+                                                        managedTokenScopes.length === 0
+                                                    }
+                                                    onClick={() => {
+                                                        void handleCreateManagedToken();
+                                                    }}
+                                                    type="button"
+                                                >
+                                                    {authAdminBusy ? 'Working…' : 'Create token'}
+                                                </button>
+                                            </div>
+                                            <p className="muted">
+                                                Managed tokens are stored as hashes on disk. The raw token is only shown once after creation.
+                                            </p>
+                                        </article>
+
+                                        {latestManagedToken ? (
+                                            <article className="host-result-card">
+                                                <div className="section-header">
+                                                    <h3>Latest Managed Token</h3>
+                                                    <span>{latestManagedToken.id}</span>
+                                                </div>
+                                                <pre className="host-result">
+{`token: ${latestManagedToken.token}
+created: ${latestManagedToken.createdAt}
+scopes: ${latestManagedToken.scopes.join(', ')}`}
+                                                </pre>
+                                            </article>
+                                        ) : null}
+
+                                        <article className="provider-card">
+                                            <div className="status-line">
+                                                <strong>Auth Tokens</strong>
+                                                <span className="chip">
+                                                    {authTokenSummaries.length}
+                                                </span>
+                                            </div>
+                                            <div className="stack-list">
+                                                {authTokenSummaries.slice(0, 4).map((token) => (
+                                                    <div
+                                                        key={token.id}
+                                                        className="provider-action-list"
+                                                    >
+                                                        <strong>{token.id}</strong>
+                                                        <span className="muted">
+                                                            {token.source} · {token.legacy
+                                                                ? 'legacy owner'
+                                                                : token.scopes.join(', ')}
+                                                        </span>
+                                                        {token.tokenPreview ? (
+                                                            <span className="muted">
+                                                                preview {token.tokenPreview}
+                                                            </span>
+                                                        ) : null}
+                                                        {token.createdAt ? (
+                                                            <span className="muted">
+                                                                created {formatTimestamp(token.createdAt)}
+                                                            </span>
+                                                        ) : null}
+                                                        {token.revokedAt ? (
+                                                            <span className="muted">
+                                                                revoked {formatTimestamp(token.revokedAt)}
+                                                            </span>
+                                                        ) : null}
+                                                        {token.source === 'managed' ? (
+                                                            <div className="toolbar">
+                                                                <button
+                                                                    className="ghost-btn"
+                                                                    disabled={
+                                                                        !canManageAuth ||
+                                                                        authAdminBusy ||
+                                                                        !token.active
+                                                                    }
+                                                                    onClick={() => {
+                                                                        void handleRevokeAuthToken(token.id);
+                                                                    }}
+                                                                    type="button"
+                                                                >
+                                                                    Revoke
+                                                                </button>
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                ))}
+                                                {authTokenSummaries.length === 0 ? (
+                                                    <div className="empty">
+                                                        {canManageAuth
+                                                            ? 'No auth tokens.'
+                                                            : 'This session cannot inspect auth tokens.'}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        </article>
+
+                                        <article className="provider-card">
+                                            <div className="status-line">
+                                                <strong>Active Sessions</strong>
+                                                <span className="chip">
+                                                    {authSessions.length}
+                                                </span>
+                                            </div>
+                                            <div className="stack-list">
+                                                {authSessions.slice(0, 6).map((session) => (
+                                                    <div
+                                                        key={session.id}
+                                                        className="provider-action-list"
+                                                    >
+                                                        <strong>{session.tokenId}</strong>
+                                                        <span className="muted">
+                                                            created {formatTimestamp(session.createdAt)}
+                                                        </span>
+                                                        <span className="muted">
+                                                            expires {formatTimestamp(session.expiresAt)}
+                                                        </span>
+                                                        <div className="toolbar">
+                                                            <button
+                                                                className="ghost-btn"
+                                                                disabled={!canManageAuth || authAdminBusy}
+                                                                onClick={() => {
+                                                                    void handleRevokeAuthSession(session.id);
+                                                                }}
+                                                                type="button"
+                                                            >
+                                                                Revoke
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {authSessions.length === 0 ? (
+                                                    <div className="empty">
+                                                        {canManageAuth
+                                                            ? 'No active sessions.'
+                                                            : 'This session cannot inspect auth sessions.'}
+                                                    </div>
                                                 ) : null}
                                             </div>
                                         </article>

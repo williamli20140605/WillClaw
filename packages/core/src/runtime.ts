@@ -7,6 +7,7 @@ import {
 } from './acp/server.js';
 import { createAgentBackends } from './agents/factory.js';
 import type { AgentBackend } from './agents/types.js';
+import { AuthManager } from './auth.js';
 import { ChatService } from './chat-service.js';
 import { ChannelManager } from './channels/manager.js';
 import { CommandCompletionMonitor } from './completion-monitor.js';
@@ -48,6 +49,7 @@ export interface WillClawRuntime {
     fileSystemTool: FileSystemTool;
     browserTool: BrowserTool;
     screenTool: ScreenTool;
+    authManager: AuthManager;
     pairingManager: PairingManager;
     historyExporter: HistoryExporter | null;
     completionMonitor: CommandCompletionMonitor;
@@ -77,6 +79,7 @@ export async function createWillClawRuntime(options?: {
     const shellTool = new ShellTool(config, toolLogger);
     const browserTool = new BrowserTool(config, toolLogger);
     const screenTool = new ScreenTool(config, toolLogger);
+    const authManager = new AuthManager(config);
     const pairingManager = new PairingManager(config, logger);
     await pairingManager.initialize();
     const hostedActionService = new HostedActionService(
@@ -162,6 +165,7 @@ export async function createWillClawRuntime(options?: {
         fileSystemTool,
         browserTool,
         screenTool,
+        authManager,
         pairingManager,
         historyExporter,
         completionMonitor,
