@@ -767,6 +767,12 @@ export function App() {
     const [pairingChannel, setPairingChannel] = useState<'telegram' | 'discord' | 'feishu'>('telegram');
     const [pairingInvite, setPairingInvite] = useState<CreatedPairingInvite | null>(null);
     const [browserTarget, setBrowserTarget] = useState('https://example.com');
+    const [browserFormFieldsText, setBrowserFormFieldsText] = useState(
+        '[\n  {\n    "selector": "#email",\n    "text": "user@example.com",\n    "clear": true\n  }\n]',
+    );
+    const [browserSubmitSelector, setBrowserSubmitSelector] = useState(
+        'button[type=submit]',
+    );
     const [screenApp, setScreenApp] = useState('');
     const [hostActionBusy, setHostActionBusy] = useState(false);
     const [hostActionResult, setHostActionResult] = useState('');
@@ -1801,6 +1807,57 @@ export function App() {
         } finally {
             setHostActionBusy(false);
         }
+    }
+
+    function parseBrowserFormFields(): Array<{
+        selector: string;
+        text: string;
+        clear?: boolean;
+    }> {
+        const parsed = JSON.parse(browserFormFieldsText) as unknown;
+        if (!Array.isArray(parsed)) {
+            throw new Error('Form fields JSON must be an array.');
+        }
+
+        const fields = parsed
+            .map((entry) => {
+                if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                    return null;
+                }
+
+                const record = entry as Record<string, unknown>;
+                const selector =
+                    typeof record.selector === 'string' ? record.selector.trim() : '';
+                const text =
+                    typeof record.text === 'string' ? record.text : '';
+                const clear =
+                    typeof record.clear === 'boolean' ? record.clear : undefined;
+
+                if (!selector || !text) {
+                    return null;
+                }
+
+                return {
+                    selector,
+                    text,
+                    ...(clear !== undefined ? { clear } : {}),
+                };
+            })
+            .filter(
+                (
+                    entry,
+                ): entry is {
+                    selector: string;
+                    text: string;
+                    clear?: boolean;
+                } => entry !== null,
+            );
+
+        if (fields.length === 0) {
+            throw new Error('Form fields JSON must include at least one field.');
+        }
+
+        return fields;
     }
 
     function handleCreateChat(): void {
@@ -3109,6 +3166,32 @@ export function App() {
                                                 type="url"
                                                 value={browserTarget}
                                             />
+                                            <label className="field-label" htmlFor="browser-form-fields">
+                                                Browser form fields (JSON)
+                                            </label>
+                                            <textarea
+                                                className="field-input"
+                                                id="browser-form-fields"
+                                                onChange={(event) =>
+                                                    setBrowserFormFieldsText(event.target.value)
+                                                }
+                                                rows={6}
+                                                spellCheck={false}
+                                                value={browserFormFieldsText}
+                                            />
+                                            <label className="field-label" htmlFor="browser-submit-selector">
+                                                Submit selector (optional)
+                                            </label>
+                                            <input
+                                                className="field-input"
+                                                id="browser-submit-selector"
+                                                onChange={(event) =>
+                                                    setBrowserSubmitSelector(event.target.value)
+                                                }
+                                                placeholder="button[type=submit]"
+                                                type="text"
+                                                value={browserSubmitSelector}
+                                            />
                                             <div className="toolbar">
                                                 <button
                                                     className="ghost-btn"
@@ -3213,6 +3296,40 @@ export function App() {
                                                     type="button"
                                                 >
                                                     Inspect Page
+                                                </button>
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={hostActionBusy}
+                                                    onClick={() => {
+                                                        try {
+                                                            const fields = parseBrowserFormFields();
+                                                            void runHostAction(
+                                                                '/api/tools/browser/fill-form',
+                                                                {
+                                                                    chatId: selectedChatId,
+                                                                    target: browserTarget.trim(),
+                                                                    fields,
+                                                                    ...(browserSubmitSelector.trim()
+                                                                        ? {
+                                                                            submitSelector:
+                                                                                browserSubmitSelector.trim(),
+                                                                        }
+                                                                        : {}),
+                                                                    interactive: true,
+                                                                    compact: true,
+                                                                },
+                                                            );
+                                                        } catch (error) {
+                                                            setActionError(
+                                                                error instanceof Error
+                                                                    ? error.message
+                                                                    : 'Invalid form field JSON.',
+                                                            );
+                                                        }
+                                                    }}
+                                                    type="button"
+                                                >
+                                                    Fill Form
                                                 </button>
                                                 <button
                                                     className="ghost-btn"

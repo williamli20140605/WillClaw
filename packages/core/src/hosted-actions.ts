@@ -94,6 +94,22 @@ function readStringArray(
     return entries.length > 0 ? entries.map((entry) => entry.trim()) : undefined;
 }
 
+function readObjectArray(
+    payload: Record<string, unknown>,
+    key: string,
+): Record<string, unknown>[] | undefined {
+    const value = payload[key];
+    if (!Array.isArray(value)) {
+        return undefined;
+    }
+
+    const entries = value.filter(
+        (entry): entry is Record<string, unknown> =>
+            Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry),
+    );
+    return entries.length > 0 ? entries : undefined;
+}
+
 function truncateForPrompt(value: string, maxChars = 4_000): string {
     if (value.length <= maxChars) {
         return value;
@@ -175,6 +191,11 @@ export function renderHostedActionBridgeInstructions(options: {
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"inspect_page","target":"https://example.com","interactive":true,"compact":true}`,
             );
         }
+        if (options.browserActions.includes('fill_form')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"fill_form","target":"https://example.com/login","fields":[{"selector":"#email","text":"user@example.com","clear":true},{"selector":"#password","text":"secret","clear":true}],"submitSelector":"button[type=submit]"}`,
+            );
+        }
         if (options.browserActions.includes('click')) {
             lines.push(
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"browser","action":"click","selector":"@e2"}`,
@@ -206,6 +227,7 @@ export function renderHostedActionBridgeInstructions(options: {
             lines.push(
                 'Structured browser actions depend on agent-browser; plain URL open can still fall back to system-open.',
                 'Use inspect_page when you want WillClaw to open a URL and return a structured page snapshot in one hosted step.',
+                'Use fill_form when you want WillClaw to open a page, populate one or more fields, optionally submit, and return an updated snapshot.',
             );
         }
     }
@@ -480,6 +502,91 @@ export class HostedActionService {
                         ? { artifactPath: result.screenshot.filePath }
                         : {}),
                 };
+            }
+            case 'fill_form': {
+                const target = readString(request.payload, 'target');
+                const submitSelector = readString(request.payload, 'submitSelector');
+                const snapshotAfter = readBoolean(request.payload, 'snapshotAfter');
+                const interactive = readBoolean(request.payload, 'interactive');
+                const compact = readBoolean(request.payload, 'compact');
+                const depth = readNumber(request.payload, 'depth');
+                const selector = readString(request.payload, 'selector');
+                const screenshot = readBoolean(request.payload, 'screenshot');
+                const screenshotPath = readString(request.payload, 'screenshotPath');
+                const fullPage = readBoolean(request.payload, 'fullPage');
+                const fieldsPayload = readObjectArray(request.payload, 'fields') ?? [];
+
+                const fields = fieldsPayload
+                    .map((entry) => {
+                        const fieldSelector = readString(entry, 'selector');
+                        const text = readString(entry, 'text') ?? '';
+                        const clear = readBoolean(entry, 'clear');
+                        if (!fieldSelector || !text) {
+                            return null;
+                        }
+
+                        return {
+                            selector: fieldSelector,
+                            text,
+                            ...(clear !== undefined ? { clear } : {}),
+                        };
+                    })
+                    .filter(
+                        (entry): entry is { selector: string; text: string; clear?: boolean } =>
+                            entry !== null,
+                    );
+
+                if (fields.length === 0) {
+                    throw new Error('browser.fill_form requires at least one field');
+                }
+
+                const result = await this.browserTool.fillForm(
+                    {
+                        ...(target ? { target } : {}),
+                        fields,
+                        ...(submitSelector ? { submitSelector } : {}),
+                        ...(snapshotAfter !== undefined ? { snapshotAfter } : {}),
+                        ...(interactive !== undefined ? { interactive } : {}),
+                        ...(compact !== undefined ? { compact } : {}),
+                        ...(depth !== undefined ? { depth } : {}),
+                        ...(selector ? { selector } : {}),
+                        ...(screenshot !== undefined ? { screenshot } : {}),
+                        ...(screenshotPath ? { screenshotPath } : {}),
+                        ...(fullPage !== undefined ? { fullPage } : {}),
+                    },
+                    toolContext,
+                );
+
+                const response: HostedActionExecutionResult = {
+                    tool: 'browser',
+                    action: 'fill_form',
+                    output:
+                        result.snapshot?.output ??
+                        `Filled ${result.fields.length} browser field(s)`,
+                    data: {
+                        ...(result.target ? { target: result.target } : {}),
+                        ...(result.open ? { open: result.open } : {}),
+                        fields: result.fields,
+                        ...(result.submit ? { submit: result.submit } : {}),
+                        ...(result.snapshot ? { snapshot: result.snapshot } : {}),
+                        ...(result.screenshot
+                            ? { screenshot: result.screenshot }
+                            : {}),
+                    },
+                };
+
+                const provider =
+                    result.snapshot?.provider ??
+                    result.submit?.provider ??
+                    result.fields.at(0)?.provider;
+                if (provider) {
+                    response.provider = provider;
+                }
+                if (result.screenshot) {
+                    response.artifactPath = result.screenshot.filePath;
+                }
+
+                return response;
             }
             case 'click': {
                 const selector = readString(request.payload, 'selector');

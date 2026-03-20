@@ -43,7 +43,7 @@ const HOST_TOOL_METADATA: Record<HostToolName, HostToolMetadata> = {
         category: 'browser',
         label: 'Browser',
         description:
-            'Run hosted browser actions such as open, snapshot, click, type, and screenshot.',
+            'Run hosted browser actions such as open, inspect_page, fill_form, snapshot, click, type, and screenshot.',
     },
     screen: {
         category: 'screen',

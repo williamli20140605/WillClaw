@@ -60,6 +60,7 @@ Current implemented scope:
 - hosted screen OCR via Apple Vision, available through REST, Web UI, and the narrow hosted bridge
 - minimal macOS app control via the screen/desktop bridge: frontmost app inspection, app open, and app activate
 - higher-level browser inspection via \`inspect_page\`
+- higher-level browser form workflow via \`fill_form\`
 - minimal ACP server with list/get/run endpoints, sync+stream+async modes, and bearer-token auth
 - LaunchAgent login auto-start commands
 
@@ -268,6 +269,7 @@ Current browser actions:
 - type / fill
 - screenshot
 - inspect page in one step: open + snapshot + optional screenshot
+- fill a form in one step: open + populate fields + optional submit + snapshot
 
 Current screen / desktop actions:
 - capture screenshot
@@ -300,6 +302,7 @@ Behavior notes:
 - browser and screen are host capabilities; they are not assumed to exist inside every backend session
 - structured browser actions depend on \`agent-browser\`; \`system-open\` is only a coarse fallback for URL open
 - \`inspect_page\` is the first higher-level browser workflow: open the page, snapshot it, and optionally attach a screenshot in one hosted step
+- \`fill_form\` is the next higher-level browser workflow: open the page, fill multiple fields, optionally submit, then return an updated snapshot
 - structured desktop vision/actions depend on \`peekaboo\`; \`screencapture\` is only a coarse fallback for screenshot capture, while OCR uses Apple Vision through \`xcrun swift\`
 - app open / activate / frontmost inspection use macOS system APIs directly through \`open\` and AppleScript
 - \`inspect_app\` is the first higher-level desktop workflow: foreground an app, capture the visible screen, then OCR it in one hosted step
@@ -352,6 +355,7 @@ Bridge rules:
 Good fits:
 - \`direct-api\` heartbeat / cron tasks that need browser inspection
 - shell-side tasks that can use a single \`inspect_page\` step instead of manually chaining open/snapshot/screenshot
+- shell-side tasks that need a hosted login/search/form-submission step without manually chaining multiple browser commands
 - shell-side research helpers that need hosted screenshots
 - shell-side research helpers that need OCR from the host desktop
 - shell-side tasks that need to foreground Finder, Terminal, or another macOS app before taking the next hosted action
@@ -468,6 +472,7 @@ Current UI scope:
 - agent and host-tool status summary
 - runtime host lab for browser open/snapshot/screenshot and screen inspect/capture/OCR
 - runtime host lab can also run browser \`inspect page\` for one-step open + snapshot (+ screenshot)
+- runtime host lab can also run browser \`fill form\` with JSON field definitions
 - runtime host lab can also run \`inspect app\` for one-step foreground + capture + OCR
 - SSE-backed realtime connection, active runs, and recent event stream
 - live streaming preview bubble for CLI and direct-api runs before the final assistant message lands
@@ -539,6 +544,7 @@ Current REST surface includes:
 - \`/api/maintenance/:taskName/run\`
 - \`/api/tools/browser/*\`
 - \`/api/tools/browser/inspect-page\`
+- \`/api/tools/browser/fill-form\`
 - \`/api/tools/screen/*\`
 - \`/api/tools/screen/inspect-app\`
 - \`/api/logs/tools\`

@@ -1549,6 +1549,7 @@ daemon:
 - 已有 action-level provider doctor：会明确区分 `open / snapshot / capture / ocr / see / click / type / press / frontmost_app / open_app / activate_app` 哪些动作当前 healthy，hosted bridge 只向 agent 暴露健康动作
 - 已有结构化宿主 browser actions：`open / snapshot / click / type / screenshot`
 - 已有首个高层 browser workflow：`browser.inspect_page` 会打开目标页面、抓取 accessibility snapshot，并可按需追加 screenshot，接入 REST / hosted bridge / Web UI Host Lab
+- 已有第二个高层 browser workflow：`browser.fill_form` 会打开目标页面、批量填写字段、可选提交，并返回更新后的 snapshot / screenshot
 - 已有结构化宿主 screen actions：`capture / ocr / frontmost_app / open_app / activate_app / see / click / type / press`
 - 已有 host tool action API：`/api/tools/browser/*`、`/api/tools/screen/*`
 - 已有 agent-facing hosted browser/screen bridge：agent 可通过窄格式 `WILLCLAW_HOSTED_ACTION {...}` 请求 WillClaw 执行宿主动作，再继续完成任务
@@ -1655,6 +1656,7 @@ daemon:
 - [x] 最小 browser open / screen capture 宿主工具封装
 - [x] 结构化 browser hosted actions：`snapshot / click / type / screenshot`
 - [x] `browser.inspect_page` 复合 workflow：`open + snapshot (+ optional screenshot)`
+- [x] `browser.fill_form` 复合 workflow：`open + fill fields + optional submit + snapshot`
 - [x] 结构化 screen hosted actions：`ocr / see / click / type / press`
 - [x] `/api/tools/browser/*` + `/api/tools/screen/*`
 - [x] `screen.ocr` 接入 Apple Vision + action-level doctor + hosted bridge + Web UI Host Lab

@@ -93,6 +93,7 @@ async function checkAgentBrowser(config: WillClawConfig): Promise<ProviderHealth
     const installed = await commandExists('agent-browser');
     const actions: ProviderActionHealth[] = [
         'open',
+        'fill_form',
         'inspect_page',
         'snapshot',
         'click',
@@ -154,6 +155,12 @@ async function checkSystemOpen(config: WillClawConfig): Promise<ProviderHealthEn
                     detail: 'system-open cannot inspect page structure',
                 },
                 {
+                    action: 'fill_form',
+                    available: false,
+                    healthy: false,
+                    detail: 'system-open cannot fill browser forms',
+                },
+                {
                     action: 'snapshot',
                     available: false,
                     healthy: false,
@@ -196,6 +203,12 @@ async function checkSystemOpen(config: WillClawConfig): Promise<ProviderHealthEn
             available: false,
             healthy: false,
             detail: 'system-open cannot inspect page structure',
+        },
+        {
+            action: 'fill_form',
+            available: false,
+            healthy: false,
+            detail: 'system-open cannot fill browser forms',
         },
         {
             action: 'snapshot',

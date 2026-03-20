@@ -76,6 +76,35 @@ export interface BrowserScreenshotResult {
     data?: unknown;
 }
 
+export interface BrowserFillFormField {
+    selector: string;
+    text: string;
+    clear?: boolean;
+}
+
+export interface BrowserFillFormOptions {
+    target?: string;
+    fields: BrowserFillFormField[];
+    submitSelector?: string;
+    snapshotAfter?: boolean;
+    interactive?: boolean;
+    compact?: boolean;
+    depth?: number;
+    selector?: string;
+    screenshot?: boolean;
+    screenshotPath?: string;
+    fullPage?: boolean;
+}
+
+export interface BrowserFillFormResult {
+    target?: string;
+    open?: BrowserOpenResult;
+    fields: BrowserTypeResult[];
+    submit?: BrowserClickResult;
+    snapshot?: BrowserSnapshotResult;
+    screenshot?: BrowserScreenshotResult;
+}
+
 export interface BrowserInspectPageOptions {
     target: string;
     interactive?: boolean;
@@ -113,6 +142,7 @@ type BrowserAction =
     | 'click'
     | 'type'
     | 'screenshot'
+    | 'fill_form'
     | 'inspect_page';
 
 function normalizeBrowserTarget(target: string): string {
@@ -645,6 +675,90 @@ export class BrowserTool {
             target: open.target,
             open,
             snapshot,
+            ...(screenshot ? { screenshot } : {}),
+        };
+    }
+
+    async fillForm(
+        options: BrowserFillFormOptions,
+        context: BrowserToolContext,
+    ): Promise<BrowserFillFormResult> {
+        if (options.fields.length === 0) {
+            throw new Error('browser.fill_form requires at least one field');
+        }
+
+        let open: BrowserOpenResult | undefined;
+        if (options.target) {
+            open = await this.openUrl(options.target, context);
+        }
+
+        const fieldResults: BrowserTypeResult[] = [];
+        for (const field of options.fields) {
+            fieldResults.push(
+                await this.type(
+                    {
+                        selector: field.selector,
+                        text: field.text,
+                        ...(field.clear !== undefined
+                            ? { clear: field.clear }
+                            : { clear: true }),
+                    },
+                    context,
+                ),
+            );
+        }
+
+        const submit = options.submitSelector
+            ? await this.click(
+                {
+                    selector: options.submitSelector,
+                },
+                context,
+            )
+            : undefined;
+
+        const snapshot =
+            options.snapshotAfter === false
+                ? undefined
+                : await this.snapshot(
+                    {
+                        ...(options.interactive !== undefined
+                            ? { interactive: options.interactive }
+                            : { interactive: true }),
+                        ...(options.compact !== undefined
+                            ? { compact: options.compact }
+                            : { compact: true }),
+                        ...(options.depth !== undefined
+                            ? { depth: options.depth }
+                            : {}),
+                        ...(options.selector ? { selector: options.selector } : {}),
+                    },
+                    context,
+                );
+
+        const screenshot =
+            options.screenshot || options.screenshotPath
+                ? await this.screenshot(
+                    {
+                        filePath:
+                            options.screenshotPath ??
+                            path.join(
+                                '/tmp',
+                                `willclaw-browser-form-${Date.now().toString(36)}.png`,
+                            ),
+                        ...(options.fullPage !== undefined
+                            ? { fullPage: options.fullPage }
+                            : { fullPage: true }),
+                    },
+                    context,
+                )
+                : undefined;
+
+        return {
+            ...(open ? { target: open.target, open } : {}),
+            fields: fieldResults,
+            ...(submit ? { submit } : {}),
+            ...(snapshot ? { snapshot } : {}),
             ...(screenshot ? { screenshot } : {}),
         };
     }

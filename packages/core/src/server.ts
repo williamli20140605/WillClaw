@@ -155,6 +155,28 @@ const browserInspectPageSchema = browserContextSchema.extend({
     fullPage: z.boolean().optional(),
 });
 
+const browserFillFormSchema = browserContextSchema.extend({
+    target: z.string().min(1).optional(),
+    fields: z
+        .array(
+            z.object({
+                selector: z.string().min(1),
+                text: z.string().min(1),
+                clear: z.boolean().optional(),
+            }),
+        )
+        .min(1),
+    submitSelector: z.string().optional(),
+    snapshotAfter: z.boolean().optional(),
+    interactive: z.boolean().optional(),
+    compact: z.boolean().optional(),
+    depth: z.coerce.number().int().positive().optional(),
+    selector: z.string().optional(),
+    screenshot: z.boolean().optional(),
+    screenshotPath: z.string().optional(),
+    fullPage: z.boolean().optional(),
+});
+
 const browserClickSchema = browserContextSchema.extend({
     selector: z.string().min(1),
     newTab: z.boolean().optional(),
@@ -967,6 +989,49 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
             await runtime.browserTool.inspectPage(
                 {
                     target: payload.target,
+                    ...(payload.interactive !== undefined
+                        ? { interactive: payload.interactive }
+                        : {}),
+                    ...(payload.compact !== undefined
+                        ? { compact: payload.compact }
+                        : {}),
+                    ...(payload.depth !== undefined ? { depth: payload.depth } : {}),
+                    ...(payload.selector ? { selector: payload.selector } : {}),
+                    ...(payload.screenshot !== undefined
+                        ? { screenshot: payload.screenshot }
+                        : {}),
+                    ...(payload.screenshotPath
+                        ? { screenshotPath: payload.screenshotPath }
+                        : {}),
+                    ...(payload.fullPage !== undefined
+                        ? { fullPage: payload.fullPage }
+                        : {}),
+                },
+                buildBrowserToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/browser/fill-form', async (c) => {
+        const payload = browserFillFormSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.browserTool.fillForm(
+                {
+                    ...(payload.target ? { target: payload.target } : {}),
+                    fields: payload.fields.map((field) => ({
+                        selector: field.selector,
+                        text: field.text,
+                        ...(field.clear !== undefined ? { clear: field.clear } : {}),
+                    })),
+                    ...(payload.submitSelector
+                        ? { submitSelector: payload.submitSelector }
+                        : {}),
+                    ...(payload.snapshotAfter !== undefined
+                        ? { snapshotAfter: payload.snapshotAfter }
+                        : {}),
                     ...(payload.interactive !== undefined
                         ? { interactive: payload.interactive }
                         : {}),
