@@ -627,6 +627,28 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
         return c.json(invite, 201);
     });
 
+    app.post('/api/pairing/invites/:inviteId/revoke', async (c) => {
+        const invite = await runtime.pairingManager.revokeInvite(
+            c.req.param('inviteId'),
+        );
+        if (!invite) {
+            return c.json({ error: 'Pairing invite not found' }, 404);
+        }
+
+        return c.json(invite);
+    });
+
+    app.post('/api/pairing/grants/:grantId/revoke', async (c) => {
+        const grant = await runtime.pairingManager.revokeGrant(
+            c.req.param('grantId'),
+        );
+        if (!grant) {
+            return c.json({ error: 'Pairing grant not found' }, 404);
+        }
+
+        return c.json(grant);
+    });
+
     app.get('/health', (c) => {
         return c.json({ status: 'ok' });
     });

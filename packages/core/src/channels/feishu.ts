@@ -160,6 +160,7 @@ export class FeishuChannel implements ChannelAdapter {
         }
         | undefined;
     private readonly processedEvents = new Map<string, number>();
+    private readonly processedSignatures = new Map<string, number>();
 
     constructor(
         private readonly config: FeishuChannelConfig,
@@ -219,6 +220,7 @@ export class FeishuChannel implements ChannelAdapter {
     async stop(): Promise<void> {
         this.tokenCache = undefined;
         this.processedEvents.clear();
+        this.processedSignatures.clear();
     }
 
     async sendMessage(chatId: string, text: string): Promise<void> {
@@ -465,14 +467,57 @@ export class FeishuChannel implements ChannelAdapter {
             return false;
         }
 
+        const requestTimestamp = this.parseSignatureTimestamp(timestamp);
+        if (requestTimestamp === null) {
+            return false;
+        }
+
+        const now = Date.now();
+        const maxSkewMs = this.config.signature_max_skew_seconds * 1_000;
+        if (Math.abs(now - requestTimestamp) > maxSkewMs) {
+            return false;
+        }
+
         const digest = createHash('sha256')
             .update(timestamp)
             .update(nonce)
             .update(encryptKey)
             .update(rawBody)
             .digest('hex');
+        if (!constantTimeEquals(digest, signature)) {
+            return false;
+        }
 
-        return constantTimeEquals(digest, signature);
+        return !this.isSignatureReplay(
+            `${timestamp}:${nonce}:${signature}`,
+            now + this.config.replay_window_seconds * 1_000,
+        );
+    }
+
+    private parseSignatureTimestamp(value: string): number | null {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric <= 0) {
+            return null;
+        }
+
+        return numeric >= 1_000_000_000_000 ? numeric : numeric * 1_000;
+    }
+
+    private isSignatureReplay(signatureKey: string, expiresAt: number): boolean {
+        const now = Date.now();
+
+        for (const [storedKey, storedExpiry] of this.processedSignatures.entries()) {
+            if (storedExpiry <= now) {
+                this.processedSignatures.delete(storedKey);
+            }
+        }
+
+        if (this.processedSignatures.has(signatureKey)) {
+            return true;
+        }
+
+        this.processedSignatures.set(signatureKey, expiresAt);
+        return false;
     }
 
     private isAllowedUser(userId: string): boolean {

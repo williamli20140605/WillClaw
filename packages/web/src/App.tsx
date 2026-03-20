@@ -54,6 +54,7 @@ interface PairingInvite {
     scopes: string[];
     channels: Array<'telegram' | 'discord' | 'feishu'>;
     createdBy: string;
+    revokedAt?: string;
     active: boolean;
 }
 
@@ -1006,6 +1007,51 @@ export function App() {
                 error instanceof Error
                     ? error.message
                     : 'Failed to create pairing invite.',
+            );
+        } finally {
+            setPairingBusy(false);
+        }
+    }
+
+    async function handleRevokePairingInvite(inviteId: string): Promise<void> {
+        setPairingBusy(true);
+        setActionError('');
+
+        try {
+            await readJson<PairingInvite>(`/api/pairing/invites/${inviteId}/revoke`, {
+                method: 'POST',
+            });
+            if (pairingInvite?.id === inviteId) {
+                startTransition(() => {
+                    setPairingInvite(null);
+                });
+            }
+            await loadPairingPanel();
+        } catch (error) {
+            setActionError(
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to revoke pairing invite.',
+            );
+        } finally {
+            setPairingBusy(false);
+        }
+    }
+
+    async function handleRevokePairingGrant(grantId: string): Promise<void> {
+        setPairingBusy(true);
+        setActionError('');
+
+        try {
+            await readJson<PairingGrant>(`/api/pairing/grants/${grantId}/revoke`, {
+                method: 'POST',
+            });
+            await loadPairingPanel();
+        } catch (error) {
+            setActionError(
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to revoke pairing grant.',
             );
         } finally {
             setPairingBusy(false);
@@ -3206,6 +3252,23 @@ ${pairingInvite.channels.length > 0 ? `channels: ${pairingInvite.channels.join('
                                                         <span className="muted">
                                                             {invite.active ? 'active' : 'inactive'} · uses {invite.usedCount}/{invite.maxUses}
                                                         </span>
+                                                        {invite.revokedAt ? (
+                                                            <span className="muted">
+                                                                revoked {formatTimestamp(invite.revokedAt)}
+                                                            </span>
+                                                        ) : null}
+                                                        <div className="toolbar">
+                                                            <button
+                                                                className="ghost-btn"
+                                                                disabled={pairingBusy || !invite.active}
+                                                                onClick={() => {
+                                                                    void handleRevokePairingInvite(invite.id);
+                                                                }}
+                                                                type="button"
+                                                            >
+                                                                Revoke
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 ))}
                                                 {(pairingState?.invites.length ?? 0) === 0 ? (
@@ -3230,6 +3293,18 @@ ${pairingInvite.channels.length > 0 ? `channels: ${pairingInvite.channels.join('
                                                         <span className="muted">
                                                             invite {grant.inviteId.slice(0, 8)}
                                                         </span>
+                                                        <div className="toolbar">
+                                                            <button
+                                                                className="ghost-btn"
+                                                                disabled={pairingBusy}
+                                                                onClick={() => {
+                                                                    void handleRevokePairingGrant(grant.id);
+                                                                }}
+                                                                type="button"
+                                                            >
+                                                                Revoke
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 ))}
                                                 {(pairingState?.grants.length ?? 0) === 0 ? (

@@ -1527,8 +1527,9 @@ daemon:
 - 已有 Web pairing login：`/api/auth/pairing` 可用一次性 pairing code 换取 Web UI session cookie
 - 已有 channel pairing onboarding：Telegram / Discord / Feishu 支持 `/pair <code>` 自助加入动态 allowlist
 - 已有 pairing introspection：`/api/pairing`、`/api/pairing/invites` 和 `willclaw pair create|list|grants`
+- 已有 pairing revoke：可撤销单次 invite，也可撤销已配对的 channel grant
 - 已有 in-memory rate limiting：REST / ACP / Feishu webhook 在启用鉴权时都会走请求速率限制
-- 已有 Feishu webhook signature hardening：配置 encrypt key 后会校验 `x-lark-signature`
+- 已有 Feishu webhook signature hardening：配置 encrypt key 后会校验 `x-lark-signature`、限制时间偏移并拒绝 replay
 - 已有 Web UI 首版：React dashboard + Hono 静态托管
 - 已有 Web UI realtime：SSE 事件流 + active runs / recent events
 - 已有 Web UI Markdown 渲染：assistant / system 消息支持代码块、列表、表格、引用
@@ -1671,11 +1672,12 @@ daemon:
 - **Scope-based Token Auth**：REST / Web UI / ACP 可分配不同 bearer token 与 scope，不必共用单一 owner token
 - **Web UI Session Cookie**：浏览器使用 HttpOnly session cookie 访问 `/api/*` 与 SSE，不需要长期把 bearer token 暴露在前端运行时
 - **Pairing Codes**：一次性 pairing code 只以 hash 形式落盘，可限制用途为 Web UI 或指定聊天渠道
+- **Pairing Revocation**：pairing invite 和动态 channel grant 都支持显式撤销，避免邀请码或临时授权长期悬挂
 - **Rate Limiting**：REST / ACP / Feishu webhook 有内存级速率限制，默认按 token 或来源 IP 计数
 - **内置工具层禁用 `rm` / `rmdir`**：删除走 `trash`，长期归档走 `archive`
 - **内置工具层危险命令需确认**：`dd`、`mkfs`、高风险 `chmod/chown` 等
 - **外部 CLI agent 不做虚假安全承诺**：WillClaw 不能完全拦截其内部子进程行为
-- **Feishu Signature Verification**：配置 encrypt key 时校验 `x-lark-signature`，不仅依赖 verification token
+- **Feishu Signature Verification**：配置 encrypt key 时校验 `x-lark-signature`，并增加 freshness / anti-replay 保护，不仅依赖 verification token
 - **用户白名单**：Telegram / Discord 基于 user ID
 
 ---

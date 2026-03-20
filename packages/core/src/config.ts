@@ -225,6 +225,8 @@ const feishuChannelSchema = z
         app_secret_env: z.string().default('FEISHU_APP_SECRET'),
         verification_token_env: z.string().default('FEISHU_VERIFICATION_TOKEN'),
         encrypt_key_env: z.string().default('FEISHU_ENCRYPT_KEY'),
+        signature_max_skew_seconds: z.coerce.number().int().positive().default(300),
+        replay_window_seconds: z.coerce.number().int().positive().default(600),
         owner_open_id: z.string().default(''),
         allowed_open_ids: z.array(z.string()).default([]),
         require_mention_in_groups: z.boolean().default(true),

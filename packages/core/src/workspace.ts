@@ -166,6 +166,8 @@ channels:
     app_secret_env: FEISHU_APP_SECRET
     verification_token_env: FEISHU_VERIFICATION_TOKEN
     encrypt_key_env: FEISHU_ENCRYPT_KEY
+    signature_max_skew_seconds: 300
+    replay_window_seconds: 600
     owner_open_id: ""
     allowed_open_ids: []
     require_mention_in_groups: true

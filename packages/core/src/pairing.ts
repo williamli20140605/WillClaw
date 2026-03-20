@@ -24,6 +24,7 @@ interface StoredPairingInvite {
     channels: PairingChannel[];
     createdBy: string;
     redeemedAt?: string;
+    revokedAt?: string;
 }
 
 interface StoredPairingGrant {
@@ -51,6 +52,7 @@ export interface PairingInviteView {
     channels: PairingChannel[];
     createdBy: string;
     redeemedAt?: string;
+    revokedAt?: string;
     active: boolean;
 }
 
@@ -107,6 +109,7 @@ function nowIso(): string {
 
 function isInviteActive(invite: StoredPairingInvite, now = Date.now()): boolean {
     return (
+        !invite.revokedAt &&
         invite.usedCount < invite.maxUses &&
         new Date(invite.expiresAt).getTime() > now
     );
@@ -125,6 +128,7 @@ function renderInviteView(invite: StoredPairingInvite): PairingInviteView {
         channels: [...invite.channels],
         createdBy: invite.createdBy,
         ...(invite.redeemedAt ? { redeemedAt: invite.redeemedAt } : {}),
+        ...(invite.revokedAt ? { revokedAt: invite.revokedAt } : {}),
         active: isInviteActive(invite),
     };
 }
@@ -277,6 +281,35 @@ export class PairingManager {
     async listGrants(): Promise<PairingGrantView[]> {
         await this.ensureLoaded();
         return this.state.grants.map((grant) => ({ ...grant }));
+    }
+
+    async revokeInvite(inviteId: string): Promise<PairingInviteView | null> {
+        await this.ensureLoaded();
+
+        const invite = this.state.invites.find((entry) => entry.id === inviteId);
+        if (!invite) {
+            return null;
+        }
+
+        if (!invite.revokedAt) {
+            invite.revokedAt = nowIso();
+            await this.persist();
+        }
+
+        return renderInviteView(invite);
+    }
+
+    async revokeGrant(grantId: string): Promise<PairingGrantView | null> {
+        await this.ensureLoaded();
+
+        const index = this.state.grants.findIndex((grant) => grant.id === grantId);
+        if (index < 0) {
+            return null;
+        }
+
+        const [grant] = this.state.grants.splice(index, 1);
+        await this.persist();
+        return grant ?? null;
     }
 
     hasChannelGrant(channel: string, userId: string): boolean {

@@ -494,6 +494,54 @@ pair
         }
     });
 
+pair
+    .command('revoke-invite')
+    .description('Revoke a pairing invite by id.')
+    .argument('<inviteId>', 'pairing invite id')
+    .option('--home <path>', 'override the default ~/.willclaw home directory')
+    .action(async (inviteId: string, options: { home?: string }) => {
+        const runtime = await startWillClaw(
+            options.home ? { homeDir: options.home } : undefined,
+        );
+
+        try {
+            const invite = await runtime.pairingManager.revokeInvite(inviteId);
+            if (!invite) {
+                throw new Error(`Pairing invite not found: ${inviteId}`);
+            }
+
+            console.log(`Revoked invite: ${invite.id}`);
+            console.log(`Kind: ${invite.kind}`);
+            console.log(`State: inactive`);
+        } finally {
+            await cleanupRuntime(runtime);
+        }
+    });
+
+pair
+    .command('revoke-grant')
+    .description('Revoke a paired channel grant by id.')
+    .argument('<grantId>', 'pairing grant id')
+    .option('--home <path>', 'override the default ~/.willclaw home directory')
+    .action(async (grantId: string, options: { home?: string }) => {
+        const runtime = await startWillClaw(
+            options.home ? { homeDir: options.home } : undefined,
+        );
+
+        try {
+            const grant = await runtime.pairingManager.revokeGrant(grantId);
+            if (!grant) {
+                throw new Error(`Pairing grant not found: ${grantId}`);
+            }
+
+            console.log(`Revoked grant: ${grant.id}`);
+            console.log(`Channel: ${grant.channel}`);
+            console.log(`User: ${grant.userId}`);
+        } finally {
+            await cleanupRuntime(runtime);
+        }
+    });
+
 program.parseAsync(process.argv).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`WillClaw error: ${message}`);

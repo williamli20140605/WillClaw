@@ -152,6 +152,7 @@ Feishu behavior:
 - receives event callbacks on \`/api/channels/feishu/events\`
 - supports Feishu URL verification challenge
 - verifies the configured verification token when present
+- validates \`x-lark-signature\` freshness and rejects replayed signed requests when an encrypt key is configured
 - handles unencrypted \`im.message.receive_v1\` text events
 - p2p chats are handled directly
 - group chats can be mention-gated
@@ -489,6 +490,8 @@ Current REST surface includes:
 - \`/api/auth/pairing\`
 - \`/api/pairing\`
 - \`/api/pairing/invites\`
+- \`/api/pairing/invites/:inviteId/revoke\`
+- \`/api/pairing/grants/:grantId/revoke\`
 - \`/api/status\`
 - \`/api/agents\`
 - \`/api/tools/catalog\`
@@ -524,9 +527,9 @@ Current REST surface includes:
 Behavior notes:
 - \`/\` now serves the bundled Web UI when \`packages/web/dist\` exists
 - REST auth is scope-based: separate tokens can target read/write/tools/events/acp, while the Web UI upgrades a bearer token into an HttpOnly session cookie
-- pairing invites are hashed at rest and can be redeemed either from the Web UI unlock gate or via channel-side \`/pair <code>\`
+- pairing invites are hashed at rest, can be revoked, and can be redeemed either from the Web UI unlock gate or via channel-side \`/pair <code>\`
 - API + ACP requests are protected by in-memory rate limiting when auth is enabled
-- Feishu webhooks can validate \`x-lark-signature\` when an encrypt key is configured
+- Feishu webhooks can validate \`x-lark-signature\`, enforce signature freshness, and reject replayed requests when an encrypt key is configured
 - \`/api/chat\` now handles built-in \`/search\` without dispatching to a coding agent
 - agent-facing \`memory_search\` is exposed as a narrow WillClaw bridge, not a generic MCP tool layer
 
