@@ -212,6 +212,8 @@ export {
     type ScreenPressResult,
     type ScreenSeeOptions,
     type ScreenSeeResult,
+    type ScreenSendTextOptions,
+    type ScreenSendTextResult,
     type ScreenToolContext,
     type ScreenTypeOptions,
     type ScreenTypeResult,

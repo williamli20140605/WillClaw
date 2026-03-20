@@ -262,7 +262,7 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
             healthy: false,
             detail: 'peekaboo is not installed',
             actions: [
-                ...['capture', 'ocr', 'see', 'click', 'type', 'press', 'inspect_app'].map((action) => ({
+                ...['capture', 'ocr', 'see', 'click', 'type', 'press', 'inspect_app', 'send_text'].map((action) => ({
                     action,
                     available: false,
                     healthy: false,
@@ -347,6 +347,14 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
                     ? 'Accessibility permission is granted'
                     : 'Requires Accessibility permission',
             },
+            {
+                action: 'send_text',
+                available: true,
+                healthy: accessibilityGranted,
+                detail: accessibilityGranted
+                    ? 'Can activate an app and send text input'
+                    : 'Requires Accessibility permission',
+            },
             ...createDesktopAppActionHealth(),
         ];
 
@@ -379,7 +387,7 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
                     ? `peekaboo permission check failed: ${error.message}`
                     : 'peekaboo permission check failed',
             actions: [
-                ...['capture', 'ocr', 'see', 'click', 'type', 'press', 'inspect_app'].map((action) => ({
+                ...['capture', 'ocr', 'see', 'click', 'type', 'press', 'inspect_app', 'send_text'].map((action) => ({
                     action,
                     available: true,
                     healthy: false,
@@ -405,7 +413,7 @@ async function checkScreencapture(config: WillClawConfig): Promise<ProviderHealt
             healthy: false,
             detail: `screencapture is not available on ${process.platform}`,
             actions: [
-                ...['capture', 'ocr', 'see', 'click', 'type', 'press', 'inspect_app'].map((action) => ({
+                ...['capture', 'ocr', 'see', 'click', 'type', 'press', 'inspect_app', 'send_text'].map((action) => ({
                     action,
                     available: false,
                     healthy: false,
@@ -483,6 +491,12 @@ async function checkScreencapture(config: WillClawConfig): Promise<ProviderHealt
                 available: false,
                 healthy: false,
                 detail: 'screencapture cannot send key presses',
+            },
+            {
+                action: 'send_text',
+                available: false,
+                healthy: false,
+                detail: 'screencapture cannot activate apps or send text input',
             },
             ...createDesktopAppActionHealth(),
         ],

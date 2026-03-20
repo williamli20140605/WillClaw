@@ -774,6 +774,7 @@ export function App() {
         'button[type=submit]',
     );
     const [screenApp, setScreenApp] = useState('');
+    const [screenInputText, setScreenInputText] = useState('hello from WillClaw');
     const [hostActionBusy, setHostActionBusy] = useState(false);
     const [hostActionResult, setHostActionResult] = useState('');
 
@@ -3385,7 +3386,43 @@ export function App() {
                                                 type="text"
                                                 value={screenApp}
                                             />
+                                            <label className="field-label" htmlFor="screen-input-text">
+                                                Text to send
+                                            </label>
+                                            <textarea
+                                                className="field-input code-input"
+                                                id="screen-input-text"
+                                                onChange={(event) =>
+                                                    setScreenInputText(event.target.value)
+                                                }
+                                                placeholder="hello from WillClaw"
+                                                rows={4}
+                                                value={screenInputText}
+                                            />
                                             <div className="toolbar">
+                                                <button
+                                                    className="ghost-btn"
+                                                    disabled={
+                                                        hostActionBusy ||
+                                                        !screenApp.trim() ||
+                                                        !screenInputText.trim()
+                                                    }
+                                                    onClick={() =>
+                                                        void runHostAction(
+                                                            '/api/tools/screen/send-text',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                                app: screenApp.trim(),
+                                                                text: screenInputText,
+                                                                inspectAfter: true,
+                                                                languages: ['en-US', 'zh-Hans'],
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Send Text
+                                                </button>
                                                 <button
                                                     className="ghost-btn"
                                                     disabled={hostActionBusy}

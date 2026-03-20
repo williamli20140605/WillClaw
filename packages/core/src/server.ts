@@ -282,6 +282,19 @@ const screenInspectAppSchema = screenContextSchema.extend({
     launchIfNeeded: z.boolean().optional(),
 });
 
+const screenSendTextSchema = screenContextSchema.extend({
+    app: z.string().min(1),
+    text: z.string().min(1),
+    clear: z.boolean().optional(),
+    pressReturn: z.boolean().optional(),
+    launchIfNeeded: z.boolean().optional(),
+    waitMs: z.coerce.number().int().min(0).optional(),
+    inspectAfter: z.boolean().optional(),
+    filePath: z.string().optional(),
+    retina: z.boolean().optional(),
+    languages: z.array(z.string().min(1)).optional(),
+});
+
 type AppVariables = {
     authIdentity: AuthIdentity | null;
 };
@@ -1359,6 +1372,42 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
                     ...(payload.launchIfNeeded !== undefined
                         ? { launchIfNeeded: payload.launchIfNeeded }
                         : {}),
+                },
+                buildScreenToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/screen/send-text', async (c) => {
+        const payload = screenSendTextSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.screenTool.sendText(
+                {
+                    app: payload.app,
+                    text: payload.text,
+                    ...(payload.clear !== undefined
+                        ? { clear: payload.clear }
+                        : {}),
+                    ...(payload.pressReturn !== undefined
+                        ? { pressReturn: payload.pressReturn }
+                        : {}),
+                    ...(payload.launchIfNeeded !== undefined
+                        ? { launchIfNeeded: payload.launchIfNeeded }
+                        : {}),
+                    ...(payload.waitMs !== undefined
+                        ? { waitMs: payload.waitMs }
+                        : {}),
+                    ...(payload.inspectAfter !== undefined
+                        ? { inspectAfter: payload.inspectAfter }
+                        : {}),
+                    ...(payload.filePath ? { filePath: payload.filePath } : {}),
+                    ...(payload.retina !== undefined
+                        ? { retina: payload.retina }
+                        : {}),
+                    ...(payload.languages ? { languages: payload.languages } : {}),
                 },
                 buildScreenToolContext(payload),
             ),

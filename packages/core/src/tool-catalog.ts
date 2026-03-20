@@ -49,7 +49,7 @@ const HOST_TOOL_METADATA: Record<HostToolName, HostToolMetadata> = {
         category: 'screen',
         label: 'Screen',
         description:
-            'Inspect the host desktop and run capture, OCR, see, click, type, key, and app-control actions.',
+            'Inspect the host desktop and run capture, OCR, see, click, type, key, send_text, and app-control actions.',
     },
     memory_search: {
         category: 'memory',

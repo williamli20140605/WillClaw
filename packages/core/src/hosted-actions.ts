@@ -273,6 +273,11 @@ export function renderHostedActionBridgeInstructions(options: {
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"inspect_app","app":"Terminal","languages":["en-US","zh-Hans"]}`,
             );
         }
+        if (options.screenActions.includes('send_text')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"send_text","app":"TextEdit","text":"hello from WillClaw","pressReturn":false,"inspectAfter":true}`,
+            );
+        }
         if (options.screenActions.includes('click')) {
             lines.push(
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"click","elementId":"B1","app":"Terminal"}`,
@@ -293,6 +298,7 @@ export function renderHostedActionBridgeInstructions(options: {
             `Allowed screen actions right now: ${options.screenActions.join(', ')}.`,
             'Use frontmost_app/open_app/activate_app when you need to move the host desktop to the right app before vision or input.',
             'Use inspect_app when you want a single hosted step that foregrounds an app, captures the screen, and OCRs the visible UI.',
+            'Use send_text when you want a single hosted step that foregrounds an app, types text, and optionally inspects the result.',
             'Desktop click/type/press require macOS Accessibility permission for the host app running WillClaw.',
         );
     }
@@ -867,6 +873,62 @@ export class HostedActionService {
                         ocr: result.ocr,
                     },
                     artifactPath: result.capture.filePath,
+                };
+            }
+            case 'send_text': {
+                const app = readString(request.payload, 'app');
+                const text = readString(request.payload, 'text');
+                if (!app) {
+                    throw new Error('screen.send_text requires an app name');
+                }
+                if (!text) {
+                    throw new Error('screen.send_text requires text');
+                }
+
+                const clear = readBoolean(request.payload, 'clear');
+                const pressReturn = readBoolean(request.payload, 'pressReturn');
+                const launchIfNeeded = readBoolean(
+                    request.payload,
+                    'launchIfNeeded',
+                );
+                const waitMs = readNumber(request.payload, 'waitMs');
+                const inspectAfter = readBoolean(request.payload, 'inspectAfter');
+                const filePath = readString(request.payload, 'filePath');
+                const retina = readBoolean(request.payload, 'retina');
+                const languages = readStringArray(request.payload, 'languages');
+                const result = await this.screenTool.sendText(
+                    {
+                        app,
+                        text,
+                        ...(clear !== undefined ? { clear } : {}),
+                        ...(pressReturn !== undefined ? { pressReturn } : {}),
+                        ...(launchIfNeeded !== undefined ? { launchIfNeeded } : {}),
+                        ...(waitMs !== undefined ? { waitMs } : {}),
+                        ...(inspectAfter !== undefined ? { inspectAfter } : {}),
+                        ...(filePath ? { filePath } : {}),
+                        ...(retina !== undefined ? { retina } : {}),
+                        ...(languages ? { languages } : {}),
+                    },
+                    toolContext,
+                );
+
+                return {
+                    tool: 'screen',
+                    action: 'send_text',
+                    provider: result.inspect?.capture.provider ?? result.type.provider,
+                    output: result.inspect
+                        ? `Sent text to ${result.appName}\n\n${truncateForPrompt(result.inspect.ocr.output, 1_500)}`
+                        : `Sent text to ${result.appName}`,
+                    data: {
+                        appName: result.appName,
+                        ...(result.open ? { open: result.open } : {}),
+                        activate: result.activate,
+                        type: result.type,
+                        ...(result.inspect ? { inspect: result.inspect } : {}),
+                    },
+                    ...(result.inspect
+                        ? { artifactPath: result.inspect.capture.filePath }
+                        : {}),
                 };
             }
             case 'click': {

@@ -162,6 +162,27 @@ export interface ScreenInspectAppResult {
     ocr: ScreenOcrResult;
 }
 
+export interface ScreenSendTextOptions {
+    app: string;
+    text: string;
+    clear?: boolean;
+    pressReturn?: boolean;
+    launchIfNeeded?: boolean;
+    waitMs?: number;
+    inspectAfter?: boolean;
+    filePath?: string;
+    retina?: boolean;
+    languages?: string[];
+}
+
+export interface ScreenSendTextResult {
+    appName: string;
+    open?: ScreenOpenAppResult;
+    activate: ScreenActivateAppResult;
+    type: ScreenTypeResult;
+    inspect?: ScreenInspectAppResult;
+}
+
 interface ScreenCommand {
     provider: ScreenToolProvider;
     command: string;
@@ -184,7 +205,8 @@ type ScreenAction =
     | 'frontmost_app'
     | 'open_app'
     | 'activate_app'
-    | 'inspect_app';
+    | 'inspect_app'
+    | 'send_text';
 
 function runExecutable(
     command: string,
@@ -1118,6 +1140,68 @@ export class ScreenTool {
             capture,
             ocr,
             ...(frontmost ? { frontmostApp: frontmost.appName } : {}),
+        };
+    }
+
+    async sendText(
+        options: ScreenSendTextOptions,
+        context: ScreenToolContext,
+    ): Promise<ScreenSendTextResult> {
+        const appName = options.app.trim();
+        const text = options.text;
+
+        if (!appName) {
+            throw new Error('screen.send_text requires an app name');
+        }
+        if (!text.trim()) {
+            throw new Error('screen.send_text requires text');
+        }
+
+        const open =
+            options.launchIfNeeded ?? true
+                ? await this.openApp({ app: appName }, context)
+                : undefined;
+        const activate = await this.activateApp({ app: appName }, context);
+        const type = await this.type(
+            {
+                text,
+                app: appName,
+                ...(options.clear !== undefined ? { clear: options.clear } : {}),
+                ...(options.pressReturn !== undefined
+                    ? { pressReturn: options.pressReturn }
+                    : {}),
+            },
+            context,
+        );
+
+        const waitMs = options.waitMs ?? 350;
+        if (waitMs > 0) {
+            await sleep(waitMs);
+        }
+
+        const inspect =
+            options.inspectAfter ?? false
+                ? await this.inspectApp(
+                    {
+                        app: appName,
+                        launchIfNeeded: false,
+                        waitMs: 0,
+                        ...(options.filePath ? { filePath: options.filePath } : {}),
+                        ...(options.retina !== undefined
+                            ? { retina: options.retina }
+                            : {}),
+                        ...(options.languages ? { languages: options.languages } : {}),
+                    },
+                    context,
+                )
+                : undefined;
+
+        return {
+            appName,
+            ...(open ? { open } : {}),
+            activate,
+            type,
+            ...(inspect ? { inspect } : {}),
         };
     }
 }
