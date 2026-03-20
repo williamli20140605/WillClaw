@@ -1536,6 +1536,7 @@ daemon:
 - 已有 Web UI chat-first 重构：三栏布局（会话列表 / 主线程 / inspector）+ `/api/chats`
 - 已有 Web UI 过程感：`/api/route-preview` + route / agent attempt / fallback 活动流
 - 已有 Web UI queue 状态：当前 thread 的 active run 会区分 `queued` 和 `running`
+- 已有首个 desktop workflow：`screen.inspect_app` 会前台激活目标 app，再执行抓屏 + OCR，并接入 REST / hosted bridge / Web UI Host Lab
 - 已有 queue introspection：`/api/queues` 可返回每个 chat 的 `running / queued / total` 与队列顺位
 - 已有 Web UI 编辑 lineage：时间线会显示 `edited from / superseded by`，revoked turn 不再只是“淡掉”
 - 已有 chat summary 去 system-note 噪声：会话列表和线程标题优先使用真实 user/assistant 内容，而不是最后一条 system note

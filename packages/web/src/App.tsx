@@ -2961,6 +2961,25 @@ export function App() {
                                             <div className="toolbar">
                                                 <button
                                                     className="ghost-btn"
+                                                    disabled={
+                                                        hostActionBusy || !screenApp.trim()
+                                                    }
+                                                    onClick={() =>
+                                                        void runHostAction(
+                                                            '/api/tools/screen/inspect-app',
+                                                            {
+                                                                chatId: selectedChatId,
+                                                                app: screenApp.trim(),
+                                                                languages: ['en-US', 'zh-Hans'],
+                                                            },
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Inspect App
+                                                </button>
+                                                <button
+                                                    className="ghost-btn"
                                                     disabled={hostActionBusy}
                                                     onClick={() =>
                                                         void runHostAction(

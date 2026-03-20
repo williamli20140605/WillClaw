@@ -294,6 +294,7 @@ Behavior notes:
 - structured browser actions depend on \`agent-browser\`; \`system-open\` is only a coarse fallback for URL open
 - structured desktop vision/actions depend on \`peekaboo\`; \`screencapture\` is only a coarse fallback for screenshot capture, while OCR uses Apple Vision through \`xcrun swift\`
 - app open / activate / frontmost inspection use macOS system APIs directly through \`open\` and AppleScript
+- \`inspect_app\` is the first higher-level desktop workflow: foreground an app, capture the visible screen, then OCR it in one hosted step
 - provider health can be checked from the CLI and HTTP API before relying on agent-browser or peekaboo
 - for provider-specific workflows, read the narrower \`agent-browser\` or \`peekaboo\` skill`,
     },
@@ -344,6 +345,7 @@ Good fits:
 - shell-side research helpers that need hosted screenshots
 - shell-side research helpers that need OCR from the host desktop
 - shell-side tasks that need to foreground Finder, Terminal, or another macOS app before taking the next hosted action
+- shell-side tasks that can use a single \`inspect_app\` step instead of manually chaining activate/capture/ocr
 - future channel commands that need WillClaw-owned browser or desktop actions
 
 Bad fits:
@@ -455,6 +457,7 @@ Current UI scope:
 - recent tool log panel scoped to the current chat
 - agent and host-tool status summary
 - runtime host lab for browser open/snapshot/screenshot and screen inspect/capture/OCR
+- runtime host lab can also run \`inspect app\` for one-step foreground + capture + OCR
 - SSE-backed realtime connection, active runs, and recent event stream
 - live streaming preview bubble for CLI and direct-api runs before the final assistant message lands
 - active run cancel action in the conversation header
@@ -520,6 +523,7 @@ Current REST surface includes:
 - \`/api/maintenance/:taskName/run\`
 - \`/api/tools/browser/*\`
 - \`/api/tools/screen/*\`
+- \`/api/tools/screen/inspect-app\`
 - \`/api/logs/tools\`
 - \`/api/logs/tools/stats\`
 - \`/api/logs/tools/:id\`

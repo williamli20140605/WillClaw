@@ -236,7 +236,7 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
             healthy: false,
             detail: 'peekaboo is not installed',
             actions: [
-                ...['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
+                ...['capture', 'ocr', 'see', 'click', 'type', 'press', 'inspect_app'].map((action) => ({
                     action,
                     available: false,
                     healthy: false,
@@ -285,6 +285,17 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
                         : screenGranted
                             ? 'Apple Vision OCR is available after capture'
                             : 'Requires Screen Recording permission before OCR capture',
+            },
+            {
+                action: 'inspect_app',
+                available: visionAvailable,
+                healthy: screenGranted && visionAvailable,
+                detail:
+                    !visionAvailable
+                        ? 'Requires xcrun/swift for Apple Vision OCR'
+                        : screenGranted
+                            ? 'Can foreground an app, capture the screen, and OCR the visible UI'
+                            : 'Requires Screen Recording permission before desktop inspection',
             },
             {
                 action: 'click',
@@ -342,7 +353,7 @@ async function checkPeekaboo(config: WillClawConfig): Promise<ProviderHealthEntr
                     ? `peekaboo permission check failed: ${error.message}`
                     : 'peekaboo permission check failed',
             actions: [
-                ...['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
+                ...['capture', 'ocr', 'see', 'click', 'type', 'press', 'inspect_app'].map((action) => ({
                     action,
                     available: true,
                     healthy: false,
@@ -368,7 +379,7 @@ async function checkScreencapture(config: WillClawConfig): Promise<ProviderHealt
             healthy: false,
             detail: `screencapture is not available on ${process.platform}`,
             actions: [
-                ...['capture', 'ocr', 'see', 'click', 'type', 'press'].map((action) => ({
+                ...['capture', 'ocr', 'see', 'click', 'type', 'press', 'inspect_app'].map((action) => ({
                     action,
                     available: false,
                     healthy: false,
@@ -413,7 +424,18 @@ async function checkScreencapture(config: WillClawConfig): Promise<ProviderHealt
                 healthy: installed && visionAvailable,
                 detail:
                     installed && visionAvailable
-                        ? 'Apple Vision OCR is available after screencapture capture'
+                            ? 'Apple Vision OCR is available after screencapture capture'
+                            : !visionAvailable
+                                ? 'Requires xcrun/swift for Apple Vision OCR'
+                                : 'screencapture is not available on this host',
+            },
+            {
+                action: 'inspect_app',
+                available: installed && visionAvailable,
+                healthy: installed && visionAvailable,
+                detail:
+                    installed && visionAvailable
+                        ? 'Can foreground an app, capture the screen, and OCR the visible UI'
                         : !visionAvailable
                             ? 'Requires xcrun/swift for Apple Vision OCR'
                             : 'screencapture is not available on this host',

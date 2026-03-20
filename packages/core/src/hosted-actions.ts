@@ -240,6 +240,11 @@ export function renderHostedActionBridgeInstructions(options: {
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"activate_app","app":"Terminal"}`,
             );
         }
+        if (options.screenActions.includes('inspect_app')) {
+            lines.push(
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"inspect_app","app":"Terminal","languages":["en-US","zh-Hans"]}`,
+            );
+        }
         if (options.screenActions.includes('click')) {
             lines.push(
                 `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"click","elementId":"B1","app":"Terminal"}`,
@@ -259,6 +264,7 @@ export function renderHostedActionBridgeInstructions(options: {
         lines.push(
             `Allowed screen actions right now: ${options.screenActions.join(', ')}.`,
             'Use frontmost_app/open_app/activate_app when you need to move the host desktop to the right app before vision or input.',
+            'Use inspect_app when you want a single hosted step that foregrounds an app, captures the screen, and OCRs the visible UI.',
             'Desktop click/type/press require macOS Accessibility permission for the host app running WillClaw.',
         );
     }
@@ -659,6 +665,50 @@ export class HostedActionService {
                     provider: result.provider,
                     output: result.output,
                     data: result.data,
+                };
+            }
+            case 'inspect_app': {
+                const app = readString(request.payload, 'app');
+                if (!app) {
+                    throw new Error('screen.inspect_app requires an app name');
+                }
+
+                const filePath = readString(request.payload, 'filePath');
+                const waitMs = readNumber(request.payload, 'waitMs');
+                const retina = readBoolean(request.payload, 'retina');
+                const languages = readStringArray(request.payload, 'languages');
+                const launchIfNeeded = readBoolean(
+                    request.payload,
+                    'launchIfNeeded',
+                );
+                const result = await this.screenTool.inspectApp(
+                    {
+                        app,
+                        ...(filePath ? { filePath } : {}),
+                        ...(waitMs !== undefined ? { waitMs } : {}),
+                        ...(retina !== undefined ? { retina } : {}),
+                        ...(languages ? { languages } : {}),
+                        ...(launchIfNeeded !== undefined
+                            ? { launchIfNeeded }
+                            : {}),
+                    },
+                    toolContext,
+                );
+
+                return {
+                    tool: 'screen',
+                    action: 'inspect_app',
+                    provider: result.capture.provider,
+                    output: `Inspected ${result.appName}\n\n${truncateForPrompt(result.ocr.output, 1_500)}`,
+                    data: {
+                        appName: result.appName,
+                        ...(result.frontmostApp
+                            ? { frontmostApp: result.frontmostApp }
+                            : {}),
+                        capture: result.capture,
+                        ocr: result.ocr,
+                    },
+                    artifactPath: result.capture.filePath,
                 };
             }
             case 'click': {

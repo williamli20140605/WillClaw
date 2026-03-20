@@ -188,6 +188,8 @@ export {
     type ScreenFrontmostAppResult,
     type ScreenOpenAppOptions,
     type ScreenOpenAppResult,
+    type ScreenInspectAppOptions,
+    type ScreenInspectAppResult,
     type ScreenOcrOptions,
     type ScreenOcrResult,
     type ScreenPressOptions,

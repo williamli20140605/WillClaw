@@ -146,6 +146,22 @@ export interface ScreenActivateAppResult {
     data?: unknown;
 }
 
+export interface ScreenInspectAppOptions {
+    app: string;
+    filePath?: string;
+    waitMs?: number;
+    retina?: boolean;
+    languages?: string[];
+    launchIfNeeded?: boolean;
+}
+
+export interface ScreenInspectAppResult {
+    appName: string;
+    frontmostApp?: string;
+    capture: ScreenCaptureResult;
+    ocr: ScreenOcrResult;
+}
+
 interface ScreenCommand {
     provider: ScreenToolProvider;
     command: string;
@@ -167,7 +183,8 @@ type ScreenAction =
     | 'ocr'
     | 'frontmost_app'
     | 'open_app'
-    | 'activate_app';
+    | 'activate_app'
+    | 'inspect_app';
 
 function runExecutable(
     command: string,
@@ -330,6 +347,12 @@ print(String(decoding: data, as: UTF8.self))
 function summarizeCommandOutput(stdout: string, fallback: string): string {
     const trimmed = stdout.trim();
     return trimmed || fallback;
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
 }
 
 function appendPeekabooTargeting(
@@ -1044,5 +1067,57 @@ export class ScreenTool {
                 };
             },
         });
+    }
+
+    async inspectApp(
+        options: ScreenInspectAppOptions,
+        context: ScreenToolContext,
+    ): Promise<ScreenInspectAppResult> {
+        const appName = options.app.trim();
+        if (!appName) {
+            throw new Error('screen.inspect_app requires an app name');
+        }
+
+        if (options.launchIfNeeded ?? true) {
+            await this.openApp({ app: appName }, context);
+        }
+        await this.activateApp({ app: appName }, context);
+
+        const waitMs = options.waitMs ?? 700;
+        if (waitMs > 0) {
+            await sleep(waitMs);
+        }
+
+        const frontmost = await this.frontmostApp(context).catch(() => undefined);
+        const filePath =
+            options.filePath ??
+            path.join(
+                tmpdir(),
+                `willclaw-inspect-${Date.now().toString(36)}.png`,
+            );
+        const capture = await this.capture(
+            {
+                filePath,
+                mode: 'screen',
+                ...(options.retina !== undefined
+                    ? { retina: options.retina }
+                    : {}),
+            },
+            context,
+        );
+        const ocr = await this.ocr(
+            {
+                filePath: capture.filePath,
+                ...(options.languages ? { languages: options.languages } : {}),
+            },
+            context,
+        );
+
+        return {
+            appName,
+            capture,
+            ocr,
+            ...(frontmost ? { frontmostApp: frontmost.appName } : {}),
+        };
     }
 }

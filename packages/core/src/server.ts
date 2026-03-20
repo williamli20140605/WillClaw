@@ -233,6 +233,15 @@ const screenActivateAppSchema = screenContextSchema.extend({
     app: z.string().min(1),
 });
 
+const screenInspectAppSchema = screenContextSchema.extend({
+    app: z.string().min(1),
+    filePath: z.string().optional(),
+    waitMs: z.coerce.number().int().min(0).optional(),
+    retina: z.boolean().optional(),
+    languages: z.array(z.string().min(1)).optional(),
+    launchIfNeeded: z.boolean().optional(),
+});
+
 type AppVariables = {
     authIdentity: AuthIdentity | null;
 };
@@ -1134,6 +1143,32 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
             await runtime.screenTool.activateApp(
                 {
                     app: payload.app,
+                },
+                buildScreenToolContext(payload),
+            ),
+        );
+    });
+
+    app.post('/api/tools/screen/inspect-app', async (c) => {
+        const payload = screenInspectAppSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+
+        return c.json(
+            await runtime.screenTool.inspectApp(
+                {
+                    app: payload.app,
+                    ...(payload.filePath ? { filePath: payload.filePath } : {}),
+                    ...(payload.waitMs !== undefined
+                        ? { waitMs: payload.waitMs }
+                        : {}),
+                    ...(payload.retina !== undefined
+                        ? { retina: payload.retina }
+                        : {}),
+                    ...(payload.languages ? { languages: payload.languages } : {}),
+                    ...(payload.launchIfNeeded !== undefined
+                        ? { launchIfNeeded: payload.launchIfNeeded }
+                        : {}),
                 },
                 buildScreenToolContext(payload),
             ),
