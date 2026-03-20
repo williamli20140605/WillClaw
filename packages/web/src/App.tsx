@@ -43,6 +43,45 @@ interface ProviderHealthEntry {
     actions: ProviderActionHealth[];
 }
 
+interface PairingInvite {
+    id: string;
+    kind: 'web' | 'channel';
+    codePreview: string;
+    createdAt: string;
+    expiresAt: string;
+    maxUses: number;
+    usedCount: number;
+    scopes: string[];
+    channels: Array<'telegram' | 'discord' | 'feishu'>;
+    createdBy: string;
+    active: boolean;
+}
+
+interface PairingGrant {
+    id: string;
+    channel: 'telegram' | 'discord' | 'feishu';
+    userId: string;
+    inviteId: string;
+    createdAt: string;
+}
+
+interface PairingPayload {
+    enabled: boolean;
+    invites: PairingInvite[];
+    grants: PairingGrant[];
+}
+
+interface CreatedPairingInvite {
+    id: string;
+    code: string;
+    kind: 'web' | 'channel';
+    createdAt: string;
+    expiresAt: string;
+    maxUses: number;
+    scopes: string[];
+    channels: Array<'telegram' | 'discord' | 'feishu'>;
+}
+
 interface StatusPayload {
     name: string;
     homeDir: string;
@@ -60,6 +99,7 @@ interface AuthStatusPayload {
     authenticated: boolean;
     sessionCookieName: string;
     scopes: string[];
+    pairingEnabled?: boolean;
     tokenId?: string;
     source?: 'bearer' | 'session';
     expiresAt?: string;
@@ -663,6 +703,11 @@ export function App() {
     const [recentEvents, setRecentEvents] = useState<RealtimeEvent[]>([]);
     const [inspectorTab, setInspectorTab] = useState<InspectorTab>('search');
     const [providerHealth, setProviderHealth] = useState<ProviderHealthEntry[]>([]);
+    const [pairingState, setPairingState] = useState<PairingPayload | null>(null);
+    const [pairingBusy, setPairingBusy] = useState(false);
+    const [pairingKind, setPairingKind] = useState<'web' | 'channel'>('web');
+    const [pairingChannel, setPairingChannel] = useState<'telegram' | 'discord' | 'feishu'>('telegram');
+    const [pairingInvite, setPairingInvite] = useState<CreatedPairingInvite | null>(null);
     const [browserTarget, setBrowserTarget] = useState('https://example.com');
     const [screenApp, setScreenApp] = useState('');
     const [hostActionBusy, setHostActionBusy] = useState(false);
@@ -696,6 +741,13 @@ export function App() {
         );
         startTransition(() => {
             setProviderHealth(payload);
+        });
+    }
+
+    async function loadPairingPanel(): Promise<void> {
+        const payload = await readJson<PairingPayload>('/api/pairing');
+        startTransition(() => {
+            setPairingState(payload);
         });
     }
 
@@ -770,6 +822,7 @@ export function App() {
             await Promise.all([
                 loadStatusPanel(),
                 loadProviderHealthPanel(),
+                loadPairingPanel(),
                 loadChatList(),
                 loadSchedulerPanel(),
                 loadQueuePanel(),
@@ -845,9 +898,9 @@ export function App() {
     }
 
     async function handleAuthLogin(): Promise<void> {
-        const token = authTokenInput.trim();
-        if (!token) {
-            setDashboardError('Enter a bearer token to unlock the shell.');
+        const credential = authTokenInput.trim();
+        if (!credential) {
+            setDashboardError('Enter a bearer token or pairing code to unlock the shell.');
             return;
         }
 
@@ -855,13 +908,31 @@ export function App() {
         setDashboardError('');
 
         try {
-            const payload = await readJson<AuthStatusPayload>('/api/auth/session', {
-                method: 'POST',
-                headers: {
-                    'content-type': 'application/json',
-                },
-                body: JSON.stringify({ token }),
-            });
+            let payload: AuthStatusPayload;
+
+            try {
+                payload = await readJson<AuthStatusPayload>('/api/auth/session', {
+                    method: 'POST',
+                    headers: {
+                        'content-type': 'application/json',
+                    },
+                    body: JSON.stringify({ token: credential }),
+                });
+            } catch (error) {
+                const message =
+                    error instanceof Error ? error.message : 'Unlock failed.';
+                if (!message.toLowerCase().includes('unauthorized')) {
+                    throw error;
+                }
+
+                payload = await readJson<AuthStatusPayload>('/api/auth/pairing', {
+                    method: 'POST',
+                    headers: {
+                        'content-type': 'application/json',
+                    },
+                    body: JSON.stringify({ code: credential }),
+                });
+            }
             startTransition(() => {
                 setAuthStatus(payload);
                 setAuthTokenInput('');
@@ -906,6 +977,38 @@ export function App() {
             );
         } finally {
             setAuthBusy(false);
+        }
+    }
+
+    async function handleCreatePairingInvite(): Promise<void> {
+        setPairingBusy(true);
+        setActionError('');
+
+        try {
+            const payload = await readJson<CreatedPairingInvite>('/api/pairing/invites', {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                },
+                body: JSON.stringify({
+                    kind: pairingKind,
+                    ...(pairingKind === 'channel'
+                        ? { channels: [pairingChannel] }
+                        : {}),
+                }),
+            });
+            startTransition(() => {
+                setPairingInvite(payload);
+            });
+            await loadPairingPanel();
+        } catch (error) {
+            setActionError(
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to create pairing invite.',
+            );
+        } finally {
+            setPairingBusy(false);
         }
     }
 
@@ -1552,10 +1655,18 @@ export function App() {
                     <h1>Unlock the shell</h1>
                     <p>
                         This workspace is protected. Paste a bearer token with
-                        `api:session` access to open the Web UI.
+                        `api:session` access
+                        {authStatus.pairingEnabled
+                            ? ' or a valid pairing code'
+                            : ''}
+                        {' '}to open the Web UI.
                     </p>
                     <label className="auth-field">
-                        <span>Bearer token</span>
+                        <span>
+                            {authStatus.pairingEnabled
+                                ? 'Bearer token or pairing code'
+                                : 'Bearer token'}
+                        </span>
                         <input
                             autoComplete="off"
                             onChange={(event) => setAuthTokenInput(event.target.value)}
@@ -1565,7 +1676,9 @@ export function App() {
                                     void handleAuthLogin();
                                 }
                             }}
-                            placeholder="wc_xxx..."
+                            placeholder={
+                                authStatus.pairingEnabled ? 'wc_xxx... or wc_pair_...' : 'wc_xxx...'
+                            }
                             type="password"
                             value={authTokenInput}
                         />
@@ -2996,6 +3109,134 @@ export function App() {
                                                 </pre>
                                             </article>
                                         ) : null}
+                                    </div>
+                                </section>
+
+                                <section className="inspector-panel">
+                                    <div className="section-header">
+                                        <h3>Pairing</h3>
+                                        <span>
+                                            {pairingState?.enabled ? 'invite users' : 'disabled'}
+                                        </span>
+                                    </div>
+                                    <div className="stack-list">
+                                        <article className="host-action-card">
+                                            <label className="field-label" htmlFor="pairing-kind">
+                                                Invite type
+                                            </label>
+                                            <div className="toolbar">
+                                                <select
+                                                    className="field-input"
+                                                    id="pairing-kind"
+                                                    onChange={(event) =>
+                                                        setPairingKind(
+                                                            event.target.value as
+                                                                | 'web'
+                                                                | 'channel',
+                                                        )
+                                                    }
+                                                    value={pairingKind}
+                                                >
+                                                    <option value="web">web ui</option>
+                                                    <option value="channel">channel</option>
+                                                </select>
+                                                {pairingKind === 'channel' ? (
+                                                    <select
+                                                        className="field-input"
+                                                        onChange={(event) =>
+                                                            setPairingChannel(
+                                                                event.target.value as
+                                                                    | 'telegram'
+                                                                    | 'discord'
+                                                                    | 'feishu',
+                                                            )
+                                                        }
+                                                        value={pairingChannel}
+                                                    >
+                                                        <option value="telegram">telegram</option>
+                                                        <option value="discord">discord</option>
+                                                        <option value="feishu">feishu</option>
+                                                    </select>
+                                                ) : null}
+                                                <button
+                                                    className="btn"
+                                                    disabled={
+                                                        pairingBusy || !pairingState?.enabled
+                                                    }
+                                                    onClick={() => {
+                                                        void handleCreatePairingInvite();
+                                                    }}
+                                                    type="button"
+                                                >
+                                                    {pairingBusy ? 'Creating…' : 'Create invite'}
+                                                </button>
+                                            </div>
+                                            <p className="muted">
+                                                One-time codes are safer than handing out long-lived bearer tokens.
+                                            </p>
+                                        </article>
+
+                                        {pairingInvite ? (
+                                            <article className="host-result-card">
+                                                <div className="section-header">
+                                                    <h3>Latest Invite</h3>
+                                                    <span>{pairingInvite.kind}</span>
+                                                </div>
+                                                <pre className="host-result">
+{`code: ${pairingInvite.code}
+expires: ${pairingInvite.expiresAt}
+${pairingInvite.channels.length > 0 ? `channels: ${pairingInvite.channels.join(', ')}` : `scopes: ${pairingInvite.scopes.join(', ')}`}`}
+                                                </pre>
+                                            </article>
+                                        ) : null}
+
+                                        <article className="provider-card">
+                                            <div className="status-line">
+                                                <strong>Active invites</strong>
+                                                <span className="chip">
+                                                    {pairingState?.invites.length ?? 0}
+                                                </span>
+                                            </div>
+                                            <div className="stack-list">
+                                                {(pairingState?.invites ?? []).slice(0, 4).map((invite) => (
+                                                    <div key={invite.id} className="provider-action-list">
+                                                        <strong>
+                                                            {invite.kind} · {invite.codePreview}
+                                                        </strong>
+                                                        <span className="muted">
+                                                            {invite.active ? 'active' : 'inactive'} · uses {invite.usedCount}/{invite.maxUses}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                                {(pairingState?.invites.length ?? 0) === 0 ? (
+                                                    <div className="empty">No pairing invites yet.</div>
+                                                ) : null}
+                                            </div>
+                                        </article>
+
+                                        <article className="provider-card">
+                                            <div className="status-line">
+                                                <strong>Granted users</strong>
+                                                <span className="chip">
+                                                    {pairingState?.grants.length ?? 0}
+                                                </span>
+                                            </div>
+                                            <div className="stack-list">
+                                                {(pairingState?.grants ?? []).slice(0, 4).map((grant) => (
+                                                    <div key={grant.id} className="provider-action-list">
+                                                        <strong>
+                                                            {grant.channel} · {grant.userId}
+                                                        </strong>
+                                                        <span className="muted">
+                                                            invite {grant.inviteId.slice(0, 8)}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                                {(pairingState?.grants.length ?? 0) === 0 ? (
+                                                    <div className="empty">No paired channel users yet.</div>
+                                                ) : null}
+                                            </div>
+                                        </article>
                                     </div>
                                 </section>
 

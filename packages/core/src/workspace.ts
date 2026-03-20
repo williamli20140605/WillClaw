@@ -48,6 +48,11 @@ function renderDefaultConfig(paths: WillClawPaths): string {
     session:
       cookie_name: willclaw_session
       ttl_hours: 24
+    pairing:
+      enabled: true
+      store_file: "~/.willclaw/data/pairing.json"
+      code_ttl_minutes: 15
+      max_uses: 1
     rate_limit:
       enabled: true
       window_seconds: 60

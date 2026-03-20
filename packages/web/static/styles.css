@@ -730,6 +730,11 @@ button:disabled {
   line-height: 1.55;
 }
 
+.provider-action-list {
+  display: grid;
+  gap: 4px;
+}
+
 .inline-editor textarea,
 .composer-card textarea {
   min-height: 124px;

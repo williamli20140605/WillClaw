@@ -25,6 +25,7 @@ export interface AuthStatusPayload {
     authenticated: boolean;
     sessionCookieName: string;
     scopes: AuthScope[];
+    pairingEnabled?: boolean;
     tokenId?: string;
     source?: AuthIdentity['source'];
     expiresAt?: string;
@@ -329,27 +330,56 @@ export class AuthManager {
             return null;
         }
 
-        const issuedAt = Date.now();
-        const expiresAt = issuedAt + this.sessionTtlMs;
-        const id = randomUUID();
         const scopes = authorization.identity.scopes.filter(
             (scope) => scope !== 'api:session',
         );
         const normalizedScopes: AuthScope[] =
             scopes.length > 0 ? dedupeScopes(scopes) : ['api:read'];
 
-        this.sessions.set(id, {
-            id,
+        return this.createSessionRecord({
             tokenId: authorization.identity.tokenId,
             scopes: normalizedScopes,
+        });
+    }
+
+    issueSessionForPairing(identity: {
+        tokenId: string;
+        scopes: AuthScope[];
+    }): AuthSession | null {
+        if (!this.isEnabled()) {
+            return null;
+        }
+
+        const scopes = identity.scopes.filter((scope) => scope !== 'api:session');
+        const normalizedScopes: AuthScope[] =
+            scopes.length > 0 ? dedupeScopes(scopes) : ['api:read'];
+
+        return this.createSessionRecord({
+            tokenId: identity.tokenId,
+            scopes: normalizedScopes,
+        });
+    }
+
+    private createSessionRecord(identity: {
+        tokenId: string;
+        scopes: AuthScope[];
+    }): AuthSession {
+        const issuedAt = Date.now();
+        const expiresAt = issuedAt + this.sessionTtlMs;
+        const id = randomUUID();
+
+        this.sessions.set(id, {
+            id,
+            tokenId: identity.tokenId,
+            scopes: [...identity.scopes],
             createdAt: issuedAt,
             expiresAt,
         });
 
         return {
             id,
-            tokenId: authorization.identity.tokenId,
-            scopes: normalizedScopes,
+            tokenId: identity.tokenId,
+            scopes: [...identity.scopes],
             createdAt: new Date(issuedAt).toISOString(),
             expiresAt: new Date(expiresAt).toISOString(),
         };

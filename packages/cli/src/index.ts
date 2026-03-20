@@ -51,6 +51,13 @@ function formatHostTool(tool: {
     return `Host tool ${tool.label}: ${tool.globalEnabled ? 'enabled' : 'disabled'} (${tool.category}; providers=${providers})`;
 }
 
+async function cleanupRuntime(runtime: Awaited<ReturnType<typeof startWillClaw>>) {
+    runtime.scheduler.stop();
+    await runtime.channelManager.stop();
+    await runtime.memoryStore.close();
+    await runtime.toolLogger.close();
+}
+
 program.name('willclaw').description('WillClaw CLI').version('0.1.0');
 
 program
@@ -367,6 +374,123 @@ program
                     `  - ${action.action}\t${actionState}\t${action.detail}`,
                 );
             }
+        }
+    });
+
+const pair = program
+    .command('pair')
+    .description('Create and inspect one-time pairing codes for Web UI and channels.');
+
+pair
+    .command('create')
+    .description('Create a one-time pairing invite.')
+    .requiredOption('--kind <kind>', 'invite kind: web or channel')
+    .option('--channel <name>', 'allowed channel for channel invites', (value, current: string[] = []) => [...current, value], [])
+    .option('--ttl-minutes <minutes>', 'invite lifetime in minutes')
+    .option('--max-uses <count>', 'maximum redemptions before expiry')
+    .option('--scope <scope>', 'scope for web invites', (value, current: string[] = []) => [...current, value], [])
+    .option('--home <path>', 'override the default ~/.willclaw home directory')
+    .action(
+        async (options: {
+            kind: string;
+            channel: string[];
+            ttlMinutes?: string;
+            maxUses?: string;
+            scope: string[];
+            home?: string;
+        }) => {
+            const runtime = await startWillClaw(
+                options.home ? { homeDir: options.home } : undefined,
+            );
+
+            try {
+                if (options.kind !== 'web' && options.kind !== 'channel') {
+                    throw new Error('Pair kind must be `web` or `channel`.');
+                }
+
+                const invite = await runtime.pairingManager.createInvite({
+                    kind: options.kind,
+                    createdBy: 'cli',
+                    ...(options.ttlMinutes
+                        ? { ttlMinutes: Number.parseInt(options.ttlMinutes, 10) }
+                        : {}),
+                    ...(options.maxUses
+                        ? { maxUses: Number.parseInt(options.maxUses, 10) }
+                        : {}),
+                    ...(options.scope.length > 0
+                        ? { scopes: options.scope as Array<'api:read' | 'api:write' | 'api:tools' | 'api:events' | 'api:session' | 'acp'> }
+                        : {}),
+                    ...(options.channel.length > 0
+                        ? { channels: options.channel as Array<'telegram' | 'discord' | 'feishu'> }
+                        : {}),
+                });
+
+                console.log(`Invite: ${invite.id}`);
+                console.log(`Kind: ${invite.kind}`);
+                console.log(`Code: ${invite.code}`);
+                console.log(`Expires: ${invite.expiresAt}`);
+                console.log(`Max uses: ${invite.maxUses}`);
+                if (invite.channels.length > 0) {
+                    console.log(`Channels: ${invite.channels.join(', ')}`);
+                }
+                if (invite.scopes.length > 0) {
+                    console.log(`Scopes: ${invite.scopes.join(', ')}`);
+                }
+            } finally {
+                await cleanupRuntime(runtime);
+            }
+        },
+    );
+
+pair
+    .command('list')
+    .description('List pairing invites.')
+    .option('--home <path>', 'override the default ~/.willclaw home directory')
+    .action(async (options: { home?: string }) => {
+        const runtime = await startWillClaw(
+            options.home ? { homeDir: options.home } : undefined,
+        );
+
+        try {
+            const invites = await runtime.pairingManager.listInvites();
+            if (invites.length === 0) {
+                console.log('No pairing invites yet.');
+                return;
+            }
+
+            for (const invite of invites) {
+                console.log(
+                    `${invite.id}\t${invite.kind}\t${invite.active ? 'active' : 'inactive'}\tpreview=${invite.codePreview}\tuses=${invite.usedCount}/${invite.maxUses}\texpires=${invite.expiresAt}`,
+                );
+            }
+        } finally {
+            await cleanupRuntime(runtime);
+        }
+    });
+
+pair
+    .command('grants')
+    .description('List paired channel users.')
+    .option('--home <path>', 'override the default ~/.willclaw home directory')
+    .action(async (options: { home?: string }) => {
+        const runtime = await startWillClaw(
+            options.home ? { homeDir: options.home } : undefined,
+        );
+
+        try {
+            const grants = await runtime.pairingManager.listGrants();
+            if (grants.length === 0) {
+                console.log('No paired channel users yet.');
+                return;
+            }
+
+            for (const grant of grants) {
+                console.log(
+                    `${grant.channel}\t${grant.userId}\tinvite=${grant.inviteId}\tgranted=${grant.createdAt}`,
+                );
+            }
+        } finally {
+            await cleanupRuntime(runtime);
         }
     });
 

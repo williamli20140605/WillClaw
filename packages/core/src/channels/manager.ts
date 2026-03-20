@@ -4,6 +4,7 @@ import type { ChatService } from '../chat-service.js';
 import type { WillClawConfig } from '../config.js';
 import type { MemoryStore } from '../memory.js';
 import type { Orchestrator } from '../orchestrator.js';
+import type { PairingManager } from '../pairing.js';
 import type { WillClawScheduler } from '../scheduler.js';
 
 import { DiscordChannel } from './discord.js';
@@ -20,6 +21,7 @@ export class ChannelManager implements ChannelNotifier {
         private readonly orchestrator: Orchestrator,
         private readonly scheduler: WillClawScheduler,
         private readonly memoryStore: MemoryStore,
+        private readonly pairingManager: PairingManager,
         private readonly logger: Logger,
         private readonly workingDirectory: string,
     ) {
@@ -30,6 +32,7 @@ export class ChannelManager implements ChannelNotifier {
                 this.orchestrator,
                 this.scheduler,
                 this.memoryStore,
+                this.pairingManager,
                 this.logger,
                 this.workingDirectory,
             );
@@ -43,6 +46,7 @@ export class ChannelManager implements ChannelNotifier {
                 this.orchestrator,
                 this.scheduler,
                 this.memoryStore,
+                this.pairingManager,
                 this.logger,
                 this.workingDirectory,
             );
@@ -56,6 +60,7 @@ export class ChannelManager implements ChannelNotifier {
                 this.orchestrator,
                 this.scheduler,
                 this.memoryStore,
+                this.pairingManager,
                 this.logger,
                 this.workingDirectory,
             );

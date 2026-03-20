@@ -4,6 +4,7 @@ import type { ChatService } from '../chat-service.js';
 import type { TelegramChannelConfig } from '../config.js';
 import type { MemoryStore } from '../memory.js';
 import type { Orchestrator } from '../orchestrator.js';
+import type { PairingManager } from '../pairing.js';
 import type { WillClawScheduler } from '../scheduler.js';
 
 import { ChannelShellCommands } from './shell-commands.js';
@@ -95,6 +96,7 @@ export class TelegramChannel implements ChannelAdapter {
         private readonly orchestrator: Orchestrator,
         private readonly scheduler: WillClawScheduler,
         private readonly memoryStore: MemoryStore,
+        private readonly pairingManager: PairingManager,
         private readonly logger: Logger,
         private readonly workingDirectory: string,
     ) {
@@ -103,6 +105,7 @@ export class TelegramChannel implements ChannelAdapter {
             this.orchestrator,
             this.scheduler,
             this.memoryStore,
+            this.pairingManager,
         );
     }
 
@@ -208,6 +211,13 @@ export class TelegramChannel implements ChannelAdapter {
         }
 
         if (!this.isAllowedUser(sender.id)) {
+            if (rawText.startsWith('/pair ')) {
+                const handled = await this.tryHandleCommand(token, message);
+                if (handled) {
+                    return;
+                }
+            }
+
             this.logger.warn(
                 {
                     channel: this.name,
@@ -369,6 +379,10 @@ export class TelegramChannel implements ChannelAdapter {
     }
 
     private isAllowedUser(userId: number): boolean {
+        if (this.pairingManager.hasChannelGrant(this.name, String(userId))) {
+            return true;
+        }
+
         if (this.config.owner_id > 0) {
             return (
                 userId === this.config.owner_id ||

@@ -6,6 +6,7 @@ import type { ChatService } from '../chat-service.js';
 import type { FeishuChannelConfig } from '../config.js';
 import type { MemoryStore } from '../memory.js';
 import type { Orchestrator } from '../orchestrator.js';
+import type { PairingManager } from '../pairing.js';
 import type { WillClawScheduler } from '../scheduler.js';
 
 import { ChannelShellCommands } from './shell-commands.js';
@@ -166,6 +167,7 @@ export class FeishuChannel implements ChannelAdapter {
         private readonly orchestrator: Orchestrator,
         private readonly scheduler: WillClawScheduler,
         private readonly memoryStore: MemoryStore,
+        private readonly pairingManager: PairingManager,
         private readonly logger: Logger,
         private readonly workingDirectory: string,
     ) {
@@ -174,6 +176,7 @@ export class FeishuChannel implements ChannelAdapter {
             this.orchestrator,
             this.scheduler,
             this.memoryStore,
+            this.pairingManager,
         );
     }
 
@@ -300,6 +303,23 @@ export class FeishuChannel implements ChannelAdapter {
         }
 
         if (!this.isAllowedUser(userId)) {
+            if (rawText.startsWith('/pair ')) {
+                const handled = await this.shellCommands.handle({
+                    text: stripFeishuMentions(rawText),
+                    channel: this.name,
+                    chatId: message.chat_id,
+                    userId,
+                    isGroup: message.chat_type !== 'p2p',
+                    workingDirectory: this.workingDirectory,
+                    reply: async (content) => {
+                        await this.replyToMessage(message.message_id!, content);
+                    },
+                });
+                if (handled) {
+                    return jsonResponse({ code: 0 });
+                }
+            }
+
             this.logger.warn(
                 {
                     channel: this.name,
@@ -456,6 +476,10 @@ export class FeishuChannel implements ChannelAdapter {
     }
 
     private isAllowedUser(userId: string): boolean {
+        if (this.pairingManager.hasChannelGrant(this.name, userId)) {
+            return true;
+        }
+
         if (this.config.owner_open_id) {
             return (
                 userId === this.config.owner_open_id ||

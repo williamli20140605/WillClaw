@@ -12,6 +12,7 @@ import type { ChatService } from '../chat-service.js';
 import type { DiscordChannelConfig } from '../config.js';
 import type { MemoryStore } from '../memory.js';
 import type { Orchestrator } from '../orchestrator.js';
+import type { PairingManager } from '../pairing.js';
 import type { WillClawScheduler } from '../scheduler.js';
 
 import { ChannelShellCommands } from './shell-commands.js';
@@ -74,6 +75,7 @@ export class DiscordChannel implements ChannelAdapter {
         private readonly orchestrator: Orchestrator,
         private readonly scheduler: WillClawScheduler,
         private readonly memoryStore: MemoryStore,
+        private readonly pairingManager: PairingManager,
         private readonly logger: Logger,
         private readonly workingDirectory: string,
     ) {
@@ -82,6 +84,7 @@ export class DiscordChannel implements ChannelAdapter {
             this.orchestrator,
             this.scheduler,
             this.memoryStore,
+            this.pairingManager,
         );
     }
 
@@ -209,6 +212,28 @@ export class DiscordChannel implements ChannelAdapter {
         }
 
         if (!this.isAllowedUser(message.author.id)) {
+            if (rawText.startsWith('/pair ')) {
+                const handled = await this.shellCommands.handle({
+                    text: rawText,
+                    channel: this.name,
+                    chatId: message.channelId,
+                    userId: message.author.id,
+                    isGroup: message.channel.type !== ChannelType.DM,
+                    workingDirectory: this.workingDirectory,
+                    reply: async (content) => {
+                        await this.sendMessage(message.channelId, content);
+                    },
+                    showTyping: async () => {
+                        if (isSendableChannel(message.channel)) {
+                            await message.channel.sendTyping();
+                        }
+                    },
+                });
+                if (handled) {
+                    return;
+                }
+            }
+
             this.logger.warn(
                 {
                     channel: this.name,
@@ -350,6 +375,10 @@ export class DiscordChannel implements ChannelAdapter {
     }
 
     private isAllowedUser(userId: string): boolean {
+        if (this.pairingManager.hasChannelGrant(this.name, userId)) {
+            return true;
+        }
+
         if (this.config.owner_id) {
             return (
                 userId === this.config.owner_id ||

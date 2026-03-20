@@ -51,6 +51,16 @@ const authSessionSchema = z
     .passthrough()
     .default({});
 
+const authPairingSchema = z
+    .object({
+        enabled: z.boolean().default(true),
+        store_file: z.string().default('~/.willclaw/data/pairing.json'),
+        code_ttl_minutes: z.coerce.number().int().positive().default(15),
+        max_uses: z.coerce.number().int().positive().default(1),
+    })
+    .passthrough()
+    .default({});
+
 const authRateLimitSchema = z
     .object({
         enabled: z.boolean().default(true),
@@ -64,6 +74,7 @@ const serverAuthSchema = z
     .object({
         tokens: z.array(authTokenSchema).default([]),
         session: authSessionSchema,
+        pairing: authPairingSchema,
         rate_limit: authRateLimitSchema,
     })
     .passthrough()
@@ -417,6 +428,13 @@ export interface WillClawConfig extends RawWillClawConfig {
     daemon: RawWillClawConfig['daemon'] & {
         env_file: string;
     };
+    server: RawWillClawConfig['server'] & {
+        auth: RawWillClawConfig['server']['auth'] & {
+            pairing: RawWillClawConfig['server']['auth']['pairing'] & {
+                store_file: string;
+            };
+        };
+    };
     tools: RawWillClawConfig['tools'] & {
         shell: RawWillClawConfig['tools']['shell'] & {
             blocked_commands: string[];
@@ -467,6 +485,19 @@ function normalizeConfigPaths(
         daemon: {
             ...config.daemon,
             env_file: resolveConfiguredPath(config.daemon.env_file, paths),
+        },
+        server: {
+            ...config.server,
+            auth: {
+                ...config.server.auth,
+                pairing: {
+                    ...config.server.auth.pairing,
+                    store_file: resolveConfiguredPath(
+                        config.server.auth.pairing.store_file,
+                        paths,
+                    ),
+                },
+            },
         },
         tools: {
             ...config.tools,

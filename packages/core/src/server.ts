@@ -12,11 +12,12 @@ import { AuthManager, type AuthIdentity } from './auth.js';
 import type { ChatService } from './chat-service.js';
 import type { ChannelManager } from './channels/manager.js';
 import { RunCancelledError } from './chat-service.js';
-import type { AuthScope, WillClawConfig } from './config.js';
+import { AUTH_SCOPES, type AuthScope, type WillClawConfig } from './config.js';
 import type { WillClawEvent, WillClawEventHub } from './events.js';
 import type { BackgroundTaskEngine } from './heartbeat.js';
 import type { MemoryStore } from './memory.js';
 import type { Orchestrator } from './orchestrator.js';
+import type { PairingChannel, PairingManager } from './pairing.js';
 import type { WillClawPaths } from './paths.js';
 import { getProviderHealth } from './provider-health.js';
 import type { PromptAssembler } from './prompt.js';
@@ -51,6 +52,18 @@ const authSessionRequestSchema = z
         token: z.string().min(1).optional(),
     })
     .optional();
+
+const authPairingRequestSchema = z.object({
+    code: z.string().min(1),
+});
+
+const pairingInviteCreateSchema = z.object({
+    kind: z.enum(['web', 'channel']),
+    ttlMinutes: z.coerce.number().int().positive().optional(),
+    maxUses: z.coerce.number().int().positive().optional(),
+    scopes: z.array(z.enum(AUTH_SCOPES)).optional(),
+    channels: z.array(z.enum(['telegram', 'discord', 'feishu'])).optional(),
+});
 
 const promptPreviewSchema = z.object({
     isGroup: z.boolean().optional(),
@@ -286,6 +299,7 @@ export interface WillClawRuntimeLike {
     screenTool: ScreenTool;
     chatService: ChatService;
     channelManager: ChannelManager;
+    pairingManager: PairingManager;
     backgroundTaskEngine: BackgroundTaskEngine;
     scheduler: WillClawScheduler;
     workspaceMemoryManager: WorkspaceMemoryManager;
@@ -298,7 +312,11 @@ export interface WillClawHttpServer {
 }
 
 function isAuthRoute(pathname: string): boolean {
-    return pathname === '/api/auth/status' || pathname === '/api/auth/session';
+    return (
+        pathname === '/api/auth/status' ||
+        pathname === '/api/auth/session' ||
+        pathname === '/api/auth/pairing'
+    );
 }
 
 function getApiRequiredScopes(
@@ -335,6 +353,10 @@ function getApiRateLimitBucket(pathname: string): string {
 
     if (pathname === '/api/auth/session') {
         return 'auth:session';
+    }
+
+    if (pathname === '/api/auth/pairing') {
+        return 'auth:pairing';
     }
 
     if (pathname === '/api/events') {
@@ -484,7 +506,10 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
     });
 
     app.get('/api/auth/status', (c) => {
-        return c.json(authManager.getStatus(c.req.raw));
+        return c.json({
+            ...authManager.getStatus(c.req.raw),
+            pairingEnabled: runtime.pairingManager.isEnabled(),
+        });
     });
 
     app.post('/api/auth/session', async (c) => {
@@ -504,7 +529,57 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
 
         c.header('set-cookie', authManager.buildSessionCookie(session, c.req.raw));
         return c.json(
-            toSessionStatus(session, authManager.getSessionCookieName()),
+            {
+                ...toSessionStatus(session, authManager.getSessionCookieName()),
+                pairingEnabled: runtime.pairingManager.isEnabled(),
+            },
+            201,
+        );
+    });
+
+    app.post('/api/auth/pairing', async (c) => {
+        if (!runtime.pairingManager.isEnabled()) {
+            return c.json({ error: 'Pairing is disabled' }, 404);
+        }
+
+        const limit = authManager.checkRateLimit(
+            c.req.raw,
+            getApiRateLimitBucket(c.req.path),
+        );
+        if (!limit.allowed) {
+            c.header('retry-after', String(limit.retryAfterSeconds));
+            return c.json(
+                {
+                    error: 'Rate limit exceeded',
+                    retryAfterSeconds: limit.retryAfterSeconds,
+                },
+                429,
+            );
+        }
+
+        const payload = authPairingRequestSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+        const redeemed = await runtime.pairingManager.redeemWebInvite(payload.code);
+        if (!redeemed) {
+            return c.json({ error: 'Invalid or expired pairing code' }, 401);
+        }
+
+        const session = authManager.issueSessionForPairing({
+            tokenId: redeemed.tokenId,
+            scopes: redeemed.scopes,
+        });
+        if (!session) {
+            return c.json({ error: 'Unable to create pairing session' }, 500);
+        }
+
+        c.header('set-cookie', authManager.buildSessionCookie(session, c.req.raw));
+        return c.json(
+            {
+                ...toSessionStatus(session, authManager.getSessionCookieName()),
+                pairingEnabled: runtime.pairingManager.isEnabled(),
+                pairingInviteId: redeemed.inviteId,
+            },
             201,
         );
     });
@@ -517,7 +592,39 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
             authenticated: false,
             sessionCookieName: authManager.getSessionCookieName(),
             scopes: [],
+            pairingEnabled: runtime.pairingManager.isEnabled(),
         });
+    });
+
+    app.get('/api/pairing', async (c) => {
+        return c.json({
+            enabled: runtime.pairingManager.isEnabled(),
+            invites: await runtime.pairingManager.listInvites(),
+            grants: await runtime.pairingManager.listGrants(),
+        });
+    });
+
+    app.post('/api/pairing/invites', async (c) => {
+        const payload = pairingInviteCreateSchema.parse(
+            await c.req.json().catch(() => ({})),
+        );
+        const identity = c.get('authIdentity');
+        const invite = await runtime.pairingManager.createInvite({
+            kind: payload.kind,
+            createdBy: identity?.tokenId ?? 'unknown',
+            ...(payload.ttlMinutes !== undefined
+                ? { ttlMinutes: payload.ttlMinutes }
+                : {}),
+            ...(payload.maxUses !== undefined
+                ? { maxUses: payload.maxUses }
+                : {}),
+            ...(payload.scopes ? { scopes: payload.scopes } : {}),
+            ...(payload.channels
+                ? { channels: payload.channels as PairingChannel[] }
+                : {}),
+        });
+
+        return c.json(invite, 201);
     });
 
     app.get('/health', (c) => {

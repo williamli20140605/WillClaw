@@ -107,6 +107,14 @@ export {
     type RunChatResult,
 } from './orchestrator.js';
 export {
+    PairingManager,
+    type CreatedPairingInvite,
+    type PairingGrantView,
+    type PairingInviteKind,
+    type PairingInviteView,
+    type PairingRedeemResult,
+} from './pairing.js';
+export {
     getDefaultHomeDir,
     getWillClawPaths,
     type WillClawPaths,

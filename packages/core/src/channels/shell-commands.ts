@@ -1,6 +1,7 @@
 import type { ChatService } from '../chat-service.js';
 import type { MemoryStore, StoredMessage } from '../memory.js';
 import type { Orchestrator } from '../orchestrator.js';
+import type { PairingManager } from '../pairing.js';
 import type { WillClawScheduler } from '../scheduler.js';
 
 function normalizeCommandName(text: string): string | null {
@@ -41,6 +42,7 @@ export class ChannelShellCommands {
         private readonly orchestrator: Orchestrator,
         private readonly scheduler: WillClawScheduler,
         private readonly memoryStore: MemoryStore,
+        private readonly pairingManager: PairingManager,
     ) { }
 
     async handle(input: ShellCommandContext): Promise<boolean> {
@@ -74,6 +76,27 @@ export class ChannelShellCommands {
                         : 'Queue: idle',
                 ];
                 await input.reply(lines.join('\n'));
+                return true;
+            }
+            case '/pair': {
+                if (!args) {
+                    await input.reply('Usage: /pair <pairing-code>');
+                    return true;
+                }
+
+                const granted = await this.pairingManager.pairChannelUser({
+                    channel: input.channel,
+                    userId: input.userId,
+                    code: args,
+                });
+                if (!granted) {
+                    await input.reply('Invalid or expired pairing code.');
+                    return true;
+                }
+
+                await input.reply(
+                    `Pairing complete. ${input.channel} access is now enabled for this account.`,
+                );
                 return true;
             }
             case '/queue': {

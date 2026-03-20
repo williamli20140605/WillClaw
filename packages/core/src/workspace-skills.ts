@@ -128,6 +128,7 @@ Implemented today:
 Telegram behavior:
 - reads token from the configured env var
 - supports owner / allowlist gating
+- supports one-time \`/pair <code>\` onboarding without editing static allowlists
 - can require mention in groups
 - private chats are handled directly
 - inbound text is sent to ChatService
@@ -143,6 +144,7 @@ Discord behavior:
 - guild messages default to mention-gated handling
 - shell commands reuse the same channel command router as Telegram
 - replies are sent back to the originating text channel or DM
+- supports one-time \`/pair <code>\` onboarding for newly invited Discord users
 - Discord message updates can be translated into the same logical edit flow instead of being treated as a brand-new user turn
 - queued chats get an immediate "Queued behind N run(s)" acknowledgement before the final reply
 
@@ -154,6 +156,7 @@ Feishu behavior:
 - p2p chats are handled directly
 - group chats can be mention-gated
 - replies are sent back as message replies through the Feishu IM API
+- supports one-time \`/pair <code>\` onboarding for newly invited Feishu users
 - queued chats get an immediate "Queued behind N run(s)" acknowledgement before the final reply
 
 Design rules borrowed from OpenClaw-style gateways:
@@ -460,6 +463,7 @@ Current UI scope:
 - conversation titles and previews prefer real user/assistant content instead of the latest system note
 - auth-aware Web UI boot: protected workspaces show an unlock screen first, then switch to an HttpOnly session cookie for API + SSE access
 - authenticated shells show the active token identity in the top bar and allow explicit logout
+- runtime inspector includes a Pairing panel for minting one-time web/channel invites and checking current grants
 
 Current limits:
 - not every host-side event is streamed yet
@@ -482,6 +486,9 @@ Current REST surface includes:
 - \`/\` (Web UI)
 - \`/api/auth/status\`
 - \`/api/auth/session\`
+- \`/api/auth/pairing\`
+- \`/api/pairing\`
+- \`/api/pairing/invites\`
 - \`/api/status\`
 - \`/api/agents\`
 - \`/api/tools/catalog\`
@@ -517,6 +524,7 @@ Current REST surface includes:
 Behavior notes:
 - \`/\` now serves the bundled Web UI when \`packages/web/dist\` exists
 - REST auth is scope-based: separate tokens can target read/write/tools/events/acp, while the Web UI upgrades a bearer token into an HttpOnly session cookie
+- pairing invites are hashed at rest and can be redeemed either from the Web UI unlock gate or via channel-side \`/pair <code>\`
 - API + ACP requests are protected by in-memory rate limiting when auth is enabled
 - Feishu webhooks can validate \`x-lark-signature\` when an encrypt key is configured
 - \`/api/chat\` now handles built-in \`/search\` without dispatching to a coding agent

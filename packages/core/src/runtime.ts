@@ -19,6 +19,7 @@ import { createAppLogger } from './logger.js';
 import { MemorySearchService } from './memory-search.js';
 import { MemoryStore } from './memory.js';
 import { Orchestrator } from './orchestrator.js';
+import { PairingManager } from './pairing.js';
 import type { WillClawPaths } from './paths.js';
 import { PromptAssembler } from './prompt.js';
 import { WillClawScheduler } from './scheduler.js';
@@ -47,6 +48,7 @@ export interface WillClawRuntime {
     fileSystemTool: FileSystemTool;
     browserTool: BrowserTool;
     screenTool: ScreenTool;
+    pairingManager: PairingManager;
     historyExporter: HistoryExporter | null;
     completionMonitor: CommandCompletionMonitor;
     orchestrator: Orchestrator;
@@ -75,6 +77,8 @@ export async function createWillClawRuntime(options?: {
     const shellTool = new ShellTool(config, toolLogger);
     const browserTool = new BrowserTool(config, toolLogger);
     const screenTool = new ScreenTool(config, toolLogger);
+    const pairingManager = new PairingManager(config, logger);
+    await pairingManager.initialize();
     const hostedActionService = new HostedActionService(
         browserTool,
         screenTool,
@@ -136,6 +140,7 @@ export async function createWillClawRuntime(options?: {
         orchestrator,
         scheduler,
         memoryStore,
+        pairingManager,
         logger,
         paths.homeDir,
     );
@@ -157,6 +162,7 @@ export async function createWillClawRuntime(options?: {
         fileSystemTool,
         browserTool,
         screenTool,
+        pairingManager,
         historyExporter,
         completionMonitor,
         orchestrator,
