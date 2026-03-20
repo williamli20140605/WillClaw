@@ -1492,7 +1492,7 @@ daemon:
 
 ## 12. 开发路线图
 
-### Progress Snapshot（2026-03-17）
+### Progress Snapshot（2026-03-20）
 
 已落地：
 
@@ -1521,6 +1521,10 @@ daemon:
 - 已有 Feishu adapter：支持 webhook challenge、`im.message.receive_v1` 文本事件、mention gating、消息回复
 - 已有渠道 queue UX：同一 chat 已有 pending work 时，Telegram / Discord / Feishu 会先回 `Queued behind N run(s)`，轮到时再发送正式回复
 - 已有最小 ACP Server：独立端口、bearer token 鉴权、`/agents` discovery、`run sync/stream/async`、`run status/cancel`
+- 已有 scope-based auth：可为 REST / Web UI / ACP 配置多 bearer token，按 `api:read / api:write / api:tools / api:events / api:session / acp` 分配权限
+- 已有 Web UI session login：受保护 workspace 会先显示 unlock gate，再将 bearer token 升级成 HttpOnly session cookie 供 API + SSE 使用
+- 已有 in-memory rate limiting：REST / ACP / Feishu webhook 在启用鉴权时都会走请求速率限制
+- 已有 Feishu webhook signature hardening：配置 encrypt key 后会校验 `x-lark-signature`
 - 已有 Web UI 首版：React dashboard + Hono 静态托管
 - 已有 Web UI realtime：SSE 事件流 + active runs / recent events
 - 已有 Web UI Markdown 渲染：assistant / system 消息支持代码块、列表、表格、引用
@@ -1660,10 +1664,13 @@ daemon:
 - **无插件系统**：没有 hook 可被劫持
 - **Web UI 不暴露公网**：默认 127.0.0.1
 - **ACP Server 默认关闭**：需要手动开启
+- **Scope-based Token Auth**：REST / Web UI / ACP 可分配不同 bearer token 与 scope，不必共用单一 owner token
+- **Web UI Session Cookie**：浏览器使用 HttpOnly session cookie 访问 `/api/*` 与 SSE，不需要长期把 bearer token 暴露在前端运行时
+- **Rate Limiting**：REST / ACP / Feishu webhook 有内存级速率限制，默认按 token 或来源 IP 计数
 - **内置工具层禁用 `rm` / `rmdir`**：删除走 `trash`，长期归档走 `archive`
 - **内置工具层危险命令需确认**：`dd`、`mkfs`、高风险 `chmod/chown` 等
 - **外部 CLI agent 不做虚假安全承诺**：WillClaw 不能完全拦截其内部子进程行为
-- **Token 认证**：Web UI / REST / ACP Server
+- **Feishu Signature Verification**：配置 encrypt key 时校验 `x-lark-signature`，不仅依赖 verification token
 - **用户白名单**：Telegram / Discord 基于 user ID
 
 ---

@@ -43,6 +43,15 @@ function renderDefaultConfig(paths: WillClawPaths): string {
   host: "127.0.0.1"
   port: 8420
   auth_token: "\${WILLCLAW_AUTH_TOKEN}"
+  auth:
+    tokens: []
+    session:
+      cookie_name: willclaw_session
+      ttl_hours: 24
+    rate_limit:
+      enabled: true
+      window_seconds: 60
+      max_requests: 240
 
 workspace:
   bootstrapMaxChars: 20000
@@ -151,6 +160,7 @@ channels:
     app_id_env: FEISHU_APP_ID
     app_secret_env: FEISHU_APP_SECRET
     verification_token_env: FEISHU_VERIFICATION_TOKEN
+    encrypt_key_env: FEISHU_ENCRYPT_KEY
     owner_open_id: ""
     allowed_open_ids: []
     require_mention_in_groups: true

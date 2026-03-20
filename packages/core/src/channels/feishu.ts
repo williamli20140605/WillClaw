@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
+
 import type { Logger } from 'pino';
 
 import type { ChatService } from '../chat-service.js';
@@ -108,6 +110,17 @@ function readTokenFromPayload(payload: FeishuWebhookPayload): string | undefined
     return undefined;
 }
 
+function constantTimeEquals(left: string, right: string): boolean {
+    const leftBuffer = Buffer.from(left);
+    const rightBuffer = Buffer.from(right);
+
+    if (leftBuffer.length !== rightBuffer.length) {
+        return false;
+    }
+
+    return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
 function parseTextContent(rawContent: string | undefined): string | null {
     if (!rawContent) {
         return null;
@@ -216,11 +229,22 @@ export class FeishuChannel implements ChannelAdapter {
             return jsonResponse({ error: 'Method not allowed' }, 405);
         }
 
-        const payload = (await request.json().catch(() => null)) as
-            | FeishuWebhookPayload
-            | null;
+        const rawBody = await request.text().catch(() => '');
+        const payload = (() => {
+            try {
+                return rawBody
+                    ? (JSON.parse(rawBody) as FeishuWebhookPayload)
+                    : null;
+            } catch {
+                return null;
+            }
+        })();
         if (!payload || typeof payload !== 'object') {
             return jsonResponse({ error: 'Invalid Feishu payload' }, 400);
+        }
+
+        if (!this.isSignatureValid(request, rawBody)) {
+            return jsonResponse({ error: 'Invalid Feishu webhook signature' }, 401);
         }
 
         if (typeof payload.encrypt === 'string' && payload.encrypt.trim()) {
@@ -385,6 +409,11 @@ export class FeishuChannel implements ChannelAdapter {
         return value?.trim() ? value.trim() : undefined;
     }
 
+    private getEncryptKey(): string | undefined {
+        const value = process.env[this.config.encrypt_key_env];
+        return value?.trim() ? value.trim() : undefined;
+    }
+
     private getApiBaseUrl(): string {
         const maybeBaseUrl = (this.config as Record<string, unknown>).base_url;
         if (typeof maybeBaseUrl === 'string' && maybeBaseUrl.trim()) {
@@ -401,6 +430,29 @@ export class FeishuChannel implements ChannelAdapter {
         }
 
         return value === configured;
+    }
+
+    private isSignatureValid(request: Request, rawBody: string): boolean {
+        const encryptKey = this.getEncryptKey();
+        if (!encryptKey) {
+            return true;
+        }
+
+        const timestamp = request.headers.get('x-lark-request-timestamp')?.trim();
+        const nonce = request.headers.get('x-lark-request-nonce')?.trim();
+        const signature = request.headers.get('x-lark-signature')?.trim();
+        if (!timestamp || !nonce || !signature) {
+            return false;
+        }
+
+        const digest = createHash('sha256')
+            .update(timestamp)
+            .update(nonce)
+            .update(encryptKey)
+            .update(rawBody)
+            .digest('hex');
+
+        return constantTimeEquals(digest, signature);
     }
 
     private isAllowedUser(userId: string): boolean {

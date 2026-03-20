@@ -64,6 +64,13 @@ button:disabled {
   padding: 20px;
 }
 
+.auth-shell {
+  min-height: 100vh;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid rgba(28, 36, 39, 0.08);
@@ -129,7 +136,7 @@ button:disabled {
 
 .status-cluster {
   display: grid;
-  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 12px;
 }
 
@@ -156,6 +163,56 @@ button:disabled {
   display: block;
   font-size: 1.32rem;
   font-weight: 700;
+}
+
+.status-card--auth {
+  min-width: 150px;
+}
+
+.status-card__action {
+  margin-top: 10px;
+  width: 100%;
+}
+
+.auth-card {
+  width: min(560px, 100%);
+  padding: 28px;
+  display: grid;
+  gap: 16px;
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  letter-spacing: -0.04em;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+}
+
+.auth-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.auth-field {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.auth-field input {
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.88);
+  padding: 14px 16px;
+  color: var(--ink);
+}
+
+.auth-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .metric-card p {

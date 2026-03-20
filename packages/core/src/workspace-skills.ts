@@ -456,8 +456,10 @@ Current UI scope:
 - active run cancel action in the conversation header
 - composer route preview via \`/api/route-preview\`
 - activity tab now shows route selection, agent attempts, and fallback events in human-readable form
-- edited / revoked message lineage is visible in the timeline with `edited from` and `superseded by` cues
+- edited / revoked message lineage is visible in the timeline with \`edited from\` and \`superseded by\` cues
 - conversation titles and previews prefer real user/assistant content instead of the latest system note
+- auth-aware Web UI boot: protected workspaces show an unlock screen first, then switch to an HttpOnly session cookie for API + SSE access
+- authenticated shells show the active token identity in the top bar and allow explicit logout
 
 Current limits:
 - not every host-side event is streamed yet
@@ -478,6 +480,8 @@ When changing this area:
 Current REST surface includes:
 - \`/health\`
 - \`/\` (Web UI)
+- \`/api/auth/status\`
+- \`/api/auth/session\`
 - \`/api/status\`
 - \`/api/agents\`
 - \`/api/tools/catalog\`
@@ -512,6 +516,9 @@ Current REST surface includes:
 
 Behavior notes:
 - \`/\` now serves the bundled Web UI when \`packages/web/dist\` exists
+- REST auth is scope-based: separate tokens can target read/write/tools/events/acp, while the Web UI upgrades a bearer token into an HttpOnly session cookie
+- API + ACP requests are protected by in-memory rate limiting when auth is enabled
+- Feishu webhooks can validate \`x-lark-signature\` when an encrypt key is configured
 - \`/api/chat\` now handles built-in \`/search\` without dispatching to a coding agent
 - agent-facing \`memory_search\` is exposed as a narrow WillClaw bridge, not a generic MCP tool layer
 

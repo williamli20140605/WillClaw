@@ -19,17 +19,62 @@ export const HOST_TOOL_NAMES = [
 ] as const;
 export const BROWSER_TOOL_PROVIDERS = ['agent-browser', 'system-open'] as const;
 export const SCREEN_TOOL_PROVIDERS = ['peekaboo', 'screencapture'] as const;
+export const AUTH_SCOPES = [
+    'api:read',
+    'api:write',
+    'api:tools',
+    'api:events',
+    'api:session',
+    'acp',
+] as const;
 
 export type HostToolName = (typeof HOST_TOOL_NAMES)[number];
 export type AgentToolMode = 'native' | 'hosted' | 'disabled';
 export type BrowserToolProvider = (typeof BROWSER_TOOL_PROVIDERS)[number];
 export type ScreenToolProvider = (typeof SCREEN_TOOL_PROVIDERS)[number];
+export type AuthScope = (typeof AUTH_SCOPES)[number];
+
+const authScopeSchema = z.enum(AUTH_SCOPES);
+const authTokenSchema = z
+    .object({
+        id: z.string().min(1),
+        token: z.string().min(1),
+        scopes: z.array(authScopeSchema).min(1).default([...AUTH_SCOPES]),
+    })
+    .passthrough();
+
+const authSessionSchema = z
+    .object({
+        cookie_name: z.string().default('willclaw_session'),
+        ttl_hours: z.coerce.number().positive().default(24),
+    })
+    .passthrough()
+    .default({});
+
+const authRateLimitSchema = z
+    .object({
+        enabled: z.boolean().default(true),
+        window_seconds: z.coerce.number().int().positive().default(60),
+        max_requests: z.coerce.number().int().positive().default(240),
+    })
+    .passthrough()
+    .default({});
+
+const serverAuthSchema = z
+    .object({
+        tokens: z.array(authTokenSchema).default([]),
+        session: authSessionSchema,
+        rate_limit: authRateLimitSchema,
+    })
+    .passthrough()
+    .default({});
 
 const serverSchema = z
     .object({
         host: z.string().default('127.0.0.1'),
         port: z.coerce.number().int().min(1).max(65535).default(8420),
         auth_token: z.string().optional(),
+        auth: serverAuthSchema,
     })
     .passthrough()
     .default({});
@@ -168,6 +213,7 @@ const feishuChannelSchema = z
         app_id_env: z.string().default('FEISHU_APP_ID'),
         app_secret_env: z.string().default('FEISHU_APP_SECRET'),
         verification_token_env: z.string().default('FEISHU_VERIFICATION_TOKEN'),
+        encrypt_key_env: z.string().default('FEISHU_ENCRYPT_KEY'),
         owner_open_id: z.string().default(''),
         allowed_open_ids: z.array(z.string()).default([]),
         require_mention_in_groups: z.boolean().default(true),
@@ -334,6 +380,8 @@ export type CliAgentPoolEntry = z.infer<typeof cliAgentPoolEntrySchema>;
 export type ApiAgentPoolEntry = z.infer<typeof apiAgentPoolEntrySchema>;
 export type AcpAgentPoolEntry = z.infer<typeof acpAgentPoolEntrySchema>;
 export type AgentToolPolicy = z.infer<typeof agentToolPolicySchema>;
+export type ServerAuthTokenConfig = z.infer<typeof authTokenSchema>;
+export type ServerAuthConfig = z.infer<typeof serverAuthSchema>;
 export type TelegramChannelConfig = z.infer<typeof telegramChannelSchema>;
 export type DiscordChannelConfig = z.infer<typeof discordChannelSchema>;
 export type FeishuChannelConfig = z.infer<typeof feishuChannelSchema>;

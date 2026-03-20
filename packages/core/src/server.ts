@@ -8,10 +8,11 @@ import { Hono } from 'hono';
 import type { Logger } from 'pino';
 import { z } from 'zod';
 
+import { AuthManager, type AuthIdentity } from './auth.js';
 import type { ChatService } from './chat-service.js';
 import type { ChannelManager } from './channels/manager.js';
 import { RunCancelledError } from './chat-service.js';
-import type { WillClawConfig } from './config.js';
+import type { AuthScope, WillClawConfig } from './config.js';
 import type { WillClawEvent, WillClawEventHub } from './events.js';
 import type { BackgroundTaskEngine } from './heartbeat.js';
 import type { MemoryStore } from './memory.js';
@@ -44,6 +45,12 @@ const chatRequestSchema = z.object({
     chatId: z.string().optional(),
     userId: z.string().optional(),
 });
+
+const authSessionRequestSchema = z
+    .object({
+        token: z.string().min(1).optional(),
+    })
+    .optional();
 
 const promptPreviewSchema = z.object({
     isGroup: z.boolean().optional(),
@@ -213,6 +220,10 @@ const screenActivateAppSchema = screenContextSchema.extend({
     app: z.string().min(1),
 });
 
+type AppVariables = {
+    authIdentity: AuthIdentity | null;
+};
+
 const WEB_DIST_DIR = fileURLToPath(
     new URL('../../web/dist', import.meta.url),
 );
@@ -286,10 +297,102 @@ export interface WillClawHttpServer {
     close(): Promise<void>;
 }
 
-function shouldRequireAuth(config: WillClawConfig): boolean {
-    return Boolean(
-        config.server.auth_token && !config.server.auth_token.includes('${'),
-    );
+function isAuthRoute(pathname: string): boolean {
+    return pathname === '/api/auth/status' || pathname === '/api/auth/session';
+}
+
+function getApiRequiredScopes(
+    method: string,
+    pathname: string,
+): AuthScope[] | null {
+    if (pathname === '/api/channels/feishu/events' || isAuthRoute(pathname)) {
+        return null;
+    }
+
+    if (pathname === '/api/events') {
+        return ['api:events'];
+    }
+
+    if (pathname.startsWith('/api/tools/')) {
+        return ['api:tools'];
+    }
+
+    if (method === 'GET' || method === 'HEAD') {
+        return ['api:read'];
+    }
+
+    return ['api:write'];
+}
+
+function getApiRateLimitBucket(pathname: string): string {
+    if (pathname === '/api/channels/feishu/events') {
+        return 'feishu:webhook';
+    }
+
+    if (pathname === '/api/auth/status') {
+        return 'auth:status';
+    }
+
+    if (pathname === '/api/auth/session') {
+        return 'auth:session';
+    }
+
+    if (pathname === '/api/events') {
+        return 'api:events';
+    }
+
+    if (pathname.startsWith('/api/tools/')) {
+        return 'api:tools';
+    }
+
+    return pathname.startsWith('/api/') ? 'api' : 'web';
+}
+
+function authErrorMessage(
+    failure: ReturnType<AuthManager['authorize']>,
+): string {
+    switch (failure.error) {
+        case 'insufficient_scope':
+            return 'Forbidden';
+        case 'invalid_credentials':
+            return 'Invalid bearer token or session';
+        default:
+            return 'Unauthorized';
+    }
+}
+
+function parseOptionalAuthSessionBody(
+    request: Request,
+): Promise<z.infer<typeof authSessionRequestSchema> | undefined> {
+    return request
+        .clone()
+        .json()
+        .then((payload) => authSessionRequestSchema.parse(payload))
+        .catch(() => undefined);
+}
+
+function toSessionStatus(session: {
+    tokenId: string;
+    scopes: AuthScope[];
+    expiresAt: string;
+}, sessionCookieName: string): {
+    authRequired: true;
+    authenticated: true;
+    sessionCookieName: string;
+    scopes: AuthScope[];
+    tokenId: string;
+    source: 'session';
+    expiresAt: string;
+} {
+    return {
+        authRequired: true,
+        authenticated: true,
+        sessionCookieName,
+        scopes: [...session.scopes],
+        tokenId: session.tokenId,
+        source: 'session',
+        expiresAt: session.expiresAt,
+    };
 }
 
 function encodeSseEvent(event: WillClawEvent): string {
@@ -318,26 +421,103 @@ function buildScreenToolContext(
     };
 }
 
-export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
-    const app = new Hono();
+export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
+    Variables: AppVariables;
+}> {
+    const app = new Hono<{
+        Variables: AppVariables;
+    }>();
+    const authManager = new AuthManager(runtime.config);
 
     app.use('/api/*', async (c, next) => {
-        if (c.req.path === '/api/channels/feishu/events') {
+        const requiredScopes = getApiRequiredScopes(c.req.method, c.req.path);
+        if (requiredScopes === null) {
+            const limit = authManager.checkRateLimit(
+                c.req.raw,
+                getApiRateLimitBucket(c.req.path),
+            );
+            if (!limit.allowed) {
+                c.header('retry-after', String(limit.retryAfterSeconds));
+                return c.json(
+                    {
+                        error: 'Rate limit exceeded',
+                        retryAfterSeconds: limit.retryAfterSeconds,
+                    },
+                    429,
+                );
+            }
+
+            c.set('authIdentity', null);
             await next();
             return;
         }
 
-        if (!shouldRequireAuth(runtime.config)) {
-            await next();
-            return;
+        const authorization = authManager.authorize(
+            c.req.raw,
+            requiredScopes,
+            {
+                allowSession: true,
+            },
+        );
+        if (!authorization.ok) {
+            return c.json({ error: authErrorMessage(authorization) }, authorization.status);
         }
 
-        const authHeader = c.req.header('authorization');
-        if (authHeader !== `Bearer ${runtime.config.server.auth_token}`) {
-            return c.json({ error: 'Unauthorized' }, 401);
+        const limit = authManager.checkRateLimit(
+            c.req.raw,
+            getApiRateLimitBucket(c.req.path),
+            authorization.identity,
+        );
+        if (!limit.allowed) {
+            c.header('retry-after', String(limit.retryAfterSeconds));
+            return c.json(
+                {
+                    error: 'Rate limit exceeded',
+                    retryAfterSeconds: limit.retryAfterSeconds,
+                },
+                429,
+            );
         }
 
+        c.set('authIdentity', authorization.identity ?? null);
         await next();
+    });
+
+    app.get('/api/auth/status', (c) => {
+        return c.json(authManager.getStatus(c.req.raw));
+    });
+
+    app.post('/api/auth/session', async (c) => {
+        const payload = await parseOptionalAuthSessionBody(c.req.raw);
+        const authorization = authManager.authorize(c.req.raw, ['api:session'], {
+            allowSession: false,
+            ...(payload?.token ? { bodyToken: payload.token } : {}),
+        });
+        if (!authorization.ok) {
+            return c.json({ error: authErrorMessage(authorization) }, authorization.status);
+        }
+
+        const session = authManager.issueSession(c.req.raw, payload?.token);
+        if (!session) {
+            return c.json({ error: 'Unable to create session' }, 500);
+        }
+
+        c.header('set-cookie', authManager.buildSessionCookie(session, c.req.raw));
+        return c.json(
+            toSessionStatus(session, authManager.getSessionCookieName()),
+            201,
+        );
+    });
+
+    app.delete('/api/auth/session', (c) => {
+        authManager.destroySession(c.req.raw);
+        c.header('set-cookie', authManager.buildClearingCookie(c.req.raw));
+        return c.json({
+            authRequired: authManager.isEnabled(),
+            authenticated: false,
+            sessionCookieName: authManager.getSessionCookieName(),
+            scopes: [],
+        });
     });
 
     app.get('/health', (c) => {
@@ -1287,7 +1467,7 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono {
 
 export async function startWillClawHttpServer(
     runtime: WillClawRuntimeLike,
-    app: Hono,
+    app: Hono<{ Variables: AppVariables }>,
 ): Promise<WillClawHttpServer> {
     const server = serve(
         {

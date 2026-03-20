@@ -7,6 +7,7 @@ import type { Logger } from 'pino';
 import { z } from 'zod';
 
 import type { ChatMessage } from '../agents/types.js';
+import { AuthManager } from '../auth.js';
 import type { ChatService, ChatServiceResult } from '../chat-service.js';
 import { RunCancelledError } from '../chat-service.js';
 import type { WillClawConfig } from '../config.js';
@@ -65,12 +66,6 @@ interface AcpRunState {
         metadata?: Record<string, unknown>;
     };
     error?: string;
-}
-
-function shouldRequireAuth(config: WillClawConfig): boolean {
-    return Boolean(
-        config.server.auth_token && !config.server.auth_token.includes('${'),
-    );
 }
 
 function normalizeMessageContent(content: unknown): string {
@@ -166,16 +161,36 @@ function toAcpRunResult(result: ChatServiceResult) {
 export function createWillClawAcpApp(runtime: AcpServerRuntimeLike): Hono {
     const app = new Hono();
     const runs = new Map<string, AcpRunState>();
+    const authManager = new AuthManager(runtime.config);
 
     app.use('*', async (c, next) => {
-        if (!shouldRequireAuth(runtime.config)) {
-            await next();
-            return;
+        const authorization = authManager.authorize(c.req.raw, ['acp']);
+        if (!authorization.ok) {
+            return c.json(
+                {
+                    error:
+                        authorization.error === 'insufficient_scope'
+                            ? 'Forbidden'
+                            : 'Unauthorized',
+                },
+                authorization.status,
+            );
         }
 
-        const authHeader = c.req.header('authorization');
-        if (authHeader !== `Bearer ${runtime.config.server.auth_token}`) {
-            return c.json({ error: 'Unauthorized' }, 401);
+        const limit = authManager.checkRateLimit(
+            c.req.raw,
+            'acp',
+            authorization.identity,
+        );
+        if (!limit.allowed) {
+            c.header('retry-after', String(limit.retryAfterSeconds));
+            return c.json(
+                {
+                    error: 'Rate limit exceeded',
+                    retryAfterSeconds: limit.retryAfterSeconds,
+                },
+                429,
+            );
         }
 
         await next();

@@ -55,6 +55,16 @@ interface StatusPayload {
     agents: AgentAvailability[];
 }
 
+interface AuthStatusPayload {
+    authRequired: boolean;
+    authenticated: boolean;
+    sessionCookieName: string;
+    scopes: string[];
+    tokenId?: string;
+    source?: 'bearer' | 'session';
+    expiresAt?: string;
+}
+
 interface ChatSummary {
     channel: string;
     chatId: string;
@@ -574,7 +584,10 @@ function shouldTrackRecentEvent(eventType: string): boolean {
 }
 
 async function readJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-    const response = await fetch(input, init);
+    const response = await fetch(input, {
+        credentials: 'same-origin',
+        ...init,
+    });
     if (!response.ok) {
         let detail = response.statusText;
 
@@ -617,6 +630,9 @@ function MessageBody({ message }: { message: StoredMessage }) {
 }
 
 export function App() {
+    const [authStatus, setAuthStatus] = useState<AuthStatusPayload | null>(null);
+    const [authTokenInput, setAuthTokenInput] = useState('');
+    const [authBusy, setAuthBusy] = useState(false);
     const [status, setStatus] = useState<StatusPayload | null>(null);
     const [chats, setChats] = useState<ChatSummary[]>([]);
     const [selectedChatId, setSelectedChatId] = useState(DEFAULT_CHAT);
@@ -654,6 +670,18 @@ export function App() {
 
     const deferredSearchQuery = useDeferredValue(searchQuery.trim());
     const deferredComposerText = useDeferredValue(composerText.trim());
+
+    const authReady = authStatus !== null;
+    const authAllowsDashboard =
+        authReady && (!authStatus.authRequired || authStatus.authenticated);
+
+    async function loadAuthStatus(): Promise<AuthStatusPayload> {
+        const payload = await readJson<AuthStatusPayload>('/api/auth/status');
+        startTransition(() => {
+            setAuthStatus(payload);
+        });
+        return payload;
+    }
 
     async function loadStatusPanel(): Promise<void> {
         const payload = await readJson<StatusPayload>('/api/status');
@@ -816,19 +844,127 @@ export function App() {
         }
     }
 
+    async function handleAuthLogin(): Promise<void> {
+        const token = authTokenInput.trim();
+        if (!token) {
+            setDashboardError('Enter a bearer token to unlock the shell.');
+            return;
+        }
+
+        setAuthBusy(true);
+        setDashboardError('');
+
+        try {
+            const payload = await readJson<AuthStatusPayload>('/api/auth/session', {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                },
+                body: JSON.stringify({ token }),
+            });
+            startTransition(() => {
+                setAuthStatus(payload);
+                setAuthTokenInput('');
+                setRealtimeConnected(false);
+                setRecentEvents([]);
+                setActiveRuns([]);
+            });
+            await Promise.all([
+                loadShellPanels(),
+                loadMessagesPanel(selectedChatId),
+                loadToolLogsPanel(selectedChatId),
+            ]);
+        } catch (error) {
+            setDashboardError(
+                error instanceof Error
+                    ? error.message
+                    : 'Login failed with the provided token.',
+            );
+        } finally {
+            setAuthBusy(false);
+        }
+    }
+
+    async function handleAuthLogout(): Promise<void> {
+        setAuthBusy(true);
+
+        try {
+            const payload = await readJson<AuthStatusPayload>('/api/auth/session', {
+                method: 'DELETE',
+            });
+            startTransition(() => {
+                setAuthStatus(payload);
+                setRealtimeConnected(false);
+                setRecentEvents([]);
+                setActiveRuns([]);
+                setMessages([]);
+                setToolLogs([]);
+            });
+        } catch (error) {
+            setDashboardError(
+                error instanceof Error ? error.message : 'Logout failed.',
+            );
+        } finally {
+            setAuthBusy(false);
+        }
+    }
+
     useEffect(() => {
-        void loadShellPanels();
+        let cancelled = false;
+
+        const boot = async () => {
+            try {
+                const payload = await loadAuthStatus();
+                if (
+                    cancelled ||
+                    (payload.authRequired && !payload.authenticated)
+                ) {
+                    return;
+                }
+
+                await loadShellPanels();
+            } catch (error) {
+                if (!cancelled) {
+                    setDashboardError(
+                        error instanceof Error
+                            ? error.message
+                            : 'Failed to load shell data.',
+                    );
+                }
+            }
+        };
+
+        void boot();
 
         const interval = window.setInterval(() => {
-            void loadShellPanels();
+            void loadAuthStatus()
+                .then((payload) => {
+                    if (!payload.authRequired || payload.authenticated) {
+                        return loadShellPanels();
+                    }
+
+                    return undefined;
+                })
+                .catch((error) => {
+                    setDashboardError(
+                        error instanceof Error
+                            ? error.message
+                            : 'Failed to load shell data.',
+                    );
+                });
         }, 30_000);
 
         return () => {
+            cancelled = true;
             window.clearInterval(interval);
         };
     }, []);
 
     useEffect(() => {
+        if (!authAllowsDashboard) {
+            return;
+        }
+
         void loadMessagesPanel(selectedChatId);
         void loadToolLogsPanel(selectedChatId);
 
@@ -840,9 +976,14 @@ export function App() {
         return () => {
             window.clearInterval(interval);
         };
-    }, [selectedChatId]);
+    }, [authAllowsDashboard, selectedChatId]);
 
     useEffect(() => {
+        if (!authAllowsDashboard) {
+            setRealtimeConnected(false);
+            return;
+        }
+
         const source = new EventSource('/api/events');
         const eventTypes = [
             'ready',
@@ -1161,16 +1302,25 @@ export function App() {
                 source.removeEventListener(eventType, handleEvent);
             }
             source.close();
+            setRealtimeConnected(false);
         };
-    }, [selectedChatId, draftChatId]);
+    }, [authAllowsDashboard, selectedChatId, draftChatId]);
 
     useEffect(() => {
+        if (!authAllowsDashboard) {
+            return;
+        }
+
         void loadSearch(deferredSearchQuery);
-    }, [deferredSearchQuery, searchScope]);
+    }, [authAllowsDashboard, deferredSearchQuery, searchScope]);
 
     useEffect(() => {
+        if (!authAllowsDashboard) {
+            return;
+        }
+
         void loadRoutePreview(deferredComposerText);
-    }, [deferredComposerText]);
+    }, [authAllowsDashboard, deferredComposerText]);
 
     async function handleSend(): Promise<void> {
         const text = composerText.trim();
@@ -1379,6 +1529,65 @@ export function App() {
         );
     }
 
+    if (!authReady) {
+        return (
+            <main className="auth-shell">
+                <section className="panel auth-card">
+                    <div className="eyebrow">WillClaw Shell</div>
+                    <h1>Loading shell access…</h1>
+                    <p>
+                        Checking whether this workspace requires an authenticated
+                        session before the dashboard boots.
+                    </p>
+                </section>
+            </main>
+        );
+    }
+
+    if (authStatus.authRequired && !authStatus.authenticated) {
+        return (
+            <main className="auth-shell">
+                <section className="panel auth-card">
+                    <div className="eyebrow">WillClaw Shell</div>
+                    <h1>Unlock the shell</h1>
+                    <p>
+                        This workspace is protected. Paste a bearer token with
+                        `api:session` access to open the Web UI.
+                    </p>
+                    <label className="auth-field">
+                        <span>Bearer token</span>
+                        <input
+                            autoComplete="off"
+                            onChange={(event) => setAuthTokenInput(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    void handleAuthLogin();
+                                }
+                            }}
+                            placeholder="wc_xxx..."
+                            type="password"
+                            value={authTokenInput}
+                        />
+                    </label>
+                    <div className="auth-actions">
+                        <button
+                            className="btn"
+                            disabled={authBusy}
+                            onClick={() => {
+                                void handleAuthLogin();
+                            }}
+                            type="button"
+                        >
+                            {authBusy ? 'Unlocking…' : 'Unlock'}
+                        </button>
+                    </div>
+                    {dashboardError ? <p className="error">{dashboardError}</p> : null}
+                </section>
+            </main>
+        );
+    }
+
     const availableAgents = status?.agents.filter((agent) => agent.available) ?? [];
     const totalTasks =
         (cronState?.heartbeat ? 1 : 0) +
@@ -1466,6 +1675,22 @@ export function App() {
                         <label>Tasks</label>
                         <strong>{totalTasks}</strong>
                     </div>
+                    {authStatus.authRequired ? (
+                        <div className="status-card status-card--auth">
+                            <label>Auth</label>
+                            <strong>{authStatus.tokenId ?? 'session'}</strong>
+                            <button
+                                className="quiet-btn status-card__action"
+                                disabled={authBusy}
+                                onClick={() => {
+                                    void handleAuthLogout();
+                                }}
+                                type="button"
+                            >
+                                {authBusy ? 'Working…' : 'Log out'}
+                            </button>
+                        </div>
+                    ) : null}
                 </div>
             </header>
 
