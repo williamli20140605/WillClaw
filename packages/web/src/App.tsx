@@ -1,719 +1,67 @@
 import { startTransition, useDeferredValue, useEffect, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
-type MessageRole = 'user' | 'assistant' | 'system';
-type SchedulerResult = 'completed' | 'failed' | 'suppressed';
-type SearchScope = 'all' | 'messages' | 'files' | 'memory' | 'daily_note';
-type InspectorTab = 'search' | 'activity' | 'runtime';
-
-const AUTH_SCOPE_OPTIONS = [
-    'api:read',
-    'api:write',
-    'api:tools',
-    'api:events',
-    'api:session',
-    'acp',
-] as const;
-
-interface AgentAvailability {
-    name: string;
-    type: string;
-    enabled: boolean;
-    available: boolean;
-    toolPolicies: Record<string, string>;
-}
-
-interface HostTool {
-    name: string;
-    label: string;
-    category: string;
-    globalEnabled: boolean;
-    preferredProvider?: string;
-    fallbackProvider?: string;
-    mode?: string;
-}
-
-interface ProviderActionHealth {
-    action: string;
-    available: boolean;
-    healthy: boolean;
-    detail: string;
-}
-
-interface ProviderHealthEntry {
-    tool: 'browser' | 'screen';
-    provider: string;
-    configured: boolean;
-    available: boolean;
-    healthy: boolean;
-    detail: string;
-    installHint?: string;
-    actions: ProviderActionHealth[];
-}
-
-interface PairingInvite {
-    id: string;
-    kind: 'web' | 'channel';
-    codePreview: string;
-    createdAt: string;
-    expiresAt: string;
-    maxUses: number;
-    usedCount: number;
-    scopes: string[];
-    channels: Array<'telegram' | 'discord' | 'feishu'>;
-    createdBy: string;
-    revokedAt?: string;
-    active: boolean;
-}
-
-interface PairingGrant {
-    id: string;
-    channel: 'telegram' | 'discord' | 'feishu';
-    userId: string;
-    inviteId: string;
-    createdAt: string;
-}
-
-interface PairingPayload {
-    enabled: boolean;
-    invites: PairingInvite[];
-    grants: PairingGrant[];
-}
-
-interface CreatedPairingInvite {
-    id: string;
-    code: string;
-    kind: 'web' | 'channel';
-    createdAt: string;
-    expiresAt: string;
-    maxUses: number;
-    scopes: string[];
-    channels: Array<'telegram' | 'discord' | 'feishu'>;
-}
-
-interface StatusPayload {
-    name: string;
-    homeDir: string;
-    configPath: string;
-    server: {
-        host: string;
-        port: number;
-    };
-    hostTools: HostTool[];
-    agents: AgentAvailability[];
-}
-
-interface AuthStatusPayload {
-    authRequired: boolean;
-    authenticated: boolean;
-    sessionCookieName: string;
-    scopes: string[];
-    pairingEnabled?: boolean;
-    tokenId?: string;
-    source?: 'bearer' | 'session';
-    expiresAt?: string;
-}
-
-interface AuthTokenSummary {
-    id: string;
-    scopes: string[];
-    legacy: boolean;
-    source: 'configured' | 'managed';
-    active: boolean;
-    tokenPreview?: string;
-    createdAt?: string;
-    revokedAt?: string;
-}
-
-interface AuthSessionSummary {
-    id: string;
-    tokenId: string;
-    scopes: string[];
-    createdAt: string;
-    expiresAt: string;
-}
-
-interface CreatedAuthToken {
-    id: string;
-    token: string;
-    scopes: string[];
-    createdAt: string;
-    tokenPreview: string;
-}
-
-interface ChatSummary {
-    channel: string;
-    chatId: string;
-    updatedAt: string;
-    messageCount: number;
-    preview: string;
-    role: MessageRole;
-    agent?: string;
-    runId?: string;
-}
-
-interface StoredMessage {
-    id: number;
-    timestamp: string;
-    channel: string;
-    chatId: string;
-    userId: string;
-    role: MessageRole;
-    content: string;
-    agent?: string;
-    durationMs?: number;
-    metadata?: Record<string, unknown>;
-    status: 'active' | 'revoked';
-    revokedAt?: string;
-    editOf?: number;
-    runId?: string;
-}
-
-interface ChatResult {
-    runId: string;
-    agent: string;
-    content: string;
-    duration: number;
-    channel: string;
-    chatId: string;
-    userMessageId: number;
-    assistantMessageId: number;
-}
-
-interface SearchMessageResult {
-    id: number;
-    timestamp: string;
-    channel: string;
-    chatId: string;
-    role: MessageRole;
-    content: string;
-    snippet: string;
-}
-
-interface SearchFileResult {
-    id: number;
-    filepath: string;
-    fileType: string;
-    snippet: string;
-    updatedAt: string;
-    content: string;
-}
-
-interface MemorySearchResult {
-    messages: SearchMessageResult[];
-    files: SearchFileResult[];
-}
-
-interface ToolLogEntry {
-    id: number;
-    timestamp: string;
-    tool: string;
-    action: string;
-    agent: string;
-    chatId?: string;
-    input: string;
-    output?: string;
-    exitCode?: number;
-    durationMs: number;
-    success: boolean;
-    error?: string;
-}
-
-interface SchedulerTaskStatus {
-    id: string;
-    kind: 'heartbeat' | 'cron' | 'maintenance';
-    name: string;
-    schedule: string;
-    running: boolean;
-    lastRunAt?: string;
-    lastResult?: SchedulerResult;
-    lastError?: string;
-}
-
-interface CronPayload {
-    heartbeat: SchedulerTaskStatus | null;
-    cron: SchedulerTaskStatus[];
-    maintenance: SchedulerTaskStatus[];
-}
-
-interface QueueRunSummary {
-    runId: string;
-    channel: string;
-    chatId: string;
-    userId: string;
-    userMessageId: number;
-    status: 'queued' | 'running';
-    position: number;
-    ahead: number;
-}
-
-interface QueueSummary {
-    channel: string;
-    chatId: string;
-    total: number;
-    queued: number;
-    running: number;
-    runs: QueueRunSummary[];
-}
-
-interface RealtimeEvent {
-    id: string;
-    type: string;
-    timestamp: string;
-    payload: Record<string, unknown>;
-}
-
-interface ActiveRun {
-    runId: string;
-    channel: string;
-    chatId: string;
-    startedAt: string;
-    status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-    phase: string;
-    agent?: string;
-    executionMode?: string;
-    explicitAgent?: string;
-    fallbackChain?: string[];
-    reason?: string;
-    latestError?: string;
-    streamContent?: string;
-    streamParser?: string;
-    streamUpdatedAt?: string;
-}
-
-interface RoutePlan {
-    text: string;
-    strippedText: string;
-    selectedAgent: string;
-    explicitAgent?: string;
-    fallbackChain: string[];
-    allowFallback: boolean;
-    reason:
-        | 'explicit'
-        | 'mode_hint'
-        | 'hosted_tools'
-        | 'long_context'
-        | 'read_only_coding'
-        | 'coding'
-        | 'simple_qa';
-    looksLikeCoding: boolean;
-    looksLikeLongContext: boolean;
-    looksLikeMutating: boolean;
-    looksLikeHostedTools?: boolean;
-    modeHint?: 'hosted_tools' | 'long_context' | 'coding' | 'simple_qa';
-}
-
-interface AssistantRouteMetadata {
-    selectedAgent?: string;
-    explicitAgent?: string;
-    fallbackChain: string[];
-    reason?: string;
-    attemptedAgents: string[];
-}
-
-const WEB_CHANNEL = 'web';
-const DEFAULT_CHAT = 'default';
-const WEB_USER = 'web-ui';
-
-function collapseWhitespace(value: string): string {
-    return value.replace(/\s+/g, ' ').trim();
-}
-
-function stripMarkdown(value: string): string {
-    return collapseWhitespace(value.replace(/[`*_>#~-]+/g, ' '));
-}
-
-function summarizeText(value: string, limit = 92): string {
-    const normalized = stripMarkdown(value);
-    if (normalized.length <= limit) {
-        return normalized;
-    }
-
-    return `${normalized.slice(0, Math.max(0, limit - 1)).trim()}…`;
-}
-
-function createDraftChatId(): string {
-    return `chat-${Date.now().toString(36)}`;
-}
-
-function formatTimestamp(value?: string): string {
-    if (!value) {
-        return 'Pending';
-    }
-
-    return new Date(value).toLocaleString();
-}
-
-function formatRelativeTime(value?: string): string {
-    if (!value) {
-        return 'new';
-    }
-
-    const deltaMs = new Date(value).getTime() - Date.now();
-    const deltaMinutes = Math.round(deltaMs / 60_000);
-    const formatter = new Intl.RelativeTimeFormat(undefined, {
-        numeric: 'auto',
-    });
-
-    if (Math.abs(deltaMinutes) < 1) {
-        return 'just now';
-    }
-
-    if (Math.abs(deltaMinutes) < 60) {
-        return formatter.format(deltaMinutes, 'minute');
-    }
-
-    const deltaHours = Math.round(deltaMinutes / 60);
-    if (Math.abs(deltaHours) < 24) {
-        return formatter.format(deltaHours, 'hour');
-    }
-
-    const deltaDays = Math.round(deltaHours / 24);
-    return formatter.format(deltaDays, 'day');
-}
-
-function formatDuration(value?: number): string {
-    if (!value) {
-        return 'n/a';
-    }
-
-    if (value >= 1000) {
-        return `${(value / 1000).toFixed(1)}s`;
-    }
-
-    return `${value}ms`;
-}
-
-function formatStructuredResult(value: unknown): string {
-    if (typeof value === 'string') {
-        return value;
-    }
-
-    return JSON.stringify(value, null, 2);
-}
-
-function messageLabel(message: StoredMessage): string {
-    if (message.role === 'assistant') {
-        return message.agent ? `Assistant · ${message.agent}` : 'Assistant';
-    }
-
-    if (message.role === 'system') {
-        return 'System';
-    }
-
-    return 'You';
-}
-
-function buildEditedSuccessorMap(messages: StoredMessage[]): Map<number, StoredMessage> {
-    const map = new Map<number, StoredMessage>();
-
-    for (const message of messages) {
-        if (message.editOf != null) {
-            map.set(message.editOf, message);
-        }
-    }
-
-    return map;
-}
-
-function describeMessageLineage(
-    message: StoredMessage,
-    editedSuccessor: StoredMessage | null,
-): string | null {
-    if (message.editOf != null && editedSuccessor) {
-        return `This message replaces #${message.editOf} and was later superseded by #${editedSuccessor.id}.`;
-    }
-
-    if (message.editOf != null) {
-        return `This message replaces #${message.editOf}.`;
-    }
-
-    if (editedSuccessor) {
-        return `This message was superseded by edited message #${editedSuccessor.id}.`;
-    }
-
-    if (message.status === 'revoked') {
-        return 'This message was revoked.';
-    }
-
-    return null;
-}
-
-function conversationTitle(chat: ChatSummary | null, fallbackChatId: string): string {
-    const preview = chat ? summarizeText(chat.preview, 42) : '';
-    if (preview) {
-        return preview;
-    }
-
-    if (fallbackChatId === DEFAULT_CHAT) {
-        return 'General shell';
-    }
-
-    return `Conversation ${fallbackChatId.slice(0, 8)}`;
-}
-
-function conversationSubtitle(chat: ChatSummary | null): string {
-    if (!chat) {
-        return 'Fresh conversation. Route a prompt to any coding agent shell-side.';
-    }
-
-    const preview = summarizeText(chat.preview, 120);
-    if (preview) {
-        return preview;
-    }
-
-    return `${chat.messageCount} messages in this thread`;
-}
-
-function toolPolicySummary(agent: AgentAvailability): string {
-    return Object.entries(agent.toolPolicies)
-        .map(([tool, mode]) => `${tool}:${mode}`)
-        .join(' · ');
-}
-
-function taskTone(result?: SchedulerResult): 'accent' | 'teal' | 'danger' {
-    if (result === 'completed') {
-        return 'teal';
-    }
-
-    if (result === 'failed') {
-        return 'danger';
-    }
-
-    return 'accent';
-}
-
-function readPayloadString(
-    payload: Record<string, unknown>,
-    key: string,
-): string | undefined {
-    const value = payload[key];
-    return typeof value === 'string' ? value : undefined;
-}
-
-function readPayloadStringArray(
-    payload: Record<string, unknown>,
-    key: string,
-): string[] | undefined {
-    const value = payload[key];
-    if (!Array.isArray(value)) {
-        return undefined;
-    }
-
-    return value.filter((entry): entry is string => typeof entry === 'string');
-}
-
-function cleanSnippet(value: string): string {
-    return collapseWhitespace(value.replace(/\[|\]/g, ''));
-}
-
-function upsertActiveRun(current: ActiveRun[], incoming: ActiveRun): ActiveRun[] {
-    const next = current.filter((entry) => entry.runId !== incoming.runId);
-    next.unshift(incoming);
-    return next.slice(0, 8);
-}
-
-function isSearchCommand(text: string): boolean {
-    return text.trim().startsWith('/search');
-}
-
-function routeReasonLabel(reason?: RoutePlan['reason'] | string): string {
-    switch (reason) {
-        case 'explicit':
-            return 'explicit target';
-        case 'long_context':
-            return 'long context';
-        case 'coding':
-            return 'coding intent';
-        case 'simple_qa':
-            return 'simple qa';
-        default:
-            return 'route';
-    }
-}
-
-function extractAssistantRouteMetadata(
-    message: StoredMessage,
-): AssistantRouteMetadata | null {
-    if (!message.metadata) {
-        return null;
-    }
-
-    const attemptedAgents = Array.isArray(message.metadata.attemptedAgents)
-        ? message.metadata.attemptedAgents.filter(
-            (entry): entry is string => typeof entry === 'string',
-        )
-        : [];
-    const routeValue = message.metadata.route;
-    const route =
-        routeValue && typeof routeValue === 'object' && !Array.isArray(routeValue)
-            ? (routeValue as Record<string, unknown>)
-            : null;
-
-    if (!route && attemptedAgents.length === 0) {
-        return null;
-    }
-
-    return {
-        ...(route && typeof route.selectedAgent === 'string'
-            ? { selectedAgent: route.selectedAgent }
-            : {}),
-        ...(route && typeof route.explicitAgent === 'string'
-            ? { explicitAgent: route.explicitAgent }
-            : {}),
-        fallbackChain:
-            route && Array.isArray(route.fallbackChain)
-                ? route.fallbackChain.filter(
-                    (entry): entry is string => typeof entry === 'string',
-                )
-                : [],
-        ...(route && typeof route.reason === 'string'
-            ? { reason: route.reason }
-            : {}),
-        attemptedAgents,
-    };
-}
-
-function describeRealtimeEvent(event: RealtimeEvent): {
-    title: string;
-    detail: string;
-} {
-    switch (event.type) {
-        case 'chat.run.stream.delta': {
-            const agent = readPayloadString(event.payload, 'agent');
-            const parser = readPayloadString(event.payload, 'parser');
-            return {
-                title: `Streaming${agent ? ` · ${agent}` : ''}`,
-                detail: parser ? `parser ${parser}` : 'Live output update',
-            };
-        }
-        case 'chat.route.selected': {
-            const selectedAgent = readPayloadString(event.payload, 'selectedAgent');
-            const reason = readPayloadString(event.payload, 'reason');
-            return {
-                title: `Route selected${selectedAgent ? ` · ${selectedAgent}` : ''}`,
-                detail: routeReasonLabel(reason),
-            };
-        }
-        case 'chat.agent.started': {
-            const agent = readPayloadString(event.payload, 'agent');
-            return {
-                title: `Agent started${agent ? ` · ${agent}` : ''}`,
-                detail: 'Execution launched',
-            };
-        }
-        case 'chat.agent.failed': {
-            const agent = readPayloadString(event.payload, 'agent');
-            return {
-                title: `Agent failed${agent ? ` · ${agent}` : ''}`,
-                detail: readPayloadString(event.payload, 'error') ?? 'Attempt failed',
-            };
-        }
-        case 'chat.agent.skipped': {
-            const agent = readPayloadString(event.payload, 'agent');
-            return {
-                title: `Agent skipped${agent ? ` · ${agent}` : ''}`,
-                detail: readPayloadString(event.payload, 'reason') ?? 'Skipped',
-            };
-        }
-        case 'chat.run.started':
-            return {
-                title: 'Run started',
-                detail: readPayloadString(event.payload, 'executionMode') ?? 'foreground',
-            };
-        case 'chat.run.queued': {
-            const ahead = event.payload.ahead;
-            return {
-                title: 'Run queued',
-                detail:
-                    typeof ahead === 'number' && Number.isFinite(ahead)
-                        ? `${ahead} ahead`
-                        : 'Waiting for earlier work',
-            };
-        }
-        case 'chat.run.completed':
-            return {
-                title: 'Run completed',
-                detail: readPayloadString(event.payload, 'agent') ?? 'completed',
-            };
-        case 'chat.run.failed':
-            return {
-                title: 'Run failed',
-                detail: readPayloadString(event.payload, 'error') ?? 'Unknown failure',
-            };
-        case 'chat.run.cancelled':
-            return {
-                title: 'Run cancelled',
-                detail: readPayloadString(event.payload, 'error') ?? 'Cancelled',
-            };
-        case 'message.created':
-            return {
-                title: 'Message saved',
-                detail: readPayloadString(event.payload, 'role') ?? 'message',
-            };
-        case 'message.revoked':
-            return {
-                title: 'Message revoked',
-                detail: readPayloadString(event.payload, 'subtype') ?? 'revoked',
-            };
-        default:
-            return {
-                title: event.type,
-                detail: formatTimestamp(event.timestamp),
-            };
-    }
-}
-
-function shouldTrackRecentEvent(eventType: string): boolean {
-    return eventType !== 'chat.run.stream.delta';
-}
-
-async function readJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-    const response = await fetch(input, {
-        credentials: 'same-origin',
-        ...init,
-    });
-    if (!response.ok) {
-        let detail = response.statusText;
-
-        try {
-            const payload = (await response.json()) as { error?: string };
-            if (payload.error) {
-                detail = payload.error;
-            }
-        } catch {
-            // ignore parse failures
-        }
-
-        throw new Error(detail);
-    }
-
-    return (await response.json()) as T;
-}
-
-function MessageBody({ message }: { message: StoredMessage }) {
-    if (message.role === 'user') {
-        return (
-            <div className="message-content message-content--plain">
-                {message.content}
-            </div>
-        );
-    }
-
-    return (
-        <div className="message-content message-content--markdown">
-            <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                    a: ({ ...props }) => <a {...props} rel="noreferrer" target="_blank" />,
-                }}
-            >
-                {message.content}
-            </ReactMarkdown>
-        </div>
-    );
-}
+import {
+    AUTH_SCOPE_OPTIONS,
+    DEFAULT_CHAT,
+    WEB_CHANNEL,
+    WEB_USER,
+    type ActiveRun,
+    type AgentAvailability,
+    type AssistantRouteMetadata,
+    type AuthSessionSummary,
+    type AuthStatusPayload,
+    type AuthTokenSummary,
+    type ChatResult,
+    type ChatSummary,
+    type CreatedAuthToken,
+    type CreatedPairingInvite,
+    type CronPayload,
+    type InspectorTab,
+    type MemorySearchResult,
+    type PairingGrant,
+    type PairingInvite,
+    type PairingPayload,
+    type ProviderHealthEntry,
+    type QueueSummary,
+    type RealtimeEvent,
+    type RoutePlan,
+    type SearchScope,
+    type StatusPayload,
+    type StoredMessage,
+    type ToolLogEntry,
+} from './ui-types.js';
+import {
+    MessageBody,
+    buildEditedSuccessorMap,
+    cleanSnippet,
+    conversationSubtitle,
+    conversationTitle,
+    createDraftChatId,
+    describeRealtimeEvent,
+    extractAssistantRouteMetadata,
+    formatDuration,
+    formatRelativeTime,
+    formatStructuredResult,
+    formatTimestamp,
+    isSearchCommand,
+    readJson,
+    readPayloadString,
+    readPayloadStringArray,
+    routeReasonLabel,
+    shouldTrackRecentEvent,
+    summarizeText,
+    taskTone,
+    toolPolicySummary,
+    upsertActiveRun,
+} from './ui-helpers.js';
+import {
+    AuthLoadingScreen,
+    AuthUnlockScreen,
+} from './components/AuthShell.js';
+import { ConversationHeader } from './components/ConversationHeader.js';
+import { ConversationSidebar } from './components/ConversationSidebar.js';
+import { ConversationStream } from './components/ConversationStream.js';
+import { ShellTopBar } from './components/ShellTopBar.js';
 
 export function App() {
     const [authStatus, setAuthStatus] = useState<AuthStatusPayload | null>(null);
@@ -1895,71 +1243,21 @@ export function App() {
     }
 
     if (!authReady) {
-        return (
-            <main className="auth-shell">
-                <section className="panel auth-card">
-                    <div className="eyebrow">WillClaw Shell</div>
-                    <h1>Loading shell access…</h1>
-                    <p>
-                        Checking whether this workspace requires an authenticated
-                        session before the dashboard boots.
-                    </p>
-                </section>
-            </main>
-        );
+        return <AuthLoadingScreen />;
     }
 
     if (authStatus.authRequired && !authStatus.authenticated) {
         return (
-            <main className="auth-shell">
-                <section className="panel auth-card">
-                    <div className="eyebrow">WillClaw Shell</div>
-                    <h1>Unlock the shell</h1>
-                    <p>
-                        This workspace is protected. Paste a bearer token with
-                        `api:session` access
-                        {authStatus.pairingEnabled
-                            ? ' or a valid pairing code'
-                            : ''}
-                        {' '}to open the Web UI.
-                    </p>
-                    <label className="auth-field">
-                        <span>
-                            {authStatus.pairingEnabled
-                                ? 'Bearer token or pairing code'
-                                : 'Bearer token'}
-                        </span>
-                        <input
-                            autoComplete="off"
-                            onChange={(event) => setAuthTokenInput(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    void handleAuthLogin();
-                                }
-                            }}
-                            placeholder={
-                                authStatus.pairingEnabled ? 'wc_xxx... or wc_pair_...' : 'wc_xxx...'
-                            }
-                            type="password"
-                            value={authTokenInput}
-                        />
-                    </label>
-                    <div className="auth-actions">
-                        <button
-                            className="btn"
-                            disabled={authBusy}
-                            onClick={() => {
-                                void handleAuthLogin();
-                            }}
-                            type="button"
-                        >
-                            {authBusy ? 'Unlocking…' : 'Unlock'}
-                        </button>
-                    </div>
-                    {dashboardError ? <p className="error">{dashboardError}</p> : null}
-                </section>
-            </main>
+            <AuthUnlockScreen
+                authBusy={authBusy}
+                authStatus={authStatus}
+                authTokenInput={authTokenInput}
+                dashboardError={dashboardError}
+                onAuthTokenInputChange={setAuthTokenInput}
+                onLogin={() => {
+                    void handleAuthLogin();
+                }}
+            />
         );
     }
 
@@ -2020,263 +1318,56 @@ export function App() {
 
     return (
         <main className="app-shell">
-            <header className="panel topbar">
-                <div className="brand">
-                    <div className="brand-mark">WC</div>
-                    <div className="brand-copy">
-                        <div className="eyebrow">WillClaw Shell</div>
-                        <h1>One conversation. Many coding agents.</h1>
-                        <p>
-                            Route chats, memory, tools, and background work from
-                            one shell-first interface instead of living inside a
-                            single agent session.
-                        </p>
-                    </div>
-                </div>
-                <div className="status-cluster">
-                    <div className="status-card">
-                        <label>Realtime</label>
-                        <strong>{realtimeConnected ? 'Live' : 'Retrying'}</strong>
-                    </div>
-                    <div className="status-card">
-                        <label>Agents</label>
-                        <strong>{availableAgents.length}</strong>
-                    </div>
-                    <div className="status-card">
-                        <label>Threads</label>
-                        <strong>{chatList.length}</strong>
-                    </div>
-                    <div className="status-card">
-                        <label>Tasks</label>
-                        <strong>{totalTasks}</strong>
-                    </div>
-                    {authStatus.authRequired ? (
-                        <div className="status-card status-card--auth">
-                            <label>Auth</label>
-                            <strong>{authStatus.tokenId ?? 'session'}</strong>
-                            <button
-                                className="quiet-btn status-card__action"
-                                disabled={authBusy}
-                                onClick={() => {
-                                    void handleAuthLogout();
-                                }}
-                                type="button"
-                            >
-                                {authBusy ? 'Working…' : 'Log out'}
-                            </button>
-                        </div>
-                    ) : null}
-                </div>
-            </header>
+            <ShellTopBar
+                authBusy={authBusy}
+                authRequired={authStatus.authRequired}
+                availableAgentCount={availableAgents.length}
+                realtimeConnected={realtimeConnected}
+                taskCount={totalTasks}
+                threadCount={chatList.length}
+                tokenId={authStatus.tokenId}
+                onLogout={() => {
+                    void handleAuthLogout();
+                }}
+            />
 
             <div className="workspace-grid">
-                <aside className="panel sidebar">
-                    <div className="sidebar-section">
-                        <div className="section-header">
-                            <h2>Conversations</h2>
-                            <span>{chatList.length} tracked</span>
-                        </div>
-                        <button
-                            className="btn btn-block"
-                            onClick={handleCreateChat}
-                            type="button"
-                        >
-                            New conversation
-                        </button>
-                        <div className="quick-grid">
-                            <button
-                                className="quick-btn"
-                                onClick={() => setComposerText('/search ')}
-                                type="button"
-                            >
-                                Start search
-                            </button>
-                            {availableAgents.slice(0, 3).map((agent) => (
-                                <button
-                                    className="quick-btn"
-                                    key={agent.name}
-                                    onClick={() =>
-                                        setComposerText((current) =>
-                                            current.startsWith(`@${agent.name}`)
-                                                ? current
-                                                : `@${agent.name} ${current}`.trim(),
-                                        )
-                                    }
-                                    type="button"
-                                >
-                                    @{agent.name}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="sidebar-section sidebar-section--scroll">
-                        {chatList.length === 0 ? (
-                            <div className="empty">
-                                No web conversations yet. Start a new thread and route
-                                it through any agent.
-                            </div>
-                        ) : (
-                            <div className="session-list">
-                                {chatList.map((chat) => {
-                                    const chatQueue = queueSummaryByChatId.get(chat.chatId);
-
-                                    return (
-                                    <button
-                                        className="session-card"
-                                        data-active={chat.chatId === selectedChatId}
-                                        key={chat.chatId}
-                                        onClick={() => handleSelectChat(chat.chatId)}
-                                        type="button"
-                                    >
-                                        <div className="session-card__header">
-                                            <strong>
-                                                {conversationTitle(chat, chat.chatId)}
-                                            </strong>
-                                            <span>{formatRelativeTime(chat.updatedAt)}</span>
-                                        </div>
-                                        <p>{conversationSubtitle(chat)}</p>
-                                        <div className="chip-row">
-                                            <span className="chip">
-                                                {chat.messageCount} msgs
-                                            </span>
-                                            <span
-                                                className="chip"
-                                                data-tone={
-                                                    chat.role === 'assistant'
-                                                        ? 'teal'
-                                                        : chat.role === 'system'
-                                                            ? 'accent'
-                                                            : undefined
-                                                }
-                                            >
-                                                {chat.role}
-                                            </span>
-                                            {chat.agent ? (
-                                                <span className="chip">{chat.agent}</span>
-                                            ) : null}
-                                            {chatQueue?.queued ? (
-                                                <span className="chip" data-tone="accent">
-                                                    {chatQueue.queued} queued
-                                                </span>
-                                            ) : null}
-                                            {chatQueue?.running ? (
-                                                <span className="chip" data-tone="teal">
-                                                    {chatQueue.running} running
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                    </button>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="sidebar-section">
-                        <div className="section-header">
-                            <h3>Shell View</h3>
-                            <span>{status?.server.host ?? '127.0.0.1'}</span>
-                        </div>
-                        <div className="metric-grid">
-                            <article className="metric-card">
-                                <label>Selected</label>
-                                <strong>{selectedChatId.slice(0, 12)}</strong>
-                                <p>{conversationTitle(selectedChat, selectedChatId)}</p>
-                            </article>
-                            <article className="metric-card">
-                                <label>Run state</label>
-                                <strong>
-                                    {currentActiveRun
-                                        ? currentActiveRun.status === 'queued'
-                                            ? 'Queued'
-                                            : 'Running'
-                                        : selectedQueueLeadRun
-                                            ? selectedQueueLeadRun.status === 'running'
-                                                ? 'Running'
-                                                : 'Queued'
-                                        : 'Idle'}
-                                </strong>
-                                <p>
-                                    {currentActiveRun
-                                        ? currentActiveRun.status === 'queued'
-                                            ? `Waiting ${formatRelativeTime(currentActiveRun.startedAt)}`
-                                            : `Started ${formatRelativeTime(currentActiveRun.startedAt)}`
-                                        : selectedQueueLeadRun
-                                            ? selectedQueueLeadRun.status === 'running'
-                                                ? 'A queued run is already executing for this thread.'
-                                                : `${selectedQueueLeadRun.ahead} run(s) ahead in this thread.`
-                                        : 'No active run in this chat'}
-                                </p>
-                            </article>
-                            <article className="metric-card">
-                                <label>Routing</label>
-                                <strong>
-                                    {currentActiveRun?.agent ??
-                                        latestAssistantRoute?.selectedAgent ??
-                                        routePreview?.selectedAgent ??
-                                        'shell'}
-                                </strong>
-                                <p>
-                                    {currentActiveRun?.reason
-                                        ? routeReasonLabel(currentActiveRun.reason)
-                                        : latestAssistantRoute?.reason
-                                            ? routeReasonLabel(
-                                                latestAssistantRoute.reason,
-                                            )
-                                            : routePreview
-                                                ? routeReasonLabel(
-                                                    routePreview.reason,
-                                                )
-                                                : 'Waiting for next prompt'}
-                                </p>
-                            </article>
-                        </div>
-                    </div>
-                </aside>
+                <ConversationSidebar
+                    availableAgents={availableAgents}
+                    chatList={chatList}
+                    currentActiveRun={currentActiveRun}
+                    latestAssistantRoute={latestAssistantRoute}
+                    onCreateChat={handleCreateChat}
+                    onPrefixAgent={(agentName) =>
+                        setComposerText((current) =>
+                            current.startsWith(`@${agentName}`)
+                                ? current
+                                : `@${agentName} ${current}`.trim(),
+                        )
+                    }
+                    onSelectChat={handleSelectChat}
+                    onStartSearch={() => setComposerText('/search ')}
+                    queueSummaryByChatId={queueSummaryByChatId}
+                    routePreview={routePreview}
+                    selectedChat={selectedChat}
+                    selectedChatId={selectedChatId}
+                    selectedQueueLeadRun={selectedQueueLeadRun}
+                    serverHost={status?.server.host}
+                />
 
                 <section className="panel conversation-shell">
-                    <div className="conversation-header">
-                        <div className="conversation-copy">
-                            <div className="eyebrow">Web channel</div>
-                            <h2>{conversationTitle(selectedChat, selectedChatId)}</h2>
-                            <p>{conversationSubtitle(selectedChat)}</p>
-                        </div>
-                        <div className="conversation-status">
-                            <span
-                                className="chip"
-                                data-tone={realtimeConnected ? 'teal' : 'accent'}
-                            >
-                                {realtimeConnected ? 'live stream' : 'reconnecting'}
-                            </span>
-                            <span className="chip">{selectedChatId}</span>
-                            {selectedChatQueue ? (
-                                <span className="chip" data-tone="accent">
-                                    queue {selectedChatQueue.total}
-                                </span>
-                            ) : null}
-                            {lastRun?.chatId === selectedChatId ? (
-                                <span className="chip" data-tone="teal">
-                                    last: {lastRun.agent}
-                                </span>
-                            ) : null}
-                            {currentActiveRun ?? selectedQueueLeadRun ? (
-                                <button
-                                    className="danger-btn"
-                                    onClick={() =>
-                                        void handleCancelRun(
-                                            currentActiveRun?.runId ??
-                                                selectedQueueLeadRun?.runId ??
-                                                '',
-                                        )
-                                    }
-                                    type="button"
-                                >
-                                    Cancel run
-                                </button>
-                            ) : null}
-                        </div>
-                    </div>
+                    <ConversationHeader
+                        currentActiveRun={currentActiveRun}
+                        lastRun={lastRun}
+                        realtimeConnected={realtimeConnected}
+                        selectedChat={selectedChat}
+                        selectedChatId={selectedChatId}
+                        selectedChatQueue={selectedChatQueue}
+                        selectedQueueLeadRun={selectedQueueLeadRun}
+                        onCancelRun={(runId) => {
+                            void handleCancelRun(runId);
+                        }}
+                    />
 
                     {dashboardError ? (
                         <div className="banner banner--danger">{dashboardError}</div>
@@ -2285,257 +1376,31 @@ export function App() {
                         <div className="banner banner--warning">{actionError}</div>
                     ) : null}
 
-                    <div className="conversation-stream">
-                        {messages.length === 0 ? (
-                            <div className="empty empty--hero">
-                                <strong>Nothing in this thread yet.</strong>
-                                <p>
-                                    Start with `@claude-code fix the flaky test`, or use
-                                    `/search release plan` to hit WillClaw memory without
-                                    invoking a coding agent.
-                                </p>
-                            </div>
-                        ) : (
-                            messages.map((message, index) => (
-                                (() => {
-                                    const editedSuccessor =
-                                        editedSuccessorById.get(message.id) ?? null;
-                                    const lineage = describeMessageLineage(
-                                        message,
-                                        editedSuccessor,
-                                    );
-
-                                    return (
-                                        <div
-                                            className="message-row"
-                                            data-role={message.role}
-                                            key={message.id}
-                                            style={{
-                                                animationDelay: `${Math.min(index * 30, 240)}ms`,
-                                            }}
-                                        >
-                                            <article
-                                                className="message-bubble"
-                                                data-role={message.role}
-                                                data-revoked={message.status === 'revoked'}
-                                            >
-                                                <div className="message-top">
-                                                    <strong>{messageLabel(message)}</strong>
-                                                    <span>
-                                                        #{message.id} ·{' '}
-                                                        {formatTimestamp(message.timestamp)}
-                                                    </span>
-                                                </div>
-                                                <MessageBody message={message} />
-                                                <div className="message-footer">
-                                                    <div className="chip-row">
-                                                        {message.runId ? (
-                                                            <span className="chip">
-                                                                run {message.runId.slice(0, 8)}
-                                                            </span>
-                                                        ) : null}
-                                                        {message.durationMs ? (
-                                                            <span className="chip">
-                                                                {formatDuration(message.durationMs)}
-                                                            </span>
-                                                        ) : null}
-                                                        {message.status === 'revoked' ? (
-                                                            <span
-                                                                className="chip"
-                                                                data-tone="danger"
-                                                            >
-                                                                revoked
-                                                            </span>
-                                                        ) : null}
-                                                        {message.editOf != null ? (
-                                                            <span
-                                                                className="chip"
-                                                                data-tone="accent"
-                                                            >
-                                                                edited from #{message.editOf}
-                                                            </span>
-                                                        ) : null}
-                                                        {editedSuccessor ? (
-                                                            <span
-                                                                className="chip"
-                                                                data-tone="accent"
-                                                            >
-                                                                superseded by #
-                                                                {editedSuccessor.id}
-                                                            </span>
-                                                        ) : null}
-                                                        {(() => {
-                                                            const route = extractAssistantRouteMetadata(
-                                                                message,
-                                                            );
-                                                            if (!route) {
-                                                                return null;
-                                                            }
-
-                                                            return (
-                                                                <>
-                                                                    {route.selectedAgent ? (
-                                                                        <span
-                                                                            className="chip"
-                                                                            data-tone="teal"
-                                                                        >
-                                                                            route {route.selectedAgent}
-                                                                        </span>
-                                                                    ) : null}
-                                                                    {route.reason ? (
-                                                                        <span className="chip">
-                                                                            {routeReasonLabel(
-                                                                                route.reason,
-                                                                            )}
-                                                                        </span>
-                                                                    ) : null}
-                                                                    {route.attemptedAgents.length > 1 ? (
-                                                                        <span className="chip">
-                                                                            {route.attemptedAgents.length}{' '}
-                                                                            attempts
-                                                                        </span>
-                                                                    ) : null}
-                                                                </>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                    {lineage ? (
-                                                        <p className="message-lineage">
-                                                            {lineage}
-                                                        </p>
-                                                    ) : null}
-
-                                                    {message.role === 'user' &&
-                                                    message.status === 'active' ? (
-                                                        <div className="message-actions">
-                                                            <button
-                                                                className="quiet-btn"
-                                                                onClick={() => {
-                                                                    setEditingMessageId(message.id);
-                                                                    setEditingText(message.content);
-                                                                }}
-                                                                type="button"
-                                                            >
-                                                                Edit
-                                                            </button>
-                                                            <button
-                                                                className="ghost-btn"
-                                                                onClick={() =>
-                                                                    void handleResend(message.id)
-                                                                }
-                                                                type="button"
-                                                            >
-                                                                Resend
-                                                            </button>
-                                                            <button
-                                                                className="danger-btn"
-                                                                onClick={() =>
-                                                                    void handleRevoke(message.id)
-                                                                }
-                                                                type="button"
-                                                            >
-                                                                Revoke
-                                                            </button>
-                                                        </div>
-                                                    ) : null}
-                                                </div>
-
-                                                {editingMessageId === message.id ? (
-                                                    <div className="inline-editor">
-                                                        <textarea
-                                                            value={editingText}
-                                                            onChange={(event) =>
-                                                                setEditingText(event.target.value)
-                                                            }
-                                                        />
-                                                        <div className="inline-actions">
-                                                            <button
-                                                                className="btn"
-                                                                onClick={() =>
-                                                                    void handleEditSave(message.id)
-                                                                }
-                                                                type="button"
-                                                            >
-                                                                Save edit
-                                                            </button>
-                                                            <button
-                                                                className="ghost-btn"
-                                                                onClick={() => {
-                                                                    setEditingMessageId(null);
-                                                                    setEditingText('');
-                                                                }}
-                                                                type="button"
-                                                            >
-                                                                Cancel
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ) : null}
-                                            </article>
-                                        </div>
-                                    );
-                                })()
-                            ))
-                        )}
-                        {currentActiveRun?.streamContent ? (
-                            <div className="message-row" data-role="assistant">
-                                <article
-                                    className="message-bubble"
-                                    data-role="assistant"
-                                    data-streaming="true"
-                                >
-                                    <div className="message-top">
-                                        <strong>
-                                            Assistant
-                                            {currentActiveRun.agent
-                                                ? ` · ${currentActiveRun.agent}`
-                                                : ''}
-                                        </strong>
-                                        <span>
-                                            live preview ·{' '}
-                                            {formatTimestamp(
-                                                currentActiveRun.streamUpdatedAt ??
-                                                    currentActiveRun.startedAt,
-                                            )}
-                                        </span>
-                                    </div>
-                                    <MessageBody
-                                        message={{
-                                            id: -1,
-                                            timestamp:
-                                                currentActiveRun.streamUpdatedAt ??
-                                                currentActiveRun.startedAt,
-                                            channel: currentActiveRun.channel,
-                                            chatId: currentActiveRun.chatId,
-                                            userId: currentActiveRun.agent ?? 'assistant',
-                                            role: 'assistant',
-                                            content: currentActiveRun.streamContent,
-                                            ...(currentActiveRun.agent
-                                                ? { agent: currentActiveRun.agent }
-                                                : {}),
-                                            status: 'active',
-                                        }}
-                                    />
-                                    <div className="message-footer">
-                                        <div className="chip-row">
-                                            <span className="chip" data-tone="teal">
-                                                streaming
-                                            </span>
-                                            <span className="chip">
-                                                run {currentActiveRun.runId.slice(0, 8)}
-                                            </span>
-                                            {currentActiveRun.streamParser ? (
-                                                <span className="chip">
-                                                    {currentActiveRun.streamParser}
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                        <div className="stream-cursor" aria-hidden="true" />
-                                    </div>
-                                </article>
-                            </div>
-                        ) : null}
-                    </div>
+                    <ConversationStream
+                        currentActiveRun={currentActiveRun}
+                        editedSuccessorById={editedSuccessorById}
+                        editingMessageId={editingMessageId}
+                        editingText={editingText}
+                        messages={messages}
+                        onEditCancel={() => {
+                            setEditingMessageId(null);
+                            setEditingText('');
+                        }}
+                        onEditSave={(messageId) => {
+                            void handleEditSave(messageId);
+                        }}
+                        onEditStart={(messageId, content) => {
+                            setEditingMessageId(messageId);
+                            setEditingText(content);
+                        }}
+                        onEditTextChange={setEditingText}
+                        onResend={(messageId) => {
+                            void handleResend(messageId);
+                        }}
+                        onRevoke={(messageId) => {
+                            void handleRevoke(messageId);
+                        }}
+                    />
 
                     <div className="composer-shell">
                         {currentActiveRun ? (
