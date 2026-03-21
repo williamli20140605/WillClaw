@@ -18,16 +18,17 @@ import type {
     ToolLogEntry,
 } from './ui-types.js';
 
-interface CreateShellViewModelsOptions {
-    actionError: (message: string) => void;
-    activeRuns: ActiveRun[];
-    authAdminBusy: boolean;
-    authSessions: AuthSessionSummary[];
-    authTokenSummaries: AuthTokenSummary[];
-    browserFormFieldsText: string;
-    browserSubmitSelector: string;
-    browserTarget: string;
+interface ShellViewAuthState {
+    adminBusy: boolean;
     canManageAuth: boolean;
+    latestManagedToken: CreatedAuthToken | null;
+    managedTokenId: string;
+    managedTokenScopes: string[];
+    sessions: AuthSessionSummary[];
+    tokenSummaries: AuthTokenSummary[];
+}
+
+interface ShellViewChatState {
     chats: Array<{
         channel: string;
         chatId: string;
@@ -38,39 +39,18 @@ interface CreateShellViewModelsOptions {
         agent?: string;
         runId?: string;
     }>;
-    cronState: CronPayload | null;
-    deferredComposerText: string;
-    deferredSearchQuery: string;
     draftChatId: string | null;
-    handleCreateManagedToken(): Promise<void>;
-    handleCreatePairingInvite(): Promise<void>;
-    handleInjectIntoComposer(content: string): void;
-    handleRevokeAuthSession(sessionId: string): Promise<void>;
-    handleRevokeAuthToken(tokenId: string): Promise<void>;
-    handleRevokePairingGrant(grantId: string): Promise<void>;
-    handleRevokePairingInvite(inviteId: string): Promise<void>;
-    handleSelectChat(chatId: string): void;
-    handleTaskRun(endpoint: string): Promise<void>;
+    messages: StoredMessage[];
+    selectedChatId: string;
+    toolLogs: ToolLogEntry[];
+}
+
+interface ShellViewHostLabState {
+    browserFormFieldsText: string;
+    browserSubmitSelector: string;
+    browserTarget: string;
     hostActionBusy: boolean;
     hostActionResult: string;
-    latestManagedToken: CreatedAuthToken | null;
-    managedTokenId: string;
-    managedTokenScopes: string[];
-    messages: StoredMessage[];
-    pairingBusy: boolean;
-    pairingChannel: 'telegram' | 'discord' | 'feishu';
-    pairingInvite: CreatedPairingInvite | null;
-    pairingKind: 'web' | 'channel';
-    pairingState: PairingPayload | null;
-    parseBrowserFormFields(): Array<{
-        clear?: boolean;
-        selector: string;
-        text: string;
-    }>;
-    providerHealth: ProviderHealthEntry[];
-    queueSummaries: QueueSummary[];
-    recentEvents: RealtimeEvent[];
-    runHostAction(endpoint: string, payload: Record<string, unknown>): Promise<void>;
     screenApp: string;
     screenInputText: string;
     screenSendClear: boolean;
@@ -78,198 +58,207 @@ interface CreateShellViewModelsOptions {
     screenSendLaunchIfNeeded: boolean;
     screenSendPressReturn: boolean;
     screenSendRequireFrontmost: boolean;
-    searchLoading: boolean;
-    searchQuery: string;
-    searchResults: MemorySearchResult | null;
-    searchScope: SearchScope;
-    selectedChatId: string;
-    setBrowserFormFieldsText(value: string): void;
-    setBrowserSubmitSelector(value: string): void;
-    setBrowserTarget(value: string): void;
-    setInspectorTab(value: 'search' | 'activity' | 'runtime'): void;
-    setManagedTokenId(value: string): void;
-    setManagedTokenScopes(value: string[] | ((current: string[]) => string[])): void;
-    setPairingChannel(value: 'telegram' | 'discord' | 'feishu'): void;
-    setPairingKind(value: 'web' | 'channel'): void;
-    setScreenApp(value: string): void;
-    setScreenInputText(value: string): void;
-    setScreenSendClear(value: boolean): void;
-    setScreenSendInspectAfter(value: boolean): void;
-    setScreenSendLaunchIfNeeded(value: boolean): void;
-    setScreenSendPressReturn(value: boolean): void;
-    setScreenSendRequireFrontmost(value: boolean): void;
-    setSearchQuery(value: string): void;
-    setSearchScope(value: SearchScope): void;
+}
+
+interface ShellViewPairingState {
+    busy: boolean;
+    channel: 'telegram' | 'discord' | 'feishu';
+    invite: CreatedPairingInvite | null;
+    kind: 'web' | 'channel';
+    state: PairingPayload | null;
+}
+
+interface ShellViewRuntimeState {
+    activeRuns: ActiveRun[];
+    providerHealth: ProviderHealthEntry[];
+    queueSummaries: QueueSummary[];
+    recentEvents: RealtimeEvent[];
     status: StatusPayload | null;
-    toolLogs: ToolLogEntry[];
+    tasks: CronPayload | null;
+}
+
+interface ShellViewSearchState {
+    deferredQuery: string;
+    loading: boolean;
+    query: string;
+    results: MemorySearchResult | null;
+    scope: SearchScope;
+}
+
+interface ShellViewUiState {
+    deferredComposerText: string;
+}
+
+interface ShellViewActions {
+    access: {
+        handleCreateManagedToken(): Promise<void>;
+        handleCreatePairingInvite(): Promise<void>;
+        handleRevokeAuthSession(sessionId: string): Promise<void>;
+        handleRevokeAuthToken(tokenId: string): Promise<void>;
+        handleRevokePairingGrant(grantId: string): Promise<void>;
+        handleRevokePairingInvite(inviteId: string): Promise<void>;
+    };
+    conversation: {
+        handleInjectIntoComposer(content: string): void;
+        handleSelectChat(chatId: string): void;
+    };
+    hostLab: {
+        handleTaskRun(endpoint: string): Promise<void>;
+        parseBrowserFormFields(): Array<{
+            clear?: boolean;
+            selector: string;
+            text: string;
+        }>;
+        runHostAction(
+            endpoint: string,
+            payload: Record<string, unknown>,
+        ): Promise<void>;
+    };
+    setters: {
+        auth: {
+            setManagedTokenId(value: string): void;
+            setManagedTokenScopes(
+                value: string[] | ((current: string[]) => string[]),
+            ): void;
+        };
+        hostLab: {
+            setBrowserFormFieldsText(value: string): void;
+            setBrowserSubmitSelector(value: string): void;
+            setBrowserTarget(value: string): void;
+            setScreenApp(value: string): void;
+            setScreenInputText(value: string): void;
+            setScreenSendClear(value: boolean): void;
+            setScreenSendInspectAfter(value: boolean): void;
+            setScreenSendLaunchIfNeeded(value: boolean): void;
+            setScreenSendPressReturn(value: boolean): void;
+            setScreenSendRequireFrontmost(value: boolean): void;
+        };
+        pairing: {
+            setChannel(value: 'telegram' | 'discord' | 'feishu'): void;
+            setKind(value: 'web' | 'channel'): void;
+        };
+        search: {
+            setQuery(value: string): void;
+            setScope(value: SearchScope): void;
+        };
+        ui: {
+            setActionError(message: string): void;
+            setInspectorTab(value: 'search' | 'activity' | 'runtime'): void;
+        };
+    };
+}
+
+interface CreateShellViewModelsOptions {
+    actions: ShellViewActions;
+    auth: ShellViewAuthState;
+    chat: ShellViewChatState;
+    hostLab: ShellViewHostLabState;
+    pairing: ShellViewPairingState;
+    runtime: ShellViewRuntimeState;
+    search: ShellViewSearchState;
+    ui: ShellViewUiState;
 }
 
 export function createShellViewModels({
-    actionError,
-    activeRuns,
-    authAdminBusy,
-    authSessions,
-    authTokenSummaries,
-    browserFormFieldsText,
-    browserSubmitSelector,
-    browserTarget,
-    canManageAuth,
-    chats,
-    cronState,
-    deferredComposerText,
-    deferredSearchQuery,
-    draftChatId,
-    handleCreateManagedToken,
-    handleCreatePairingInvite,
-    handleInjectIntoComposer,
-    handleRevokeAuthSession,
-    handleRevokeAuthToken,
-    handleRevokePairingGrant,
-    handleRevokePairingInvite,
-    handleSelectChat,
-    handleTaskRun,
-    hostActionBusy,
-    hostActionResult,
-    latestManagedToken,
-    managedTokenId,
-    managedTokenScopes,
-    messages,
-    pairingBusy,
-    pairingChannel,
-    pairingInvite,
-    pairingKind,
-    pairingState,
-    parseBrowserFormFields,
-    providerHealth,
-    queueSummaries,
-    recentEvents,
-    runHostAction,
-    screenApp,
-    screenInputText,
-    screenSendClear,
-    screenSendInspectAfter,
-    screenSendLaunchIfNeeded,
-    screenSendPressReturn,
-    screenSendRequireFrontmost,
-    searchLoading,
-    searchQuery,
-    searchResults,
-    searchScope,
-    selectedChatId,
-    setBrowserFormFieldsText,
-    setBrowserSubmitSelector,
-    setBrowserTarget,
-    setInspectorTab,
-    setManagedTokenId,
-    setManagedTokenScopes,
-    setPairingChannel,
-    setPairingKind,
-    setScreenApp,
-    setScreenInputText,
-    setScreenSendClear,
-    setScreenSendInspectAfter,
-    setScreenSendLaunchIfNeeded,
-    setScreenSendPressReturn,
-    setScreenSendRequireFrontmost,
-    setSearchQuery,
-    setSearchScope,
-    status,
-    toolLogs,
+    actions,
+    auth,
+    chat,
+    hostLab,
+    pairing,
+    runtime,
+    search,
+    ui,
 }: CreateShellViewModelsOptions) {
     const dashboard = createDashboardDerivedState({
-        activeRuns,
-        chats,
-        cronState,
-        deferredComposerText,
-        draftChatId,
-        messages,
-        queueSummaries,
-        recentEvents,
-        selectedChatId,
-        status,
+        activeRuns: runtime.activeRuns,
+        chats: chat.chats,
+        cronState: runtime.tasks,
+        deferredComposerText: ui.deferredComposerText,
+        draftChatId: chat.draftChatId,
+        messages: chat.messages,
+        queueSummaries: runtime.queueSummaries,
+        recentEvents: runtime.recentEvents,
+        selectedChatId: chat.selectedChatId,
+        status: runtime.status,
     });
 
     const inspectors = createInspectorModels({
         activityState: {
             currentActiveRun: dashboard.currentActiveRun,
             currentRecentEvents: dashboard.currentRecentEvents,
-            selectedChatId,
-            toolLogs,
+            selectedChatId: chat.selectedChatId,
+            toolLogs: chat.toolLogs,
         },
         authState: {
-            authAdminBusy,
-            authSessions,
-            authTokenSummaries,
-            canManageAuth,
-            latestManagedToken,
-            managedTokenId,
-            managedTokenScopes,
+            authAdminBusy: auth.adminBusy,
+            authSessions: auth.sessions,
+            authTokenSummaries: auth.tokenSummaries,
+            canManageAuth: auth.canManageAuth,
+            latestManagedToken: auth.latestManagedToken,
+            managedTokenId: auth.managedTokenId,
+            managedTokenScopes: auth.managedTokenScopes,
         },
         hostLabState: {
-            browserFormFieldsText,
-            browserSubmitSelector,
-            browserTarget,
-            hostActionBusy,
-            hostActionResult,
-            screenApp,
-            screenInputText,
-            screenSendClear,
-            screenSendInspectAfter,
-            screenSendLaunchIfNeeded,
-            screenSendPressReturn,
-            screenSendRequireFrontmost,
-            selectedChatId,
+            ...hostLab,
+            selectedChatId: chat.selectedChatId,
         },
         pairingState: {
-            pairingBusy,
-            pairingChannel,
-            pairingInvite,
-            pairingKind,
-            pairingState,
+            pairingBusy: pairing.busy,
+            pairingChannel: pairing.channel,
+            pairingInvite: pairing.invite,
+            pairingKind: pairing.kind,
+            pairingState: pairing.state,
         },
         runtimeState: {
-            providerHealth,
+            providerHealth: runtime.providerHealth,
             schedulerTasks: dashboard.schedulerTasks,
             selectedChatQueue: dashboard.selectedChatQueue,
-            status,
+            status: runtime.status,
         },
         searchState: {
-            deferredSearchQuery,
-            searchLoading,
-            searchQuery,
-            searchResults,
-            searchScope,
+            deferredSearchQuery: search.deferredQuery,
+            searchLoading: search.loading,
+            searchQuery: search.query,
+            searchResults: search.results,
+            searchScope: search.scope,
         },
         actions: {
-            handleCreateManagedToken,
-            handleCreatePairingInvite,
-            handleInjectIntoComposer,
-            handleRevokeAuthSession,
-            handleRevokeAuthToken,
-            handleRevokePairingGrant,
-            handleRevokePairingInvite,
-            handleSelectChat,
-            handleTaskRun,
-            parseBrowserFormFields,
-            runHostAction,
-            setActionError: actionError,
-            setBrowserFormFieldsText,
-            setBrowserSubmitSelector,
-            setBrowserTarget,
-            setInspectorTab,
-            setManagedTokenId,
-            setManagedTokenScopes,
-            setPairingChannel,
-            setPairingKind,
-            setScreenApp,
-            setScreenInputText,
-            setScreenSendClear,
-            setScreenSendInspectAfter,
-            setScreenSendLaunchIfNeeded,
-            setScreenSendPressReturn,
-            setScreenSendRequireFrontmost,
-            setSearchQuery,
-            setSearchScope,
+            handleCreateManagedToken: actions.access.handleCreateManagedToken,
+            handleCreatePairingInvite: actions.access.handleCreatePairingInvite,
+            handleInjectIntoComposer:
+                actions.conversation.handleInjectIntoComposer,
+            handleRevokeAuthSession: actions.access.handleRevokeAuthSession,
+            handleRevokeAuthToken: actions.access.handleRevokeAuthToken,
+            handleRevokePairingGrant: actions.access.handleRevokePairingGrant,
+            handleRevokePairingInvite: actions.access.handleRevokePairingInvite,
+            handleSelectChat: actions.conversation.handleSelectChat,
+            handleTaskRun: actions.hostLab.handleTaskRun,
+            parseBrowserFormFields: actions.hostLab.parseBrowserFormFields,
+            runHostAction: actions.hostLab.runHostAction,
+            setActionError: actions.setters.ui.setActionError,
+            setBrowserFormFieldsText:
+                actions.setters.hostLab.setBrowserFormFieldsText,
+            setBrowserSubmitSelector:
+                actions.setters.hostLab.setBrowserSubmitSelector,
+            setBrowserTarget: actions.setters.hostLab.setBrowserTarget,
+            setInspectorTab: actions.setters.ui.setInspectorTab,
+            setManagedTokenId: actions.setters.auth.setManagedTokenId,
+            setManagedTokenScopes: actions.setters.auth.setManagedTokenScopes,
+            setPairingChannel: actions.setters.pairing.setChannel,
+            setPairingKind: actions.setters.pairing.setKind,
+            setScreenApp: actions.setters.hostLab.setScreenApp,
+            setScreenInputText: actions.setters.hostLab.setScreenInputText,
+            setScreenSendClear: actions.setters.hostLab.setScreenSendClear,
+            setScreenSendInspectAfter:
+                actions.setters.hostLab.setScreenSendInspectAfter,
+            setScreenSendLaunchIfNeeded:
+                actions.setters.hostLab.setScreenSendLaunchIfNeeded,
+            setScreenSendPressReturn:
+                actions.setters.hostLab.setScreenSendPressReturn,
+            setScreenSendRequireFrontmost:
+                actions.setters.hostLab.setScreenSendRequireFrontmost,
+            setSearchQuery: actions.setters.search.setQuery,
+            setSearchScope: actions.setters.search.setScope,
         },
     });
 

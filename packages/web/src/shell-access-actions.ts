@@ -15,76 +15,92 @@ import type {
 } from './ui-types.js';
 import { readJson } from './ui-helpers.js';
 
-interface CreateShellAccessActionsOptions {
-    authTokenInput: string;
+interface ShellAccessAuthState {
+    managedTokenId: string;
+    managedTokenScopes: string[];
+    tokenInput: string;
+}
+
+interface ShellAccessLoaders {
     loadAuthAdminPanel(): Promise<void>;
     loadMessagesPanel(chatId?: string): Promise<void>;
     loadPairingPanel(): Promise<void>;
     loadShellPanels(): Promise<void>;
     loadToolLogsPanel(chatId?: string): Promise<void>;
-    managedTokenId: string;
-    managedTokenScopes: string[];
-    pairingChannel: 'telegram' | 'discord' | 'feishu';
-    pairingInvite: CreatedPairingInvite | null;
-    pairingKind: 'web' | 'channel';
+}
+
+interface ShellAccessPairingState {
+    channel: 'telegram' | 'discord' | 'feishu';
+    invite: CreatedPairingInvite | null;
+    kind: 'web' | 'channel';
+}
+
+interface ShellAccessSelection {
     selectedChatId: string;
-    setActionError: Dispatch<SetStateAction<string>>;
-    setActiveRuns: Dispatch<SetStateAction<ActiveRun[]>>;
-    setAuthAdminBusy: Dispatch<SetStateAction<boolean>>;
-    setAuthBusy: Dispatch<SetStateAction<boolean>>;
-    setAuthStatus: Dispatch<SetStateAction<AuthStatusPayload | null>>;
-    setAuthTokenInput: Dispatch<SetStateAction<string>>;
-    setDashboardError: Dispatch<SetStateAction<string>>;
-    setLatestManagedToken: Dispatch<SetStateAction<CreatedAuthToken | null>>;
-    setMessages: Dispatch<SetStateAction<StoredMessage[]>>;
-    setPairingBusy: Dispatch<SetStateAction<boolean>>;
-    setPairingInvite: Dispatch<SetStateAction<CreatedPairingInvite | null>>;
-    setRealtimeConnected: Dispatch<SetStateAction<boolean>>;
-    setRecentEvents: Dispatch<SetStateAction<RealtimeEvent[]>>;
-    setToolLogs: Dispatch<SetStateAction<ToolLogEntry[]>>;
-    setManagedTokenId: Dispatch<SetStateAction<string>>;
+}
+
+interface ShellAccessSetters {
+    auth: {
+        setAdminBusy: Dispatch<SetStateAction<boolean>>;
+        setBusy: Dispatch<SetStateAction<boolean>>;
+        setLatestManagedToken: Dispatch<SetStateAction<CreatedAuthToken | null>>;
+        setManagedTokenId: Dispatch<SetStateAction<string>>;
+        setStatus: Dispatch<SetStateAction<AuthStatusPayload | null>>;
+        setTokenInput: Dispatch<SetStateAction<string>>;
+    };
+    chat: {
+        setMessages: Dispatch<SetStateAction<StoredMessage[]>>;
+        setToolLogs: Dispatch<SetStateAction<ToolLogEntry[]>>;
+    };
+    pairing: {
+        setBusy: Dispatch<SetStateAction<boolean>>;
+        setInvite: Dispatch<SetStateAction<CreatedPairingInvite | null>>;
+    };
+    runtime: {
+        setActiveRuns: Dispatch<SetStateAction<ActiveRun[]>>;
+        setRealtimeConnected: Dispatch<SetStateAction<boolean>>;
+        setRecentEvents: Dispatch<SetStateAction<RealtimeEvent[]>>;
+    };
+    ui: {
+        setActionError: Dispatch<SetStateAction<string>>;
+        setDashboardError: Dispatch<SetStateAction<string>>;
+    };
+}
+
+interface CreateShellAccessActionsOptions {
+    auth: ShellAccessAuthState;
+    loaders: ShellAccessLoaders;
+    pairing: ShellAccessPairingState;
+    selection: ShellAccessSelection;
+    setters: ShellAccessSetters;
 }
 
 export function createShellAccessActions({
-    authTokenInput,
-    loadAuthAdminPanel,
-    loadMessagesPanel,
-    loadPairingPanel,
-    loadShellPanels,
-    loadToolLogsPanel,
-    managedTokenId,
-    managedTokenScopes,
-    pairingChannel,
-    pairingInvite,
-    pairingKind,
-    selectedChatId,
-    setActionError,
-    setActiveRuns,
-    setAuthAdminBusy,
-    setAuthBusy,
-    setAuthStatus,
-    setAuthTokenInput,
-    setDashboardError,
-    setLatestManagedToken,
-    setMessages,
-    setManagedTokenId,
-    setPairingBusy,
-    setPairingInvite,
-    setRealtimeConnected,
-    setRecentEvents,
-    setToolLogs,
+    auth,
+    loaders,
+    pairing,
+    selection,
+    setters,
 }: CreateShellAccessActionsOptions) {
+    const {
+        loadAuthAdminPanel,
+        loadMessagesPanel,
+        loadPairingPanel,
+        loadShellPanels,
+        loadToolLogsPanel,
+    } = loaders;
+
     async function handleAuthLogin(): Promise<void> {
-        const credential = authTokenInput.trim();
+        const credential = auth.tokenInput.trim();
         if (!credential) {
-            setDashboardError(
+            setters.ui.setDashboardError(
                 'Enter a bearer token or pairing code to unlock the shell.',
             );
             return;
         }
 
-        setAuthBusy(true);
-        setDashboardError('');
+        setters.auth.setBusy(true);
+        setters.ui.setDashboardError('');
 
         try {
             let payload: AuthStatusPayload;
@@ -113,55 +129,55 @@ export function createShellAccessActions({
                 });
             }
             startTransition(() => {
-                setAuthStatus(payload);
-                setAuthTokenInput('');
-                setRealtimeConnected(false);
-                setRecentEvents([]);
-                setActiveRuns([]);
+                setters.auth.setStatus(payload);
+                setters.auth.setTokenInput('');
+                setters.runtime.setRealtimeConnected(false);
+                setters.runtime.setRecentEvents([]);
+                setters.runtime.setActiveRuns([]);
             });
             await Promise.all([
                 loadShellPanels(),
-                loadMessagesPanel(selectedChatId),
-                loadToolLogsPanel(selectedChatId),
+                loadMessagesPanel(selection.selectedChatId),
+                loadToolLogsPanel(selection.selectedChatId),
             ]);
         } catch (error) {
-            setDashboardError(
+            setters.ui.setDashboardError(
                 error instanceof Error
                     ? error.message
                     : 'Login failed with the provided token.',
             );
         } finally {
-            setAuthBusy(false);
+            setters.auth.setBusy(false);
         }
     }
 
     async function handleAuthLogout(): Promise<void> {
-        setAuthBusy(true);
+        setters.auth.setBusy(true);
 
         try {
             const payload = await readJson<AuthStatusPayload>('/api/auth/session', {
                 method: 'DELETE',
             });
             startTransition(() => {
-                setAuthStatus(payload);
-                setRealtimeConnected(false);
-                setRecentEvents([]);
-                setActiveRuns([]);
-                setMessages([]);
-                setToolLogs([]);
+                setters.auth.setStatus(payload);
+                setters.runtime.setRealtimeConnected(false);
+                setters.runtime.setRecentEvents([]);
+                setters.runtime.setActiveRuns([]);
+                setters.chat.setMessages([]);
+                setters.chat.setToolLogs([]);
             });
         } catch (error) {
-            setDashboardError(
+            setters.ui.setDashboardError(
                 error instanceof Error ? error.message : 'Logout failed.',
             );
         } finally {
-            setAuthBusy(false);
+            setters.auth.setBusy(false);
         }
     }
 
     async function handleRevokeAuthSession(sessionId: string): Promise<void> {
-        setAuthAdminBusy(true);
-        setActionError('');
+        setters.auth.setAdminBusy(true);
+        setters.ui.setActionError('');
 
         try {
             await readJson<{ revoked: AuthSessionSummary }>(
@@ -172,19 +188,19 @@ export function createShellAccessActions({
             );
             await loadAuthAdminPanel();
         } catch (error) {
-            setActionError(
+            setters.ui.setActionError(
                 error instanceof Error
                     ? error.message
                     : 'Failed to revoke session.',
             );
         } finally {
-            setAuthAdminBusy(false);
+            setters.auth.setAdminBusy(false);
         }
     }
 
     async function handleCreateManagedToken(): Promise<void> {
-        setAuthAdminBusy(true);
-        setActionError('');
+        setters.auth.setAdminBusy(true);
+        setters.ui.setActionError('');
 
         try {
             const payload = await readJson<CreatedAuthToken>('/api/auth/tokens', {
@@ -193,29 +209,31 @@ export function createShellAccessActions({
                     'content-type': 'application/json',
                 },
                 body: JSON.stringify({
-                    ...(managedTokenId.trim() ? { id: managedTokenId.trim() } : {}),
-                    scopes: managedTokenScopes,
+                    ...(auth.managedTokenId.trim()
+                        ? { id: auth.managedTokenId.trim() }
+                        : {}),
+                    scopes: auth.managedTokenScopes,
                 }),
             });
             startTransition(() => {
-                setLatestManagedToken(payload);
-                setManagedTokenId('');
+                setters.auth.setLatestManagedToken(payload);
+                setters.auth.setManagedTokenId('');
             });
             await loadAuthAdminPanel();
         } catch (error) {
-            setActionError(
+            setters.ui.setActionError(
                 error instanceof Error
                     ? error.message
                     : 'Failed to create managed auth token.',
             );
         } finally {
-            setAuthAdminBusy(false);
+            setters.auth.setAdminBusy(false);
         }
     }
 
     async function handleRevokeAuthToken(tokenId: string): Promise<void> {
-        setAuthAdminBusy(true);
-        setActionError('');
+        setters.auth.setAdminBusy(true);
+        setters.ui.setActionError('');
 
         try {
             await readJson<{ revoked: AuthTokenSummary }>(
@@ -226,19 +244,19 @@ export function createShellAccessActions({
             );
             await loadAuthAdminPanel();
         } catch (error) {
-            setActionError(
+            setters.ui.setActionError(
                 error instanceof Error
                     ? error.message
                     : 'Failed to revoke managed auth token.',
             );
         } finally {
-            setAuthAdminBusy(false);
+            setters.auth.setAdminBusy(false);
         }
     }
 
     async function handleCreatePairingInvite(): Promise<void> {
-        setPairingBusy(true);
-        setActionError('');
+        setters.pairing.setBusy(true);
+        setters.ui.setActionError('');
 
         try {
             const payload = await readJson<CreatedPairingInvite>(
@@ -249,31 +267,31 @@ export function createShellAccessActions({
                         'content-type': 'application/json',
                     },
                     body: JSON.stringify({
-                        kind: pairingKind,
-                        ...(pairingKind === 'channel'
-                            ? { channels: [pairingChannel] }
+                        kind: pairing.kind,
+                        ...(pairing.kind === 'channel'
+                            ? { channels: [pairing.channel] }
                             : {}),
                     }),
                 },
             );
             startTransition(() => {
-                setPairingInvite(payload);
+                setters.pairing.setInvite(payload);
             });
             await loadPairingPanel();
         } catch (error) {
-            setActionError(
+            setters.ui.setActionError(
                 error instanceof Error
                     ? error.message
                     : 'Failed to create pairing invite.',
             );
         } finally {
-            setPairingBusy(false);
+            setters.pairing.setBusy(false);
         }
     }
 
     async function handleRevokePairingInvite(inviteId: string): Promise<void> {
-        setPairingBusy(true);
-        setActionError('');
+        setters.pairing.setBusy(true);
+        setters.ui.setActionError('');
 
         try {
             await readJson<PairingInvite>(
@@ -282,26 +300,26 @@ export function createShellAccessActions({
                     method: 'POST',
                 },
             );
-            if (pairingInvite?.id === inviteId) {
+            if (pairing.invite?.id === inviteId) {
                 startTransition(() => {
-                    setPairingInvite(null);
+                    setters.pairing.setInvite(null);
                 });
             }
             await loadPairingPanel();
         } catch (error) {
-            setActionError(
+            setters.ui.setActionError(
                 error instanceof Error
                     ? error.message
                     : 'Failed to revoke pairing invite.',
             );
         } finally {
-            setPairingBusy(false);
+            setters.pairing.setBusy(false);
         }
     }
 
     async function handleRevokePairingGrant(grantId: string): Promise<void> {
-        setPairingBusy(true);
-        setActionError('');
+        setters.pairing.setBusy(true);
+        setters.ui.setActionError('');
 
         try {
             await readJson<PairingGrant>(`/api/pairing/grants/${grantId}/revoke`, {
@@ -309,13 +327,13 @@ export function createShellAccessActions({
             });
             await loadPairingPanel();
         } catch (error) {
-            setActionError(
+            setters.ui.setActionError(
                 error instanceof Error
                     ? error.message
                     : 'Failed to revoke pairing grant.',
             );
         } finally {
-            setPairingBusy(false);
+            setters.pairing.setBusy(false);
         }
     }
 

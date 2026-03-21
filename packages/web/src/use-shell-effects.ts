@@ -5,14 +5,19 @@ import {
     type SetStateAction,
 } from 'react';
 
-import type { ActiveRun, RealtimeEvent } from './ui-types.js';
+import type { ActiveRun, RealtimeEvent, SearchScope } from './ui-types.js';
 import { subscribeShellRealtime } from './shell-realtime.js';
 
-interface UseShellEffectsOptions {
-    authAllowsDashboard: boolean;
-    deferredComposerText: string;
-    deferredSearchQuery: string;
+interface ShellEffectAuthState {
+    allowsDashboard: boolean;
+}
+
+interface ShellEffectChatState {
     draftChatId: string | null;
+    selectedChatId: string;
+}
+
+interface ShellEffectLoaders {
     loadAuthStatus(): Promise<{
         authRequired: boolean;
         authenticated: boolean;
@@ -25,35 +30,57 @@ interface UseShellEffectsOptions {
     loadSearch(query: string): Promise<void>;
     loadShellPanels(): Promise<void>;
     loadToolLogsPanel(chatId?: string): Promise<void>;
-    searchScope: string;
-    selectedChatId: string;
-    setActiveRuns: Dispatch<SetStateAction<ActiveRun[]>>;
-    setDashboardError: Dispatch<SetStateAction<string>>;
-    setRealtimeConnected: Dispatch<SetStateAction<boolean>>;
-    setRecentEvents: Dispatch<SetStateAction<RealtimeEvent[]>>;
+}
+
+interface ShellEffectSearchState {
+    deferredQuery: string;
+    scope: SearchScope;
+}
+
+interface ShellEffectSetters {
+    runtime: {
+        setActiveRuns: Dispatch<SetStateAction<ActiveRun[]>>;
+        setRealtimeConnected: Dispatch<SetStateAction<boolean>>;
+        setRecentEvents: Dispatch<SetStateAction<RealtimeEvent[]>>;
+    };
+    ui: {
+        setDashboardError: Dispatch<SetStateAction<string>>;
+    };
+}
+
+interface ShellEffectUiState {
+    deferredComposerText: string;
+}
+
+interface UseShellEffectsOptions {
+    auth: ShellEffectAuthState;
+    chat: ShellEffectChatState;
+    loaders: ShellEffectLoaders;
+    search: ShellEffectSearchState;
+    setters: ShellEffectSetters;
+    ui: ShellEffectUiState;
 }
 
 export function useShellEffects({
-    authAllowsDashboard,
-    deferredComposerText,
-    deferredSearchQuery,
-    draftChatId,
-    loadAuthStatus,
-    loadChatList,
-    loadMessagesPanel,
-    loadQueuePanel,
-    loadRoutePreview,
-    loadSchedulerPanel,
-    loadSearch,
-    loadShellPanels,
-    loadToolLogsPanel,
-    searchScope,
-    selectedChatId,
-    setActiveRuns,
-    setDashboardError,
-    setRealtimeConnected,
-    setRecentEvents,
+    auth,
+    chat,
+    loaders,
+    search,
+    setters,
+    ui,
 }: UseShellEffectsOptions): void {
+    const {
+        loadAuthStatus,
+        loadChatList,
+        loadMessagesPanel,
+        loadQueuePanel,
+        loadRoutePreview,
+        loadSchedulerPanel,
+        loadSearch,
+        loadShellPanels,
+        loadToolLogsPanel,
+    } = loaders;
+
     const refreshShellStatus = useEffectEvent(async () => {
         try {
             const payload = await loadAuthStatus();
@@ -61,7 +88,7 @@ export function useShellEffects({
                 await loadShellPanels();
             }
         } catch (error) {
-            setDashboardError(
+            setters.ui.setDashboardError(
                 error instanceof Error
                     ? error.message
                     : 'Failed to load shell data.',
@@ -82,7 +109,7 @@ export function useShellEffects({
                 await loadShellPanels();
             } catch (error) {
                 if (!cancelled) {
-                    setDashboardError(
+                    setters.ui.setDashboardError(
                         error instanceof Error
                             ? error.message
                             : 'Failed to load shell data.',
@@ -104,12 +131,12 @@ export function useShellEffects({
     }, []);
 
     const refreshSelectedChatPanels = useEffectEvent(() => {
-        void loadMessagesPanel(selectedChatId);
-        void loadToolLogsPanel(selectedChatId);
+        void loadMessagesPanel(chat.selectedChatId);
+        void loadToolLogsPanel(chat.selectedChatId);
     });
 
     useEffect(() => {
-        if (!authAllowsDashboard) {
+        if (!auth.allowsDashboard) {
             return;
         }
 
@@ -122,11 +149,11 @@ export function useShellEffects({
         return () => {
             window.clearInterval(interval);
         };
-    }, [authAllowsDashboard, selectedChatId]);
+    }, [auth.allowsDashboard, chat.selectedChatId]);
 
     useEffect(() => {
-        if (!authAllowsDashboard) {
-            setRealtimeConnected(false);
+        if (!auth.allowsDashboard) {
+            setters.runtime.setRealtimeConnected(false);
             return;
         }
 
@@ -137,26 +164,26 @@ export function useShellEffects({
             loadSchedulerPanel,
             loadShellPanels,
             loadToolLogsPanel,
-            selectedChatId,
-            setActiveRuns,
-            setRealtimeConnected,
-            setRecentEvents,
+            selectedChatId: chat.selectedChatId,
+            setActiveRuns: setters.runtime.setActiveRuns,
+            setRealtimeConnected: setters.runtime.setRealtimeConnected,
+            setRecentEvents: setters.runtime.setRecentEvents,
         });
-    }, [authAllowsDashboard, selectedChatId, draftChatId]);
+    }, [auth.allowsDashboard, chat.selectedChatId, chat.draftChatId]);
 
     useEffect(() => {
-        if (!authAllowsDashboard) {
+        if (!auth.allowsDashboard) {
             return;
         }
 
-        void loadSearch(deferredSearchQuery);
-    }, [authAllowsDashboard, deferredSearchQuery, searchScope]);
+        void loadSearch(search.deferredQuery);
+    }, [auth.allowsDashboard, search.deferredQuery, search.scope]);
 
     useEffect(() => {
-        if (!authAllowsDashboard) {
+        if (!auth.allowsDashboard) {
             return;
         }
 
-        void loadRoutePreview(deferredComposerText);
-    }, [authAllowsDashboard, deferredComposerText]);
+        void loadRoutePreview(ui.deferredComposerText);
+    }, [auth.allowsDashboard, ui.deferredComposerText]);
 }

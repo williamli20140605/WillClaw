@@ -1,53 +1,63 @@
 import { startTransition, type Dispatch, type SetStateAction } from 'react';
 
-import { WEB_CHANNEL, WEB_USER, type ChatResult, type StoredMessage } from './ui-types.js';
+import {
+    WEB_CHANNEL,
+    WEB_USER,
+    type ChatResult,
+    type StoredMessage,
+} from './ui-types.js';
 import { createDraftChatId, readJson } from './ui-helpers.js';
 
-interface CreateConversationActionsOptions {
+interface ConversationChatState {
     composerText: string;
     editingText: string;
     executionMode: 'foreground' | 'background';
+    selectedChatId: string;
+}
+
+interface ConversationLoaders {
     loadChatList(): Promise<void>;
     loadMessagesPanel(chatId?: string): Promise<void>;
     loadToolLogsPanel(chatId?: string): Promise<void>;
-    selectedChatId: string;
-    setActionError: Dispatch<SetStateAction<string>>;
-    setComposerText: Dispatch<SetStateAction<string>>;
-    setDraftChatId: Dispatch<SetStateAction<string | null>>;
-    setEditingMessageId: Dispatch<SetStateAction<number | null>>;
-    setEditingText: Dispatch<SetStateAction<string>>;
-    setLastRun: Dispatch<SetStateAction<ChatResult | null>>;
-    setMessages: Dispatch<SetStateAction<StoredMessage[]>>;
-    setSelectedChatId: Dispatch<SetStateAction<string>>;
-    setSubmitting: Dispatch<SetStateAction<boolean>>;
+}
+
+interface ConversationSetters {
+    chat: {
+        setComposerText: Dispatch<SetStateAction<string>>;
+        setDraftChatId: Dispatch<SetStateAction<string | null>>;
+        setEditingMessageId: Dispatch<SetStateAction<number | null>>;
+        setEditingText: Dispatch<SetStateAction<string>>;
+        setLastRun: Dispatch<SetStateAction<ChatResult | null>>;
+        setMessages: Dispatch<SetStateAction<StoredMessage[]>>;
+        setSelectedChatId: Dispatch<SetStateAction<string>>;
+        setSubmitting: Dispatch<SetStateAction<boolean>>;
+    };
+    ui: {
+        setActionError: Dispatch<SetStateAction<string>>;
+    };
+}
+
+interface CreateConversationActionsOptions {
+    chat: ConversationChatState;
+    loaders: ConversationLoaders;
+    setters: ConversationSetters;
 }
 
 export function createConversationActions({
-    composerText,
-    editingText,
-    executionMode,
-    loadChatList,
-    loadMessagesPanel,
-    loadToolLogsPanel,
-    selectedChatId,
-    setActionError,
-    setComposerText,
-    setDraftChatId,
-    setEditingMessageId,
-    setEditingText,
-    setLastRun,
-    setMessages,
-    setSelectedChatId,
-    setSubmitting,
+    chat,
+    loaders,
+    setters,
 }: CreateConversationActionsOptions) {
+    const { loadChatList, loadMessagesPanel, loadToolLogsPanel } = loaders;
+
     async function handleSend(): Promise<void> {
-        const text = composerText.trim();
+        const text = chat.composerText.trim();
         if (!text) {
             return;
         }
 
-        setSubmitting(true);
-        setActionError('');
+        setters.chat.setSubmitting(true);
+        setters.ui.setActionError('');
 
         try {
             const result = await readJson<ChatResult>('/api/chat', {
@@ -58,28 +68,30 @@ export function createConversationActions({
                 body: JSON.stringify({
                     text,
                     channel: WEB_CHANNEL,
-                    chatId: selectedChatId,
+                    chatId: chat.selectedChatId,
                     userId: WEB_USER,
-                    executionMode,
+                    executionMode: chat.executionMode,
                 }),
             });
 
-            setLastRun(result);
-            setComposerText('');
+            setters.chat.setLastRun(result);
+            setters.chat.setComposerText('');
             await Promise.all([
                 loadChatList(),
                 loadMessagesPanel(result.chatId),
                 loadToolLogsPanel(result.chatId),
             ]);
         } catch (error) {
-            setActionError(error instanceof Error ? error.message : 'Chat failed.');
+            setters.ui.setActionError(
+                error instanceof Error ? error.message : 'Chat failed.',
+            );
         } finally {
-            setSubmitting(false);
+            setters.chat.setSubmitting(false);
         }
     }
 
     async function handleCancelRun(runId: string): Promise<void> {
-        setActionError('');
+        setters.ui.setActionError('');
 
         try {
             await readJson(`/api/runs/${runId}/cancel`, {
@@ -91,35 +103,38 @@ export function createConversationActions({
                     annotate: true,
                 }),
             });
-            await Promise.all([loadMessagesPanel(selectedChatId), loadChatList()]);
+            await Promise.all([
+                loadMessagesPanel(chat.selectedChatId),
+                loadChatList(),
+            ]);
         } catch (error) {
-            setActionError(
+            setters.ui.setActionError(
                 error instanceof Error ? error.message : 'Cancel request failed.',
             );
         }
     }
 
     async function handleRevoke(messageId: number): Promise<void> {
-        setActionError('');
+        setters.ui.setActionError('');
 
         try {
             await readJson(`/api/messages/${messageId}/revoke`, {
                 method: 'POST',
             });
             await Promise.all([
-                loadMessagesPanel(selectedChatId),
+                loadMessagesPanel(chat.selectedChatId),
                 loadChatList(),
-                loadToolLogsPanel(selectedChatId),
+                loadToolLogsPanel(chat.selectedChatId),
             ]);
         } catch (error) {
-            setActionError(
+            setters.ui.setActionError(
                 error instanceof Error ? error.message : 'Revoke failed.',
             );
         }
     }
 
     async function handleResend(messageId: number): Promise<void> {
-        setActionError('');
+        setters.ui.setActionError('');
 
         try {
             const result = await readJson<ChatResult>(
@@ -131,31 +146,31 @@ export function createConversationActions({
                     },
                     body: JSON.stringify({
                         channel: WEB_CHANNEL,
-                        chatId: selectedChatId,
+                        chatId: chat.selectedChatId,
                         userId: WEB_USER,
                     }),
                 },
             );
-            setLastRun(result);
+            setters.chat.setLastRun(result);
             await Promise.all([
                 loadChatList(),
-                loadMessagesPanel(selectedChatId),
-                loadToolLogsPanel(selectedChatId),
+                loadMessagesPanel(chat.selectedChatId),
+                loadToolLogsPanel(chat.selectedChatId),
             ]);
         } catch (error) {
-            setActionError(
+            setters.ui.setActionError(
                 error instanceof Error ? error.message : 'Resend failed.',
             );
         }
     }
 
     async function handleEditSave(messageId: number): Promise<void> {
-        const text = editingText.trim();
+        const text = chat.editingText.trim();
         if (!text) {
             return;
         }
 
-        setActionError('');
+        setters.ui.setActionError('');
 
         try {
             const result = await readJson<{ result: ChatResult }>(
@@ -170,47 +185,49 @@ export function createConversationActions({
                     }),
                 },
             );
-            setEditingMessageId(null);
-            setEditingText('');
-            setLastRun(result.result);
+            setters.chat.setEditingMessageId(null);
+            setters.chat.setEditingText('');
+            setters.chat.setLastRun(result.result);
             await Promise.all([
                 loadChatList(),
-                loadMessagesPanel(selectedChatId),
-                loadToolLogsPanel(selectedChatId),
+                loadMessagesPanel(chat.selectedChatId),
+                loadToolLogsPanel(chat.selectedChatId),
             ]);
         } catch (error) {
-            setActionError(error instanceof Error ? error.message : 'Edit failed.');
+            setters.ui.setActionError(
+                error instanceof Error ? error.message : 'Edit failed.',
+            );
         }
     }
 
     function handleCreateChat(): void {
         const draftId = createDraftChatId();
         startTransition(() => {
-            setDraftChatId(draftId);
-            setSelectedChatId(draftId);
-            setMessages([]);
-            setLastRun(null);
-            setEditingMessageId(null);
-            setEditingText('');
-            setActionError('');
+            setters.chat.setDraftChatId(draftId);
+            setters.chat.setSelectedChatId(draftId);
+            setters.chat.setMessages([]);
+            setters.chat.setLastRun(null);
+            setters.chat.setEditingMessageId(null);
+            setters.chat.setEditingText('');
+            setters.ui.setActionError('');
         });
     }
 
     function handleSelectChat(chatId: string): void {
-        setSelectedChatId(chatId);
-        setEditingMessageId(null);
-        setEditingText('');
-        setActionError('');
+        setters.chat.setSelectedChatId(chatId);
+        setters.chat.setEditingMessageId(null);
+        setters.chat.setEditingText('');
+        setters.ui.setActionError('');
     }
 
     function handleInjectIntoComposer(content: string): void {
-        setComposerText((current) =>
+        setters.chat.setComposerText((current) =>
             current.trim() ? `${current.trim()}\n\n${content}` : content,
         );
     }
 
     function handlePrefixAgent(agentName: string): void {
-        setComposerText((current) =>
+        setters.chat.setComposerText((current) =>
             current.startsWith(`@${agentName}`)
                 ? current
                 : `@${agentName} ${current}`.trim(),
@@ -218,17 +235,17 @@ export function createConversationActions({
     }
 
     function handleStartSearch(): void {
-        setComposerText('/search ');
+        setters.chat.setComposerText('/search ');
     }
 
     function handleEditCancel(): void {
-        setEditingMessageId(null);
-        setEditingText('');
+        setters.chat.setEditingMessageId(null);
+        setters.chat.setEditingText('');
     }
 
     function handleEditStart(messageId: number, content: string): void {
-        setEditingMessageId(messageId);
-        setEditingText(content);
+        setters.chat.setEditingMessageId(messageId);
+        setters.chat.setEditingText(content);
     }
 
     return {

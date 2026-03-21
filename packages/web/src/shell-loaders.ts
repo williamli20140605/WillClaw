@@ -19,57 +19,61 @@ import type {
 import { WEB_CHANNEL } from './ui-types.js';
 import { isSearchCommand, readJson } from './ui-helpers.js';
 
-interface CreateShellLoadersOptions {
+interface ShellLoaderSelection {
     draftChatId: string | null;
     searchScope: SearchScope;
     selectedChatId: string;
-    setAuthSessions: Dispatch<SetStateAction<AuthSessionSummary[]>>;
-    setAuthStatus: Dispatch<SetStateAction<AuthStatusPayload | null>>;
-    setActionError: Dispatch<SetStateAction<string>>;
-    setAuthTokenSummaries: Dispatch<SetStateAction<AuthTokenSummary[]>>;
-    setChats: Dispatch<SetStateAction<ChatSummary[]>>;
-    setCronState: Dispatch<SetStateAction<CronPayload | null>>;
-    setDashboardError: Dispatch<SetStateAction<string>>;
-    setDraftChatId: Dispatch<SetStateAction<string | null>>;
-    setMessages: Dispatch<SetStateAction<StoredMessage[]>>;
-    setPairingState: Dispatch<SetStateAction<PairingPayload | null>>;
-    setProviderHealth: Dispatch<SetStateAction<ProviderHealthEntry[]>>;
-    setQueueSummaries: Dispatch<SetStateAction<QueueSummary[]>>;
-    setRoutePreview: Dispatch<SetStateAction<RoutePlan | null>>;
-    setSearchLoading: Dispatch<SetStateAction<boolean>>;
-    setSearchResults: Dispatch<SetStateAction<MemorySearchResult | null>>;
-    setSelectedChatId: Dispatch<SetStateAction<string>>;
-    setStatus: Dispatch<SetStateAction<StatusPayload | null>>;
-    setToolLogs: Dispatch<SetStateAction<ToolLogEntry[]>>;
+}
+
+interface ShellLoaderSetters {
+    auth: {
+        setSessions: Dispatch<SetStateAction<AuthSessionSummary[]>>;
+        setStatus: Dispatch<SetStateAction<AuthStatusPayload | null>>;
+        setTokenSummaries: Dispatch<SetStateAction<AuthTokenSummary[]>>;
+    };
+    chat: {
+        setChats: Dispatch<SetStateAction<ChatSummary[]>>;
+        setDraftChatId: Dispatch<SetStateAction<string | null>>;
+        setMessages: Dispatch<SetStateAction<StoredMessage[]>>;
+        setSelectedChatId: Dispatch<SetStateAction<string>>;
+        setToolLogs: Dispatch<SetStateAction<ToolLogEntry[]>>;
+    };
+    pairing: {
+        setState: Dispatch<SetStateAction<PairingPayload | null>>;
+    };
+    runtime: {
+        setProviderHealth: Dispatch<SetStateAction<ProviderHealthEntry[]>>;
+        setQueueSummaries: Dispatch<SetStateAction<QueueSummary[]>>;
+        setRoutePreview: Dispatch<SetStateAction<RoutePlan | null>>;
+        setStatus: Dispatch<SetStateAction<StatusPayload | null>>;
+        setTasks: Dispatch<SetStateAction<CronPayload | null>>;
+    };
+    search: {
+        setLoading: Dispatch<SetStateAction<boolean>>;
+        setResults: Dispatch<SetStateAction<MemorySearchResult | null>>;
+    };
+    ui: {
+        setActionError: Dispatch<SetStateAction<string>>;
+        setDashboardError: Dispatch<SetStateAction<string>>;
+    };
+}
+
+interface CreateShellLoadersOptions {
+    selection: ShellLoaderSelection;
+    setters: ShellLoaderSetters;
 }
 
 export function createShellLoaders({
-    draftChatId,
-    searchScope,
-    selectedChatId,
-    setAuthSessions,
-    setAuthStatus,
-    setActionError,
-    setAuthTokenSummaries,
-    setChats,
-    setCronState,
-    setDashboardError,
-    setDraftChatId,
-    setMessages,
-    setPairingState,
-    setProviderHealth,
-    setQueueSummaries,
-    setRoutePreview,
-    setSearchLoading,
-    setSearchResults,
-    setSelectedChatId,
-    setStatus,
-    setToolLogs,
+    selection,
+    setters,
 }: CreateShellLoadersOptions) {
+    const { draftChatId, searchScope, selectedChatId } = selection;
+    const { auth, chat, pairing, runtime, search, ui } = setters;
+
     async function loadAuthStatus(): Promise<AuthStatusPayload> {
         const payload = await readJson<AuthStatusPayload>('/api/auth/status');
         startTransition(() => {
-            setAuthStatus(payload);
+            auth.setStatus(payload);
         });
         return payload;
     }
@@ -77,7 +81,7 @@ export function createShellLoaders({
     async function loadStatusPanel(): Promise<void> {
         const payload = await readJson<StatusPayload>('/api/status');
         startTransition(() => {
-            setStatus(payload);
+            runtime.setStatus(payload);
         });
     }
 
@@ -86,7 +90,7 @@ export function createShellLoaders({
             '/api/providers/health',
         );
         startTransition(() => {
-            setProviderHealth(payload);
+            runtime.setProviderHealth(payload);
         });
     }
 
@@ -97,13 +101,13 @@ export function createShellLoaders({
                 readJson<{ sessions: AuthSessionSummary[] }>('/api/auth/sessions'),
             ]);
             startTransition(() => {
-                setAuthTokenSummaries(tokensPayload.tokens);
-                setAuthSessions(sessionsPayload.sessions);
+                auth.setTokenSummaries(tokensPayload.tokens);
+                auth.setSessions(sessionsPayload.sessions);
             });
         } catch {
             startTransition(() => {
-                setAuthTokenSummaries([]);
-                setAuthSessions([]);
+                auth.setTokenSummaries([]);
+                auth.setSessions([]);
             });
         }
     }
@@ -111,7 +115,7 @@ export function createShellLoaders({
     async function loadPairingPanel(): Promise<void> {
         const payload = await readJson<PairingPayload>('/api/pairing');
         startTransition(() => {
-            setPairingState(payload);
+            pairing.setState(payload);
         });
     }
 
@@ -123,11 +127,11 @@ export function createShellLoaders({
         const chatIds = new Set(payload.map((chat) => chat.chatId));
 
         startTransition(() => {
-            setChats(payload);
-            setDraftChatId((current) =>
+            chat.setChats(payload);
+            chat.setDraftChatId((current) =>
                 current && chatIds.has(current) ? null : current,
             );
-            setSelectedChatId((current) => {
+            chat.setSelectedChatId((current) => {
                 if (chatIds.has(current) || current === currentDraftId) {
                     return current;
                 }
@@ -148,7 +152,7 @@ export function createShellLoaders({
             `/api/messages?${params.toString()}`,
         );
         startTransition(() => {
-            setMessages(payload);
+            chat.setMessages(payload);
         });
     }
 
@@ -161,14 +165,14 @@ export function createShellLoaders({
             `/api/logs/tools?${params.toString()}`,
         );
         startTransition(() => {
-            setToolLogs(payload);
+            chat.setToolLogs(payload);
         });
     }
 
     async function loadSchedulerPanel(): Promise<void> {
         const payload = await readJson<CronPayload>('/api/cron');
         startTransition(() => {
-            setCronState(payload);
+            runtime.setTasks(payload);
         });
     }
 
@@ -177,7 +181,7 @@ export function createShellLoaders({
             `/api/queues?channel=${WEB_CHANNEL}`,
         );
         startTransition(() => {
-            setQueueSummaries(payload);
+            runtime.setQueueSummaries(payload);
         });
     }
 
@@ -192,9 +196,9 @@ export function createShellLoaders({
                 loadSchedulerPanel(),
                 loadQueuePanel(),
             ]);
-            setDashboardError('');
+            ui.setDashboardError('');
         } catch (error) {
-            setDashboardError(
+            ui.setDashboardError(
                 error instanceof Error
                     ? error.message
                     : 'Failed to load shell data.',
@@ -204,11 +208,11 @@ export function createShellLoaders({
 
     async function loadSearch(query: string): Promise<void> {
         if (query.length < 2) {
-            setSearchResults(null);
+            search.setResults(null);
             return;
         }
 
-        setSearchLoading(true);
+        search.setLoading(true);
 
         try {
             const params = new URLSearchParams({
@@ -234,20 +238,20 @@ export function createShellLoaders({
                 `/api/memory/search?${params.toString()}`,
             );
             startTransition(() => {
-                setSearchResults(payload);
+                search.setResults(payload);
             });
         } catch (error) {
-            setActionError(
+            ui.setActionError(
                 error instanceof Error ? error.message : 'Search request failed.',
             );
         } finally {
-            setSearchLoading(false);
+            search.setLoading(false);
         }
     }
 
     async function loadRoutePreview(text: string): Promise<void> {
         if (!text || isSearchCommand(text)) {
-            setRoutePreview(null);
+            runtime.setRoutePreview(null);
             return;
         }
 
@@ -257,10 +261,10 @@ export function createShellLoaders({
                 `/api/route-preview?${params.toString()}`,
             );
             startTransition(() => {
-                setRoutePreview(payload);
+                runtime.setRoutePreview(payload);
             });
         } catch {
-            setRoutePreview(null);
+            runtime.setRoutePreview(null);
         }
     }
 
