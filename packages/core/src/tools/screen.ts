@@ -168,6 +168,7 @@ export interface ScreenSendTextOptions {
     clear?: boolean;
     pressReturn?: boolean;
     launchIfNeeded?: boolean;
+    requireFrontmost?: boolean;
     waitMs?: number;
     inspectAfter?: boolean;
     filePath?: string;
@@ -177,8 +178,9 @@ export interface ScreenSendTextOptions {
 
 export interface ScreenSendTextResult {
     appName: string;
+    frontmostBefore?: string;
     open?: ScreenOpenAppResult;
-    activate: ScreenActivateAppResult;
+    activate?: ScreenActivateAppResult;
     type: ScreenTypeResult;
     inspect?: ScreenInspectAppResult;
 }
@@ -1149,6 +1151,7 @@ export class ScreenTool {
     ): Promise<ScreenSendTextResult> {
         const appName = options.app.trim();
         const text = options.text;
+        const requireFrontmost = options.requireFrontmost ?? false;
 
         if (!appName) {
             throw new Error('screen.send_text requires an app name');
@@ -1157,11 +1160,26 @@ export class ScreenTool {
             throw new Error('screen.send_text requires text');
         }
 
+        const frontmostBefore = requireFrontmost
+            ? await this.frontmostApp(context)
+            : undefined;
+        if (
+            frontmostBefore &&
+            frontmostBefore.appName.trim().toLowerCase() !==
+                appName.toLowerCase()
+        ) {
+            throw new Error(
+                `screen.send_text requires ${appName} to already be frontmost; current frontmost app is ${frontmostBefore.appName}`,
+            );
+        }
+
         const open =
-            options.launchIfNeeded ?? true
+            !requireFrontmost && (options.launchIfNeeded ?? true)
                 ? await this.openApp({ app: appName }, context)
                 : undefined;
-        const activate = await this.activateApp({ app: appName }, context);
+        const activate = requireFrontmost
+            ? undefined
+            : await this.activateApp({ app: appName }, context);
         const type = await this.type(
             {
                 text,
@@ -1198,8 +1216,11 @@ export class ScreenTool {
 
         return {
             appName,
+            ...(frontmostBefore
+                ? { frontmostBefore: frontmostBefore.appName }
+                : {}),
             ...(open ? { open } : {}),
-            activate,
+            ...(activate ? { activate } : {}),
             type,
             ...(inspect ? { inspect } : {}),
         };

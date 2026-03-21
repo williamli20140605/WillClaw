@@ -288,6 +288,7 @@ const screenSendTextSchema = screenContextSchema.extend({
     clear: z.boolean().optional(),
     pressReturn: z.boolean().optional(),
     launchIfNeeded: z.boolean().optional(),
+    requireFrontmost: z.boolean().optional(),
     waitMs: z.coerce.number().int().min(0).optional(),
     inspectAfter: z.boolean().optional(),
     filePath: z.string().optional(),
@@ -1396,6 +1397,9 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
                         : {}),
                     ...(payload.launchIfNeeded !== undefined
                         ? { launchIfNeeded: payload.launchIfNeeded }
+                        : {}),
+                    ...(payload.requireFrontmost !== undefined
+                        ? { requireFrontmost: payload.requireFrontmost }
                         : {}),
                     ...(payload.waitMs !== undefined
                         ? { waitMs: payload.waitMs }

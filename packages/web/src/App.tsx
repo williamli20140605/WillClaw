@@ -780,6 +780,8 @@ export function App() {
     const [screenSendInspectAfter, setScreenSendInspectAfter] = useState(true);
     const [screenSendLaunchIfNeeded, setScreenSendLaunchIfNeeded] =
         useState(true);
+    const [screenSendRequireFrontmost, setScreenSendRequireFrontmost] =
+        useState(false);
     const [hostActionBusy, setHostActionBusy] = useState(false);
     const [hostActionResult, setHostActionResult] = useState('');
 
@@ -3411,6 +3413,7 @@ export function App() {
                                                 >
                                                     <input
                                                         checked={screenSendLaunchIfNeeded}
+                                                        disabled={screenSendRequireFrontmost}
                                                         id="screen-send-launch"
                                                         onChange={(event) =>
                                                             setScreenSendLaunchIfNeeded(
@@ -3469,6 +3472,22 @@ export function App() {
                                                     />
                                                     <span>Inspect after send</span>
                                                 </label>
+                                                <label
+                                                    className="field-option"
+                                                    htmlFor="screen-send-frontmost"
+                                                >
+                                                    <input
+                                                        checked={screenSendRequireFrontmost}
+                                                        id="screen-send-frontmost"
+                                                        onChange={(event) =>
+                                                            setScreenSendRequireFrontmost(
+                                                                event.target.checked,
+                                                            )
+                                                        }
+                                                        type="checkbox"
+                                                    />
+                                                    <span>Only send if already frontmost</span>
+                                                </label>
                                             </div>
                                             <div className="toolbar">
                                                 <button
@@ -3491,7 +3510,11 @@ export function App() {
                                                                 inspectAfter:
                                                                     screenSendInspectAfter,
                                                                 launchIfNeeded:
-                                                                    screenSendLaunchIfNeeded,
+                                                                    screenSendRequireFrontmost
+                                                                        ? false
+                                                                        : screenSendLaunchIfNeeded,
+                                                                requireFrontmost:
+                                                                    screenSendRequireFrontmost,
                                                                 languages: ['en-US', 'zh-Hans'],
                                                             },
                                                         )
@@ -3562,7 +3585,7 @@ export function App() {
                                                 Uses macOS app control plus Peekaboo-first desktop actions. OCR uses Apple Vision after capture.
                                             </p>
                                             <div className="hint-text">
-                                                Send Text brings the target app to the front, so your mouse and keyboard focus may jump briefly while it runs.
+                                                Send Text normally brings the target app to the front, so your mouse and keyboard focus may jump briefly while it runs. Enable "Only send if already frontmost" to fail fast instead of switching apps.
                                             </div>
                                         </article>
 

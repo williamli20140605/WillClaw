@@ -275,7 +275,7 @@ export function renderHostedActionBridgeInstructions(options: {
         }
         if (options.screenActions.includes('send_text')) {
             lines.push(
-                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"send_text","app":"TextEdit","text":"hello from WillClaw","pressReturn":false,"inspectAfter":true}`,
+                `${HOSTED_ACTION_BRIDGE_PREFIX} {"tool":"screen","action":"send_text","app":"TextEdit","text":"hello from WillClaw","pressReturn":false,"inspectAfter":true,"requireFrontmost":true}`,
             );
         }
         if (options.screenActions.includes('click')) {
@@ -298,7 +298,7 @@ export function renderHostedActionBridgeInstructions(options: {
             `Allowed screen actions right now: ${options.screenActions.join(', ')}.`,
             'Use frontmost_app/open_app/activate_app when you need to move the host desktop to the right app before vision or input.',
             'Use inspect_app when you want a single hosted step that foregrounds an app, captures the screen, and OCRs the visible UI.',
-            'Use send_text when you want a single hosted step that foregrounds an app, types text, and optionally inspects the result.',
+            'Use send_text when you want a single hosted step that types text and optionally inspects the result; set requireFrontmost=true if you need to avoid switching apps.',
             'Desktop click/type/press require macOS Accessibility permission for the host app running WillClaw.',
         );
     }
@@ -891,6 +891,10 @@ export class HostedActionService {
                     request.payload,
                     'launchIfNeeded',
                 );
+                const requireFrontmost = readBoolean(
+                    request.payload,
+                    'requireFrontmost',
+                );
                 const waitMs = readNumber(request.payload, 'waitMs');
                 const inspectAfter = readBoolean(request.payload, 'inspectAfter');
                 const filePath = readString(request.payload, 'filePath');
@@ -903,6 +907,9 @@ export class HostedActionService {
                         ...(clear !== undefined ? { clear } : {}),
                         ...(pressReturn !== undefined ? { pressReturn } : {}),
                         ...(launchIfNeeded !== undefined ? { launchIfNeeded } : {}),
+                        ...(requireFrontmost !== undefined
+                            ? { requireFrontmost }
+                            : {}),
                         ...(waitMs !== undefined ? { waitMs } : {}),
                         ...(inspectAfter !== undefined ? { inspectAfter } : {}),
                         ...(filePath ? { filePath } : {}),
@@ -921,8 +928,11 @@ export class HostedActionService {
                         : `Sent text to ${result.appName}`,
                     data: {
                         appName: result.appName,
+                        ...(result.frontmostBefore
+                            ? { frontmostBefore: result.frontmostBefore }
+                            : {}),
                         ...(result.open ? { open: result.open } : {}),
-                        activate: result.activate,
+                        ...(result.activate ? { activate: result.activate } : {}),
                         type: result.type,
                         ...(result.inspect ? { inspect: result.inspect } : {}),
                     },
