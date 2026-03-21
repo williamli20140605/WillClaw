@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useState } from 'react';
+import { useDeferredValue, useState } from 'react';
 
 import {
     DEFAULT_CHAT,
@@ -24,12 +24,11 @@ import {
     type ToolLogEntry,
 } from './ui-types.js';
 import { createConversationActions } from './conversation-actions.js';
-import { createDashboardDerivedState } from './dashboard-derived-state.js';
 import { createHostLabActions } from './host-lab-actions.js';
-import { createInspectorModels } from './inspector-models.js';
 import { createShellAccessActions } from './shell-access-actions.js';
 import { createShellLoaders } from './shell-loaders.js';
-import { subscribeShellRealtime } from './shell-realtime.js';
+import { createShellViewModels } from './shell-view-models.js';
+import { useShellEffects } from './use-shell-effects.js';
 import {
     AuthLoadingScreen,
     AuthUnlockScreen,
@@ -154,109 +153,27 @@ export function App() {
         setToolLogs,
     });
 
-    useEffect(() => {
-        let cancelled = false;
-
-        const boot = async () => {
-            try {
-                const payload = await loadAuthStatus();
-                if (
-                    cancelled ||
-                    (payload.authRequired && !payload.authenticated)
-                ) {
-                    return;
-                }
-
-                await loadShellPanels();
-            } catch (error) {
-                if (!cancelled) {
-                    setDashboardError(
-                        error instanceof Error
-                            ? error.message
-                            : 'Failed to load shell data.',
-                    );
-                }
-            }
-        };
-
-        void boot();
-
-        const interval = window.setInterval(() => {
-            void loadAuthStatus()
-                .then((payload) => {
-                    if (!payload.authRequired || payload.authenticated) {
-                        return loadShellPanels();
-                    }
-
-                    return undefined;
-                })
-                .catch((error) => {
-                    setDashboardError(
-                        error instanceof Error
-                            ? error.message
-                            : 'Failed to load shell data.',
-                    );
-                });
-        }, 30_000);
-
-        return () => {
-            cancelled = true;
-            window.clearInterval(interval);
-        };
-    }, []);
-
-    useEffect(() => {
-        if (!authAllowsDashboard) {
-            return;
-        }
-
-        void loadMessagesPanel(selectedChatId);
-        void loadToolLogsPanel(selectedChatId);
-
-        const interval = window.setInterval(() => {
-            void loadMessagesPanel(selectedChatId);
-            void loadToolLogsPanel(selectedChatId);
-        }, 30_000);
-
-        return () => {
-            window.clearInterval(interval);
-        };
-    }, [authAllowsDashboard, selectedChatId]);
-
-    useEffect(() => {
-        if (!authAllowsDashboard) {
-            setRealtimeConnected(false);
-            return;
-        }
-        return subscribeShellRealtime({
-            loadChatList,
-            loadMessagesPanel,
-            loadQueuePanel,
-            loadSchedulerPanel,
-            loadShellPanels,
-            loadToolLogsPanel,
-            selectedChatId,
-            setActiveRuns,
-            setRealtimeConnected,
-            setRecentEvents,
-        });
-    }, [authAllowsDashboard, selectedChatId, draftChatId]);
-
-    useEffect(() => {
-        if (!authAllowsDashboard) {
-            return;
-        }
-
-        void loadSearch(deferredSearchQuery);
-    }, [authAllowsDashboard, deferredSearchQuery, searchScope]);
-
-    useEffect(() => {
-        if (!authAllowsDashboard) {
-            return;
-        }
-
-        void loadRoutePreview(deferredComposerText);
-    }, [authAllowsDashboard, deferredComposerText]);
+    useShellEffects({
+        authAllowsDashboard,
+        deferredComposerText,
+        deferredSearchQuery,
+        draftChatId,
+        loadAuthStatus,
+        loadChatList,
+        loadMessagesPanel,
+        loadQueuePanel,
+        loadRoutePreview,
+        loadSchedulerPanel,
+        loadSearch,
+        loadShellPanels,
+        loadToolLogsPanel,
+        searchScope,
+        selectedChatId,
+        setActiveRuns,
+        setDashboardError,
+        setRealtimeConnected,
+        setRecentEvents,
+    });
 
     const { handleTaskRun, parseBrowserFormFields, runHostAction } =
         createHostLabActions({
@@ -310,12 +227,16 @@ export function App() {
     const {
         handleCancelRun,
         handleCreateChat,
+        handleEditCancel,
         handleEditSave,
+        handleEditStart,
         handleInjectIntoComposer,
+        handlePrefixAgent,
         handleResend,
         handleRevoke,
         handleSelectChat,
         handleSend,
+        handleStartSearch,
     } = createConversationActions({
         composerText,
         editingText,
@@ -356,114 +277,91 @@ export function App() {
 
     const {
         availableAgents,
+        activityInspector,
         chatList,
         composerShowsSearch,
         currentActiveRun,
-        currentRecentEvents,
         editedSuccessorById,
         latestAssistantRoute,
         queueSummaryByChatId,
-        schedulerTasks,
+        runtimeInspector,
+        searchInspector,
         selectedChat,
         selectedChatQueue,
         selectedQueueLeadRun,
         totalTasks,
-    } = createDashboardDerivedState({
+    } = createShellViewModels({
+        actionError: setActionError,
         activeRuns,
+        authAdminBusy,
+        authSessions,
+        authTokenSummaries,
+        browserFormFieldsText,
+        browserSubmitSelector,
+        browserTarget,
+        canManageAuth,
         chats,
         cronState,
         deferredComposerText,
+        deferredSearchQuery,
         draftChatId,
+        handleCreateManagedToken,
+        handleCreatePairingInvite,
+        handleInjectIntoComposer,
+        handleRevokeAuthSession,
+        handleRevokeAuthToken,
+        handleRevokePairingGrant,
+        handleRevokePairingInvite,
+        handleSelectChat,
+        handleTaskRun,
+        hostActionBusy,
+        hostActionResult,
+        latestManagedToken,
+        managedTokenId,
+        managedTokenScopes,
         messages,
+        pairingBusy,
+        pairingChannel,
+        pairingInvite,
+        pairingKind,
+        pairingState,
+        parseBrowserFormFields,
+        providerHealth,
         queueSummaries,
         recentEvents,
+        runHostAction,
+        screenApp,
+        screenInputText,
+        screenSendClear,
+        screenSendInspectAfter,
+        screenSendLaunchIfNeeded,
+        screenSendPressReturn,
+        screenSendRequireFrontmost,
+        searchLoading,
+        searchQuery,
+        searchResults,
+        searchScope,
         selectedChatId,
+        setBrowserFormFieldsText,
+        setBrowserSubmitSelector,
+        setBrowserTarget,
+        setInspectorTab,
+        setManagedTokenId,
+        setManagedTokenScopes,
+        setPairingChannel,
+        setPairingKind,
+        setScreenApp,
+        setScreenInputText,
+        setScreenSendClear,
+        setScreenSendInspectAfter,
+        setScreenSendLaunchIfNeeded,
+        setScreenSendPressReturn,
+        setScreenSendRequireFrontmost,
+        setSearchQuery,
+        setSearchScope,
         status,
+        toolLogs,
     });
-    const { activityInspector, runtimeInspector, searchInspector } =
-        createInspectorModels({
-            activityState: {
-                currentActiveRun,
-                currentRecentEvents,
-                selectedChatId,
-                toolLogs,
-            },
-            authState: {
-                authAdminBusy,
-                authSessions,
-                authTokenSummaries,
-                canManageAuth,
-                latestManagedToken,
-                managedTokenId,
-                managedTokenScopes,
-            },
-            hostLabState: {
-                browserFormFieldsText,
-                browserSubmitSelector,
-                browserTarget,
-                hostActionBusy,
-                hostActionResult,
-                screenApp,
-                screenInputText,
-                screenSendClear,
-                screenSendInspectAfter,
-                screenSendLaunchIfNeeded,
-                screenSendPressReturn,
-                screenSendRequireFrontmost,
-                selectedChatId,
-            },
-            pairingState: {
-                pairingBusy,
-                pairingChannel,
-                pairingInvite,
-                pairingKind,
-                pairingState,
-            },
-            runtimeState: {
-                providerHealth,
-                schedulerTasks,
-                selectedChatQueue,
-                status,
-            },
-            searchState: {
-                deferredSearchQuery,
-                searchLoading,
-                searchQuery,
-                searchResults,
-                searchScope,
-            },
-            actions: {
-                handleCreateManagedToken,
-                handleCreatePairingInvite,
-                handleInjectIntoComposer,
-                handleRevokeAuthSession,
-                handleRevokeAuthToken,
-                handleRevokePairingGrant,
-                handleRevokePairingInvite,
-                handleSelectChat,
-                handleTaskRun,
-                parseBrowserFormFields,
-                runHostAction,
-                setActionError,
-                setBrowserFormFieldsText,
-                setBrowserSubmitSelector,
-                setBrowserTarget,
-                setInspectorTab,
-                setManagedTokenId,
-                setManagedTokenScopes,
-                setPairingChannel,
-                setPairingKind,
-                setScreenApp,
-                setScreenInputText,
-                setScreenSendClear,
-                setScreenSendInspectAfter,
-                setScreenSendLaunchIfNeeded,
-                setScreenSendPressReturn,
-                setScreenSendRequireFrontmost,
-                setSearchQuery,
-                setSearchScope,
-            },
-        });
 
     return (
         <main className="app-shell">
@@ -487,15 +385,9 @@ export function App() {
                     currentActiveRun={currentActiveRun}
                     latestAssistantRoute={latestAssistantRoute}
                     onCreateChat={handleCreateChat}
-                    onPrefixAgent={(agentName) =>
-                        setComposerText((current) =>
-                            current.startsWith(`@${agentName}`)
-                                ? current
-                                : `@${agentName} ${current}`.trim(),
-                        )
-                    }
+                    onPrefixAgent={handlePrefixAgent}
                     onSelectChat={handleSelectChat}
-                    onStartSearch={() => setComposerText('/search ')}
+                    onStartSearch={handleStartSearch}
                     queueSummaryByChatId={queueSummaryByChatId}
                     routePreview={routePreview}
                     selectedChat={selectedChat}
@@ -531,17 +423,11 @@ export function App() {
                         editingMessageId={editingMessageId}
                         editingText={editingText}
                         messages={messages}
-                        onEditCancel={() => {
-                            setEditingMessageId(null);
-                            setEditingText('');
-                        }}
+                        onEditCancel={handleEditCancel}
                         onEditSave={(messageId) => {
                             void handleEditSave(messageId);
                         }}
-                        onEditStart={(messageId, content) => {
-                            setEditingMessageId(messageId);
-                            setEditingText(content);
-                        }}
+                        onEditStart={handleEditStart}
                         onEditTextChange={setEditingText}
                         onResend={(messageId) => {
                             void handleResend(messageId);
@@ -563,17 +449,11 @@ export function App() {
                         submitting={submitting}
                         onComposerTextChange={setComposerText}
                         onExecutionModeChange={setExecutionMode}
-                        onPrefixAgent={(agentName) =>
-                            setComposerText((current) =>
-                                current.startsWith(`@${agentName}`)
-                                    ? current
-                                    : `@${agentName} ${current}`.trim(),
-                            )
-                        }
+                        onPrefixAgent={handlePrefixAgent}
                         onSend={() => {
                             void handleSend();
                         }}
-                        onStartSearch={() => setComposerText('/search ')}
+                        onStartSearch={handleStartSearch}
                     />
                 </section>
 

@@ -209,14 +209,40 @@ export function createConversationActions({
         );
     }
 
+    function handlePrefixAgent(agentName: string): void {
+        setComposerText((current) =>
+            current.startsWith(`@${agentName}`)
+                ? current
+                : `@${agentName} ${current}`.trim(),
+        );
+    }
+
+    function handleStartSearch(): void {
+        setComposerText('/search ');
+    }
+
+    function handleEditCancel(): void {
+        setEditingMessageId(null);
+        setEditingText('');
+    }
+
+    function handleEditStart(messageId: number, content: string): void {
+        setEditingMessageId(messageId);
+        setEditingText(content);
+    }
+
     return {
         handleCancelRun,
         handleCreateChat,
+        handleEditCancel,
         handleEditSave,
+        handleEditStart,
         handleInjectIntoComposer,
+        handlePrefixAgent,
         handleResend,
         handleRevoke,
         handleSelectChat,
         handleSend,
+        handleStartSearch,
     };
 }
