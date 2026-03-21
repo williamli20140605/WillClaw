@@ -1,93 +1,40 @@
 import { createDashboardDerivedState } from './dashboard-derived-state.js';
 import { createInspectorModels } from './inspector-models.js';
 import type {
-    ActiveRun,
-    AuthSessionSummary,
-    AuthTokenSummary,
-    CreatedAuthToken,
-    CreatedPairingInvite,
-    CronPayload,
-    MemorySearchResult,
-    PairingPayload,
-    ProviderHealthEntry,
-    QueueSummary,
-    RealtimeEvent,
-    SearchScope,
-    StatusPayload,
-    StoredMessage,
-    ToolLogEntry,
-} from './ui-types.js';
+    ShellAuthState,
+    ShellChatState,
+    ShellHostLabState,
+    ShellPairingState,
+    ShellRuntimeState,
+    ShellSearchState,
+    ShellSetters,
+    ShellUiState,
+} from './shell-state-types.js';
 
-interface ShellViewAuthState {
-    adminBusy: boolean;
-    canManageAuth: boolean;
-    latestManagedToken: CreatedAuthToken | null;
-    managedTokenId: string;
-    managedTokenScopes: string[];
-    sessions: AuthSessionSummary[];
-    tokenSummaries: AuthTokenSummary[];
-}
+type ShellViewAuthState = Pick<
+    ShellAuthState,
+    | 'adminBusy'
+    | 'canManageAuth'
+    | 'latestManagedToken'
+    | 'managedTokenId'
+    | 'managedTokenScopes'
+    | 'sessions'
+    | 'tokenSummaries'
+>;
 
-interface ShellViewChatState {
-    chats: Array<{
-        channel: string;
-        chatId: string;
-        updatedAt: string;
-        messageCount: number;
-        preview: string;
-        role: 'user' | 'assistant' | 'system';
-        agent?: string;
-        runId?: string;
-    }>;
-    draftChatId: string | null;
-    messages: StoredMessage[];
-    selectedChatId: string;
-    toolLogs: ToolLogEntry[];
-}
+type ShellViewChatState = Pick<
+    ShellChatState,
+    'chats' | 'draftChatId' | 'messages' | 'selectedChatId' | 'toolLogs'
+>;
 
-interface ShellViewHostLabState {
-    browserFormFieldsText: string;
-    browserSubmitSelector: string;
-    browserTarget: string;
-    hostActionBusy: boolean;
-    hostActionResult: string;
-    screenApp: string;
-    screenInputText: string;
-    screenSendClear: boolean;
-    screenSendInspectAfter: boolean;
-    screenSendLaunchIfNeeded: boolean;
-    screenSendPressReturn: boolean;
-    screenSendRequireFrontmost: boolean;
-}
-
-interface ShellViewPairingState {
-    busy: boolean;
-    channel: 'telegram' | 'discord' | 'feishu';
-    invite: CreatedPairingInvite | null;
-    kind: 'web' | 'channel';
-    state: PairingPayload | null;
-}
-
-interface ShellViewRuntimeState {
-    activeRuns: ActiveRun[];
-    providerHealth: ProviderHealthEntry[];
-    queueSummaries: QueueSummary[];
-    recentEvents: RealtimeEvent[];
-    status: StatusPayload | null;
-    tasks: CronPayload | null;
-}
-
-interface ShellViewSearchState {
-    deferredQuery: string;
-    loading: boolean;
-    query: string;
-    results: MemorySearchResult | null;
-    scope: SearchScope;
-}
-
-interface ShellViewUiState {
-    deferredComposerText: string;
-}
+type ShellViewHostLabState = ShellHostLabState;
+type ShellViewPairingState = ShellPairingState;
+type ShellViewRuntimeState = Pick<
+    ShellRuntimeState,
+    'activeRuns' | 'providerHealth' | 'queueSummaries' | 'recentEvents' | 'status' | 'tasks'
+>;
+type ShellViewSearchState = ShellSearchState;
+type ShellViewUiState = Pick<ShellUiState, 'deferredComposerText'>;
 
 interface ShellViewActions {
     access: {
@@ -115,36 +62,23 @@ interface ShellViewActions {
         ): Promise<void>;
     };
     setters: {
-        auth: {
-            setManagedTokenId(value: string): void;
-            setManagedTokenScopes(
-                value: string[] | ((current: string[]) => string[]),
-            ): void;
-        };
-        hostLab: {
-            setBrowserFormFieldsText(value: string): void;
-            setBrowserSubmitSelector(value: string): void;
-            setBrowserTarget(value: string): void;
-            setScreenApp(value: string): void;
-            setScreenInputText(value: string): void;
-            setScreenSendClear(value: boolean): void;
-            setScreenSendInspectAfter(value: boolean): void;
-            setScreenSendLaunchIfNeeded(value: boolean): void;
-            setScreenSendPressReturn(value: boolean): void;
-            setScreenSendRequireFrontmost(value: boolean): void;
-        };
-        pairing: {
-            setChannel(value: 'telegram' | 'discord' | 'feishu'): void;
-            setKind(value: 'web' | 'channel'): void;
-        };
-        search: {
-            setQuery(value: string): void;
-            setScope(value: SearchScope): void;
-        };
-        ui: {
-            setActionError(message: string): void;
-            setInspectorTab(value: 'search' | 'activity' | 'runtime'): void;
-        };
+        auth: Pick<ShellSetters['auth'], 'setManagedTokenId' | 'setManagedTokenScopes'>;
+        hostLab: Pick<
+            ShellSetters['hostLab'],
+            | 'setBrowserFormFieldsText'
+            | 'setBrowserSubmitSelector'
+            | 'setBrowserTarget'
+            | 'setScreenApp'
+            | 'setScreenInputText'
+            | 'setScreenSendClear'
+            | 'setScreenSendInspectAfter'
+            | 'setScreenSendLaunchIfNeeded'
+            | 'setScreenSendPressReturn'
+            | 'setScreenSendRequireFrontmost'
+        >;
+        pairing: Pick<ShellSetters['pairing'], 'setChannel' | 'setKind'>;
+        search: Pick<ShellSetters['search'], 'setQuery' | 'setScope'>;
+        ui: Pick<ShellSetters['ui'], 'setActionError' | 'setInspectorTab'>;
     };
 }
 

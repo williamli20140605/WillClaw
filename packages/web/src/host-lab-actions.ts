@@ -1,15 +1,20 @@
 import type { BrowserFormFieldInput } from './inspector-types.js';
+import type {
+  ShellChatState,
+  ShellHostLabState,
+  ShellSetters,
+} from './shell-state-types.js';
 import { formatStructuredResult, readJson } from './ui-helpers.js';
 
 interface HostLabActionsOptions {
-  browserFormFieldsText: string;
+  browserFormFieldsText: ShellHostLabState['browserFormFieldsText'];
   loadChatList(): Promise<void>;
   loadSchedulerPanel(): Promise<void>;
-  loadToolLogsPanel(chatId: string): Promise<void>;
-  selectedChatId: string;
-  setActionError(message: string): void;
-  setHostActionBusy(value: boolean): void;
-  setHostActionResult(value: string): void;
+  loadToolLogsPanel(chatId?: string): Promise<void>;
+  selectedChatId: ShellChatState['selectedChatId'];
+  setActionError: ShellSetters['ui']['setActionError'];
+  setHostActionBusy: ShellSetters['hostLab']['setHostActionBusy'];
+  setHostActionResult: ShellSetters['hostLab']['setHostActionResult'];
 }
 
 export function createHostLabActions({

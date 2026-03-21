@@ -1,7 +1,6 @@
-import { startTransition, type Dispatch, type SetStateAction } from 'react';
+import { startTransition } from 'react';
 
 import type {
-    ActiveRun,
     AuthSessionSummary,
     AuthStatusPayload,
     AuthTokenSummary,
@@ -9,17 +8,13 @@ import type {
     CreatedPairingInvite,
     PairingGrant,
     PairingInvite,
-    RealtimeEvent,
-    StoredMessage,
-    ToolLogEntry,
 } from './ui-types.js';
+import type {
+    ShellAuthState,
+    ShellPairingState,
+    ShellSetters,
+} from './shell-state-types.js';
 import { readJson } from './ui-helpers.js';
-
-interface ShellAccessAuthState {
-    managedTokenId: string;
-    managedTokenScopes: string[];
-    tokenInput: string;
-}
 
 interface ShellAccessLoaders {
     loadAuthAdminPanel(): Promise<void>;
@@ -29,50 +24,22 @@ interface ShellAccessLoaders {
     loadToolLogsPanel(chatId?: string): Promise<void>;
 }
 
-interface ShellAccessPairingState {
-    channel: 'telegram' | 'discord' | 'feishu';
-    invite: CreatedPairingInvite | null;
-    kind: 'web' | 'channel';
-}
-
 interface ShellAccessSelection {
     selectedChatId: string;
 }
 
-interface ShellAccessSetters {
-    auth: {
-        setAdminBusy: Dispatch<SetStateAction<boolean>>;
-        setBusy: Dispatch<SetStateAction<boolean>>;
-        setLatestManagedToken: Dispatch<SetStateAction<CreatedAuthToken | null>>;
-        setManagedTokenId: Dispatch<SetStateAction<string>>;
-        setStatus: Dispatch<SetStateAction<AuthStatusPayload | null>>;
-        setTokenInput: Dispatch<SetStateAction<string>>;
-    };
-    chat: {
-        setMessages: Dispatch<SetStateAction<StoredMessage[]>>;
-        setToolLogs: Dispatch<SetStateAction<ToolLogEntry[]>>;
-    };
-    pairing: {
-        setBusy: Dispatch<SetStateAction<boolean>>;
-        setInvite: Dispatch<SetStateAction<CreatedPairingInvite | null>>;
-    };
-    runtime: {
-        setActiveRuns: Dispatch<SetStateAction<ActiveRun[]>>;
-        setRealtimeConnected: Dispatch<SetStateAction<boolean>>;
-        setRecentEvents: Dispatch<SetStateAction<RealtimeEvent[]>>;
-    };
-    ui: {
-        setActionError: Dispatch<SetStateAction<string>>;
-        setDashboardError: Dispatch<SetStateAction<string>>;
-    };
-}
-
 interface CreateShellAccessActionsOptions {
-    auth: ShellAccessAuthState;
+    auth: Pick<
+        ShellAuthState,
+        'managedTokenId' | 'managedTokenScopes' | 'tokenInput'
+    >;
     loaders: ShellAccessLoaders;
-    pairing: ShellAccessPairingState;
+    pairing: Pick<ShellPairingState, 'channel' | 'invite' | 'kind'>;
     selection: ShellAccessSelection;
-    setters: ShellAccessSetters;
+    setters: Pick<
+        ShellSetters,
+        'auth' | 'chat' | 'pairing' | 'runtime' | 'ui'
+    >;
 }
 
 export function createShellAccessActions({

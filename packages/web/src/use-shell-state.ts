@@ -23,8 +23,9 @@ import {
     type StoredMessage,
     type ToolLogEntry,
 } from './ui-types.js';
+import type { ShellStateStore } from './shell-state-types.js';
 
-export function useShellState() {
+export function useShellState(): ShellStateStore {
     const [authStatus, setAuthStatus] = useState<AuthStatusPayload | null>(null);
     const [authTokenInput, setAuthTokenInput] = useState('');
     const [authBusy, setAuthBusy] = useState(false);

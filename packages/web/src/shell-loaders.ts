@@ -1,4 +1,4 @@
-import { startTransition, type Dispatch, type SetStateAction } from 'react';
+import { startTransition } from 'react';
 
 import type {
     AuthSessionSummary,
@@ -11,56 +11,27 @@ import type {
     ProviderHealthEntry,
     QueueSummary,
     RoutePlan,
-    SearchScope,
     StatusPayload,
     StoredMessage,
     ToolLogEntry,
 } from './ui-types.js';
+import type {
+    ShellChatState,
+    ShellSearchState,
+    ShellSetters,
+} from './shell-state-types.js';
 import { WEB_CHANNEL } from './ui-types.js';
 import { isSearchCommand, readJson } from './ui-helpers.js';
 
 interface ShellLoaderSelection {
-    draftChatId: string | null;
-    searchScope: SearchScope;
-    selectedChatId: string;
-}
-
-interface ShellLoaderSetters {
-    auth: {
-        setSessions: Dispatch<SetStateAction<AuthSessionSummary[]>>;
-        setStatus: Dispatch<SetStateAction<AuthStatusPayload | null>>;
-        setTokenSummaries: Dispatch<SetStateAction<AuthTokenSummary[]>>;
-    };
-    chat: {
-        setChats: Dispatch<SetStateAction<ChatSummary[]>>;
-        setDraftChatId: Dispatch<SetStateAction<string | null>>;
-        setMessages: Dispatch<SetStateAction<StoredMessage[]>>;
-        setSelectedChatId: Dispatch<SetStateAction<string>>;
-        setToolLogs: Dispatch<SetStateAction<ToolLogEntry[]>>;
-    };
-    pairing: {
-        setState: Dispatch<SetStateAction<PairingPayload | null>>;
-    };
-    runtime: {
-        setProviderHealth: Dispatch<SetStateAction<ProviderHealthEntry[]>>;
-        setQueueSummaries: Dispatch<SetStateAction<QueueSummary[]>>;
-        setRoutePreview: Dispatch<SetStateAction<RoutePlan | null>>;
-        setStatus: Dispatch<SetStateAction<StatusPayload | null>>;
-        setTasks: Dispatch<SetStateAction<CronPayload | null>>;
-    };
-    search: {
-        setLoading: Dispatch<SetStateAction<boolean>>;
-        setResults: Dispatch<SetStateAction<MemorySearchResult | null>>;
-    };
-    ui: {
-        setActionError: Dispatch<SetStateAction<string>>;
-        setDashboardError: Dispatch<SetStateAction<string>>;
-    };
+    draftChatId: ShellChatState['draftChatId'];
+    searchScope: ShellSearchState['scope'];
+    selectedChatId: ShellChatState['selectedChatId'];
 }
 
 interface CreateShellLoadersOptions {
     selection: ShellLoaderSelection;
-    setters: ShellLoaderSetters;
+    setters: ShellSetters;
 }
 
 export function createShellLoaders({

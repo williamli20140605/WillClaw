@@ -1,21 +1,22 @@
 import {
     useEffect,
     useEffectEvent,
-    type Dispatch,
-    type SetStateAction,
 } from 'react';
 
-import type { ActiveRun, RealtimeEvent, SearchScope } from './ui-types.js';
+import type {
+    ShellAuthState,
+    ShellChatState,
+    ShellSearchState,
+    ShellSetters,
+    ShellUiState,
+} from './shell-state-types.js';
 import { subscribeShellRealtime } from './shell-realtime.js';
 
-interface ShellEffectAuthState {
-    allowsDashboard: boolean;
-}
-
-interface ShellEffectChatState {
-    draftChatId: string | null;
-    selectedChatId: string;
-}
+type ShellEffectAuthState = Pick<ShellAuthState, 'allowsDashboard'>;
+type ShellEffectChatState = Pick<
+    ShellChatState,
+    'draftChatId' | 'selectedChatId'
+>;
 
 interface ShellEffectLoaders {
     loadAuthStatus(): Promise<{
@@ -32,25 +33,9 @@ interface ShellEffectLoaders {
     loadToolLogsPanel(chatId?: string): Promise<void>;
 }
 
-interface ShellEffectSearchState {
-    deferredQuery: string;
-    scope: SearchScope;
-}
-
-interface ShellEffectSetters {
-    runtime: {
-        setActiveRuns: Dispatch<SetStateAction<ActiveRun[]>>;
-        setRealtimeConnected: Dispatch<SetStateAction<boolean>>;
-        setRecentEvents: Dispatch<SetStateAction<RealtimeEvent[]>>;
-    };
-    ui: {
-        setDashboardError: Dispatch<SetStateAction<string>>;
-    };
-}
-
-interface ShellEffectUiState {
-    deferredComposerText: string;
-}
+type ShellEffectSearchState = Pick<ShellSearchState, 'deferredQuery' | 'scope'>;
+type ShellEffectSetters = Pick<ShellSetters, 'runtime' | 'ui'>;
+type ShellEffectUiState = Pick<ShellUiState, 'deferredComposerText'>;
 
 interface UseShellEffectsOptions {
     auth: ShellEffectAuthState;

@@ -1,19 +1,17 @@
-import { startTransition, type Dispatch, type SetStateAction } from 'react';
+import { startTransition } from 'react';
 
 import {
     WEB_CHANNEL,
     WEB_USER,
     type ChatResult,
-    type StoredMessage,
 } from './ui-types.js';
+import type { ShellChatState, ShellSetters } from './shell-state-types.js';
 import { createDraftChatId, readJson } from './ui-helpers.js';
 
-interface ConversationChatState {
-    composerText: string;
-    editingText: string;
-    executionMode: 'foreground' | 'background';
-    selectedChatId: string;
-}
+type ConversationChatState = Pick<
+    ShellChatState,
+    'composerText' | 'editingText' | 'executionMode' | 'selectedChatId'
+>;
 
 interface ConversationLoaders {
     loadChatList(): Promise<void>;
@@ -21,26 +19,10 @@ interface ConversationLoaders {
     loadToolLogsPanel(chatId?: string): Promise<void>;
 }
 
-interface ConversationSetters {
-    chat: {
-        setComposerText: Dispatch<SetStateAction<string>>;
-        setDraftChatId: Dispatch<SetStateAction<string | null>>;
-        setEditingMessageId: Dispatch<SetStateAction<number | null>>;
-        setEditingText: Dispatch<SetStateAction<string>>;
-        setLastRun: Dispatch<SetStateAction<ChatResult | null>>;
-        setMessages: Dispatch<SetStateAction<StoredMessage[]>>;
-        setSelectedChatId: Dispatch<SetStateAction<string>>;
-        setSubmitting: Dispatch<SetStateAction<boolean>>;
-    };
-    ui: {
-        setActionError: Dispatch<SetStateAction<string>>;
-    };
-}
-
 interface CreateConversationActionsOptions {
     chat: ConversationChatState;
     loaders: ConversationLoaders;
-    setters: ConversationSetters;
+    setters: Pick<ShellSetters, 'chat' | 'ui'>;
 }
 
 export function createConversationActions({
