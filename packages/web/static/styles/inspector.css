@@ -1,0 +1,46 @@
+/* Inspector-specific framing and navigation */
+
+.inspector-header {
+  padding: 2px 2px 0;
+}
+
+.inspector-header h2 {
+  margin: 0 0 6px;
+  color: var(--ink-strong);
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.inspector-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.inspector-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inspector-tab {
+  min-height: 36px;
+  border-radius: 11px;
+  padding: 8px 10px;
+  background: var(--card-soft);
+  border-color: var(--line);
+  color: var(--muted-strong);
+  text-transform: capitalize;
+}
+
+.inspector-tab[data-active="true"] {
+  background: rgba(255, 92, 92, 0.1);
+  border-color: rgba(255, 92, 92, 0.22);
+  color: #ff9f9f;
+}
+
+.inspector-body {
+  display: grid;
+  gap: 12px;
+}

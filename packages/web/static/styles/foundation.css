@@ -1,0 +1,188 @@
+/* Design tokens and page-level reset */
+
+:root {
+  color-scheme: dark;
+  --bg: #0b0d12;
+  --bg-accent: #10131a;
+  --bg-elevated: #151922;
+  --panel: rgba(13, 16, 22, 0.96);
+  --panel-strong: rgba(21, 25, 34, 0.98);
+  --card: #141923;
+  --card-hover: #181d28;
+  --card-soft: #10151d;
+  --chrome: rgba(10, 12, 17, 0.84);
+  --ink: #d7dae2;
+  --ink-strong: #f3f5f8;
+  --muted: #8b92a4;
+  --muted-strong: #b2b9c9;
+  --accent: #ff5c5c;
+  --accent-hover: #ff7171;
+  --accent-soft: rgba(255, 92, 92, 0.12);
+  --accent-glow: rgba(255, 92, 92, 0.22);
+  --teal: #27c7b8;
+  --teal-soft: rgba(39, 199, 184, 0.12);
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.12);
+  --warn: #f59e0b;
+  --warn-soft: rgba(245, 158, 11, 0.12);
+  --line: #232938;
+  --line-strong: #31384c;
+  --line-soft: rgba(255, 255, 255, 0.05);
+  --shadow-sm: 0 10px 24px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 24px 44px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 40px 80px rgba(0, 0, 0, 0.4);
+  --radius-xl: 22px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 10px;
+  --font-sans: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  --font-display: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  position: relative;
+  overflow-x: hidden;
+  font-family: var(--font-sans);
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(255, 92, 92, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(39, 199, 184, 0.08), transparent 28%),
+    linear-gradient(180deg, #0b0d12 0%, #0e1218 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.012), rgba(255, 255, 255, 0.012)),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 35px,
+      rgba(255, 255, 255, 0.022) 35px,
+      rgba(255, 255, 255, 0.022) 36px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 35px,
+      rgba(255, 255, 255, 0.02) 35px,
+      rgba(255, 255, 255, 0.02) 36px
+    );
+  opacity: 0.4;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+a {
+  color: #8ab4ff;
+}
+
+a:hover {
+  color: #a8c6ff;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: padding-box;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px rgba(11, 13, 18, 0.9),
+    0 0 0 3px rgba(255, 92, 92, 0.7),
+    0 0 18px rgba(255, 92, 92, 0.18);
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 14px;
+}
+
+.auth-shell {
+  min-height: 100vh;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+}
+
+.empty {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.empty strong {
+  color: var(--ink-strong);
+  font-size: 0.96rem;
+}
+
+.empty p {
+  margin: 0;
+}

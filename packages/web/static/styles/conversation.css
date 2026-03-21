@@ -1,0 +1,407 @@
+/* Conversation lane, markdown rendering, and composer */
+
+.conversation-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.conversation-copy h2 {
+  margin: 8px 0 6px;
+  color: var(--ink-strong);
+  font-size: clamp(1.18rem, 2vw, 1.45rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.conversation-copy p {
+  margin: 0;
+  max-width: 72ch;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.conversation-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.banner {
+  margin: 12px 18px 0;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+
+.banner--danger {
+  background: rgba(239, 68, 68, 0.09);
+  border-color: rgba(239, 68, 68, 0.18);
+  color: #ff9292;
+}
+
+.banner--warning {
+  background: rgba(245, 158, 11, 0.09);
+  border-color: rgba(245, 158, 11, 0.16);
+  color: #f8c471;
+}
+
+.conversation-stream {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.message-row {
+  display: flex;
+  opacity: 0;
+  animation: float-in 260ms ease forwards;
+}
+
+.message-row[data-role="user"] {
+  justify-content: flex-end;
+}
+
+.message-row[data-role="assistant"],
+.message-row[data-role="system"] {
+  justify-content: flex-start;
+}
+
+.message-bubble {
+  width: min(100%, 920px);
+  padding: 15px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(20, 25, 35, 0.98), rgba(15, 19, 27, 0.98));
+  box-shadow: var(--shadow-sm);
+}
+
+.message-row[data-role="user"] .message-bubble {
+  width: min(100%, 760px);
+  background:
+    linear-gradient(180deg, rgba(255, 92, 92, 0.12), rgba(255, 92, 92, 0.04)),
+    linear-gradient(180deg, rgba(20, 25, 35, 0.98), rgba(15, 19, 27, 0.98));
+  border-color: rgba(255, 92, 92, 0.18);
+}
+
+.message-row[data-role="assistant"] .message-bubble {
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.message-row[data-role="system"] .message-bubble {
+  background: linear-gradient(180deg, rgba(12, 16, 22, 0.98), rgba(10, 13, 19, 0.98));
+  border-style: dashed;
+}
+
+.message-bubble[data-streaming="true"] {
+  border-style: dashed;
+  border-color: rgba(39, 199, 184, 0.3);
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 0 0 1px rgba(39, 199, 184, 0.06);
+}
+
+.message-bubble[data-revoked="true"] {
+  opacity: 0.58;
+  filter: saturate(0.76);
+}
+
+.message-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.message-top strong {
+  color: var(--ink-strong);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.message-top span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.message-content {
+  color: var(--ink);
+  line-height: 1.65;
+  font-size: 0.94rem;
+}
+
+.message-content--plain {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.message-content--markdown > :first-child {
+  margin-top: 0;
+}
+
+.message-content--markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.message-content--markdown p,
+.message-content--markdown ul,
+.message-content--markdown ol,
+.message-content--markdown blockquote,
+.message-content--markdown pre,
+.message-content--markdown table,
+.message-content--markdown h1,
+.message-content--markdown h2,
+.message-content--markdown h3,
+.message-content--markdown h4 {
+  margin: 0 0 0.95rem;
+}
+
+.message-content--markdown h1,
+.message-content--markdown h2,
+.message-content--markdown h3,
+.message-content--markdown h4 {
+  color: var(--ink-strong);
+  letter-spacing: -0.03em;
+}
+
+.message-content--markdown ul,
+.message-content--markdown ol {
+  padding-left: 1.35rem;
+}
+
+.message-content--markdown li + li {
+  margin-top: 0.34rem;
+}
+
+.message-content--markdown a {
+  color: #8ab4ff;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.18em;
+}
+
+.message-content--markdown strong {
+  color: var(--ink-strong);
+  font-weight: 700;
+}
+
+.message-content--markdown blockquote {
+  padding: 0.9rem 1rem;
+  border-left: 3px solid rgba(255, 92, 92, 0.45);
+  border-radius: 0 12px 12px 0;
+  background: rgba(255, 92, 92, 0.07);
+  color: var(--muted-strong);
+}
+
+.message-content--markdown code {
+  font-size: 0.9em;
+}
+
+.message-content--markdown :not(pre) > code {
+  padding: 0.16rem 0.4rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.message-content--markdown pre,
+.host-result {
+  overflow: auto;
+  padding: 0.95rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgba(9, 12, 18, 0.98), rgba(7, 10, 15, 0.98));
+  color: #edf2ff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.message-content--markdown pre code {
+  display: block;
+  white-space: pre;
+}
+
+.message-content--markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+
+.message-content--markdown th,
+.message-content--markdown td {
+  padding: 0.72rem 0.8rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.message-content--markdown th {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-strong);
+}
+
+.message-content--markdown tr:last-child td {
+  border-bottom: 0;
+}
+
+.message-footer {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.inline-editor textarea,
+.composer-card textarea {
+  min-height: 128px;
+}
+
+.composer-shell {
+  padding: 0 18px 18px;
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(11, 13, 18, 0) 0%, rgba(11, 13, 18, 0.68) 12%, rgba(11, 13, 18, 0.98) 100%);
+}
+
+.run-banner,
+.hint-text {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+}
+
+.run-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.run-banner strong {
+  color: var(--ink-strong);
+  font-size: 0.9rem;
+}
+
+.run-banner__meta {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.run-banner__aside {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+.run-banner__stream {
+  color: #8fe5dc;
+}
+
+.hint-text {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.composer-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(17, 22, 31, 0.99), rgba(12, 16, 23, 0.99));
+  box-shadow: var(--shadow-sm);
+}
+
+.composer-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.composer-toolbar {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.composer-shortcuts,
+.composer-controls {
+  align-items: center;
+}
+
+.hint-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hint {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  color: var(--muted-strong);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+
+.stream-cursor {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 16px rgba(255, 92, 92, 0.45);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.empty--hero {
+  min-height: 220px;
+  place-content: center;
+  text-align: center;
+  background:
+    radial-gradient(circle at top center, rgba(255, 92, 92, 0.08), transparent 44%),
+    rgba(255, 255, 255, 0.02);
+}
+
+@keyframes float-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
