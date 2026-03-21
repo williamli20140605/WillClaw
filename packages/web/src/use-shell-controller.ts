@@ -136,9 +136,14 @@ export function useShellController(): ShellControllerState {
             },
             sidebar: {
                 availableAgents,
+                chatUsesAutoRoute: chat.chatUsesAutoRoute,
+                chatUsesDefaultAgent: chat.chatUsesDefaultAgent,
                 chatList,
                 currentActiveRun,
+                defaultAgent: chat.defaultAgent,
                 handleCreateChat: conversationActions.handleCreateChat,
+                handleDefaultAgentChange:
+                    conversationActions.handleDefaultAgentChange,
                 handleSelectAgent: conversationActions.handleSelectAgent,
                 handleSelectChat: conversationActions.handleSelectChat,
                 handleStartSearch: conversationActions.handleStartSearch,
@@ -154,10 +159,13 @@ export function useShellController(): ShellControllerState {
             conversation: {
                 actionError: ui.actionError,
                 availableAgents,
+                chatUsesAutoRoute: chat.chatUsesAutoRoute,
+                chatUsesDefaultAgent: chat.chatUsesDefaultAgent,
                 composerShowsSearch,
                 composerText: chat.composerText,
                 currentActiveRun,
                 dashboardError: ui.dashboardError,
+                defaultAgent: chat.defaultAgent,
                 editedSuccessorById,
                 editingMessageId: chat.editingMessageId,
                 editingText: chat.editingText,

@@ -1,4 +1,5 @@
 import {
+    AUTO_ROUTE_AGENT_SELECTION,
     conversationSubtitle,
     conversationTitle,
     formatRelativeTime,
@@ -16,8 +17,11 @@ import type {
 
 interface ConversationSidebarProps {
     availableAgents: AgentAvailability[];
+    chatUsesAutoRoute: boolean;
+    chatUsesDefaultAgent: boolean;
     chatList: ChatSummary[];
     currentActiveRun: ActiveRun | null;
+    defaultAgent: string | null;
     latestAssistantRoute: AssistantRouteMetadata | null;
     queueSummaryByChatId: Map<string, QueueSummary>;
     routePreview: RoutePlan | null;
@@ -27,15 +31,19 @@ interface ConversationSidebarProps {
     selectedQueueLeadRun: QueueRunSummary | null;
     serverHost: string | undefined;
     onCreateChat(): void;
-    onSelectAgent(agentName: string | null): void;
+    onDefaultAgentChange(agentName: string | null): void;
+    onSelectAgent(selection: string): void;
     onSelectChat(chatId: string): void;
     onStartSearch(): void;
 }
 
 export function ConversationSidebar({
     availableAgents,
+    chatUsesAutoRoute,
+    chatUsesDefaultAgent,
     chatList,
     currentActiveRun,
+    defaultAgent,
     latestAssistantRoute,
     queueSummaryByChatId,
     routePreview,
@@ -45,10 +53,15 @@ export function ConversationSidebar({
     selectedQueueLeadRun,
     serverHost,
     onCreateChat,
+    onDefaultAgentChange,
     onSelectAgent,
     onSelectChat,
     onStartSearch,
 }: ConversationSidebarProps) {
+    const defaultAgentAvailable = defaultAgent
+        ? availableAgents.some((agent) => agent.name === defaultAgent)
+        : true;
+
     return (
         <aside className="panel sidebar">
             <div className="sidebar-section">
@@ -69,7 +82,7 @@ export function ConversationSidebar({
                     </button>
                     <button
                         className="quick-btn"
-                        onClick={() => onSelectAgent(null)}
+                        onClick={() => onSelectAgent(AUTO_ROUTE_AGENT_SELECTION)}
                         type="button"
                     >
                         Auto
@@ -85,6 +98,32 @@ export function ConversationSidebar({
                         </button>
                     ))}
                 </div>
+                <label className="hint" htmlFor="default-agent-select">
+                    Default agent
+                </label>
+                <select
+                    id="default-agent-select"
+                    value={defaultAgent ?? AUTO_ROUTE_AGENT_SELECTION}
+                    onChange={(event) =>
+                        onDefaultAgentChange(
+                            event.target.value === AUTO_ROUTE_AGENT_SELECTION
+                                ? null
+                                : event.target.value,
+                        )
+                    }
+                >
+                    <option value={AUTO_ROUTE_AGENT_SELECTION}>auto route</option>
+                    {!defaultAgentAvailable && defaultAgent ? (
+                        <option value={defaultAgent}>
+                            {defaultAgent} (default)
+                        </option>
+                    ) : null}
+                    {availableAgents.map((agent) => (
+                        <option key={agent.name} value={agent.name}>
+                            {agent.name}
+                        </option>
+                    ))}
+                </select>
             </div>
 
             <div className="sidebar-section sidebar-section--scroll">
@@ -198,8 +237,12 @@ export function ConversationSidebar({
                         <p>
                             {currentActiveRun?.reason
                                 ? routeReasonLabel(currentActiveRun.reason)
+                                : chatUsesDefaultAgent && defaultAgent
+                                    ? 'Using the default agent for this chat.'
+                                : chatUsesAutoRoute
+                                    ? 'This chat explicitly uses auto routing.'
                                 : selectedAgent
-                                    ? 'Manually selected for the next prompt.'
+                                    ? 'Manually selected for this chat.'
                                 : latestAssistantRoute?.reason
                                     ? routeReasonLabel(latestAssistantRoute.reason)
                                     : routePreview

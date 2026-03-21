@@ -13,6 +13,10 @@ import type {
 } from './ui-types.js';
 
 const AGENT_SELECTION_STORAGE_KEY = 'willclaw.selected-agents';
+const DEFAULT_AGENT_STORAGE_KEY = 'willclaw.default-agent';
+
+export const AUTO_ROUTE_AGENT_SELECTION = '__auto__';
+export const INHERIT_DEFAULT_AGENT_SELECTION = '__default__';
 
 export function collapseWhitespace(value: string): string {
     return value.replace(/\s+/g, ' ').trim();
@@ -83,6 +87,40 @@ export function writeStoredAgentSelections(
             AGENT_SELECTION_STORAGE_KEY,
             JSON.stringify(selections),
         );
+    } catch {
+        // Ignore storage failures so the shell can still function.
+    }
+}
+
+export function readStoredDefaultAgent(): string | null {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+
+    try {
+        const rawValue = window.localStorage.getItem(DEFAULT_AGENT_STORAGE_KEY);
+        if (!rawValue || rawValue === AUTO_ROUTE_AGENT_SELECTION) {
+            return null;
+        }
+
+        return rawValue.trim() ? rawValue : null;
+    } catch {
+        return null;
+    }
+}
+
+export function writeStoredDefaultAgent(agentName: string | null): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    try {
+        if (!agentName) {
+            window.localStorage.removeItem(DEFAULT_AGENT_STORAGE_KEY);
+            return;
+        }
+
+        window.localStorage.setItem(DEFAULT_AGENT_STORAGE_KEY, agentName);
     } catch {
         // Ignore storage failures so the shell can still function.
     }

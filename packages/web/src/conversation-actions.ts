@@ -6,12 +6,19 @@ import {
     type ChatResult,
 } from './ui-types.js';
 import type { ShellChatState, ShellSetters } from './shell-state-types.js';
-import { createDraftChatId, readJson } from './ui-helpers.js';
+import {
+    INHERIT_DEFAULT_AGENT_SELECTION,
+    createDraftChatId,
+    readJson,
+} from './ui-helpers.js';
 
 type ConversationChatState = Pick<
     ShellChatState,
     | 'agentSelections'
+    | 'chatUsesAutoRoute'
+    | 'chatUsesDefaultAgent'
     | 'composerText'
+    | 'defaultAgent'
     | 'editingText'
     | 'executionMode'
     | 'draftChatId'
@@ -67,14 +74,14 @@ export function createConversationActions({
             setters.chat.setComposerText('');
             if (result.chatId !== chat.selectedChatId) {
                 setters.chat.setSelectedChatId(result.chatId);
-                setters.chat.setSelectedAgent(chat.selectedAgent);
                 setters.chat.setDraftChatId((current) =>
                     current === chat.selectedChatId ? null : current,
                 );
                 setters.chat.setAgentSelections((current) => {
                     const next = { ...current };
-                    if (chat.selectedAgent) {
-                        next[result.chatId] = chat.selectedAgent;
+                    const currentSelection = current[chat.selectedChatId];
+                    if (currentSelection) {
+                        next[result.chatId] = currentSelection;
                     }
                     delete next[chat.selectedChatId];
                     return next;
@@ -215,7 +222,6 @@ export function createConversationActions({
         startTransition(() => {
             setters.chat.setDraftChatId(draftId);
             setters.chat.setSelectedChatId(draftId);
-            setters.chat.setSelectedAgent(null);
             setters.chat.setMessages([]);
             setters.chat.setLastRun(null);
             setters.chat.setEditingMessageId(null);
@@ -226,7 +232,6 @@ export function createConversationActions({
 
     function handleSelectChat(chatId: string): void {
         setters.chat.setSelectedChatId(chatId);
-        setters.chat.setSelectedAgent(chat.agentSelections[chatId] ?? null);
         setters.chat.setEditingMessageId(null);
         setters.chat.setEditingText('');
         setters.ui.setActionError('');
@@ -238,10 +243,9 @@ export function createConversationActions({
         );
     }
 
-    function handleSelectAgent(agentName: string | null): void {
-        setters.chat.setSelectedAgent(agentName);
+    function handleSelectAgent(selection: string): void {
         setters.chat.setAgentSelections((current) => {
-            if (!agentName) {
+            if (selection === INHERIT_DEFAULT_AGENT_SELECTION) {
                 if (!(chat.selectedChatId in current)) {
                     return current;
                 }
@@ -251,15 +255,19 @@ export function createConversationActions({
                 return next;
             }
 
-            if (current[chat.selectedChatId] === agentName) {
+            if (current[chat.selectedChatId] === selection) {
                 return current;
             }
 
             return {
                 ...current,
-                [chat.selectedChatId]: agentName,
+                [chat.selectedChatId]: selection,
             };
         });
+    }
+
+    function handleDefaultAgentChange(agentName: string | null): void {
+        setters.chat.setDefaultAgent(agentName);
     }
 
     function handleStartSearch(): void {
@@ -283,6 +291,7 @@ export function createConversationActions({
         handleEditSave,
         handleEditStart,
         handleInjectIntoComposer,
+        handleDefaultAgentChange,
         handleSelectAgent,
         handleResend,
         handleRevoke,

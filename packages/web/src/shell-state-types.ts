@@ -39,8 +39,11 @@ export interface ShellAuthState {
 
 export interface ShellChatState {
     agentSelections: Record<string, string>;
+    chatUsesAutoRoute: boolean;
+    chatUsesDefaultAgent: boolean;
     chats: ChatSummary[];
     composerText: string;
+    defaultAgent: string | null;
     draftChatId: string | null;
     editingMessageId: number | null;
     editingText: string;
@@ -118,13 +121,13 @@ export interface ShellChatSetters {
     setAgentSelections: Dispatch<SetStateAction<Record<string, string>>>;
     setChats: Dispatch<SetStateAction<ChatSummary[]>>;
     setComposerText: Dispatch<SetStateAction<string>>;
+    setDefaultAgent: Dispatch<SetStateAction<string | null>>;
     setDraftChatId: Dispatch<SetStateAction<string | null>>;
     setEditingMessageId: Dispatch<SetStateAction<number | null>>;
     setEditingText: Dispatch<SetStateAction<string>>;
     setExecutionMode: Dispatch<SetStateAction<'foreground' | 'background'>>;
     setLastRun: Dispatch<SetStateAction<ChatResult | null>>;
     setMessages: Dispatch<SetStateAction<StoredMessage[]>>;
-    setSelectedAgent: Dispatch<SetStateAction<string | null>>;
     setSelectedChatId: Dispatch<SetStateAction<string>>;
     setSubmitting: Dispatch<SetStateAction<boolean>>;
     setToolLogs: Dispatch<SetStateAction<ToolLogEntry[]>>;

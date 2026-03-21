@@ -1,4 +1,6 @@
 import {
+    AUTO_ROUTE_AGENT_SELECTION,
+    INHERIT_DEFAULT_AGENT_SELECTION,
     formatDuration,
     formatRelativeTime,
     routeReasonLabel,
@@ -12,16 +14,19 @@ import type {
 
 interface ConversationComposerProps {
     availableAgents: AgentAvailability[];
+    chatUsesAutoRoute: boolean;
+    chatUsesDefaultAgent: boolean;
     composerShowsSearch: boolean;
     composerText: string;
     currentActiveRun: ActiveRun | null;
+    defaultAgent: string | null;
     executionMode: 'foreground' | 'background';
     lastRun: ChatResult | null;
     routePreview: RoutePlan | null;
     selectedAgent: string | null;
     selectedChatId: string;
     submitting: boolean;
-    onAgentChange(value: string | null): void;
+    onAgentChange(value: string): void;
     onComposerTextChange(value: string): void;
     onExecutionModeChange(value: 'foreground' | 'background'): void;
     onSend(): void;
@@ -30,9 +35,12 @@ interface ConversationComposerProps {
 
 export function ConversationComposer({
     availableAgents,
+    chatUsesAutoRoute,
+    chatUsesDefaultAgent,
     composerShowsSearch,
     composerText,
     currentActiveRun,
+    defaultAgent,
     executionMode,
     lastRun,
     routePreview,
@@ -45,10 +53,17 @@ export function ConversationComposer({
     onSend,
     onStartSearch,
 }: ConversationComposerProps) {
-    const agentPickerValue = selectedAgent ?? 'auto';
-    const selectedAgentAvailable = selectedAgent
-        ? availableAgents.some((agent) => agent.name === selectedAgent)
+    const explicitSelectedAgent =
+        !chatUsesDefaultAgent && !chatUsesAutoRoute ? selectedAgent : null;
+    const agentPickerValue = chatUsesDefaultAgent
+        ? INHERIT_DEFAULT_AGENT_SELECTION
+        : chatUsesAutoRoute
+            ? AUTO_ROUTE_AGENT_SELECTION
+            : selectedAgent ?? INHERIT_DEFAULT_AGENT_SELECTION;
+    const selectedAgentAvailable = explicitSelectedAgent
+        ? availableAgents.some((agent) => agent.name === explicitSelectedAgent)
         : true;
+    const defaultAgentLabel = defaultAgent ?? 'auto route';
 
     return (
         <div className="composer-shell">
@@ -97,6 +112,21 @@ export function ConversationComposer({
                                 shell command
                             </span>
                             <span className="chip">/search</span>
+                        </>
+                    ) : chatUsesDefaultAgent && defaultAgent ? (
+                        <>
+                            <span className="chip" data-tone="teal">
+                                default {defaultAgent}
+                            </span>
+                            <span className="chip">inherited</span>
+                            <span className="chip">no fallback</span>
+                        </>
+                    ) : chatUsesAutoRoute ? (
+                        <>
+                            <span className="chip" data-tone="accent">
+                                auto route
+                            </span>
+                            <span className="chip">chat override</span>
                         </>
                     ) : selectedAgent ? (
                         <>
@@ -164,18 +194,17 @@ export function ConversationComposer({
                     <div className="composer-controls">
                         <select
                             value={agentPickerValue}
-                            onChange={(event) =>
-                                onAgentChange(
-                                    event.target.value === 'auto'
-                                        ? null
-                                        : event.target.value,
-                                )
-                            }
+                            onChange={(event) => onAgentChange(event.target.value)}
                         >
-                            <option value="auto">auto route</option>
-                            {!selectedAgentAvailable && selectedAgent ? (
-                                <option value={selectedAgent}>
-                                    {selectedAgent} (selected)
+                            <option value={INHERIT_DEFAULT_AGENT_SELECTION}>
+                                default · {defaultAgentLabel}
+                            </option>
+                            <option value={AUTO_ROUTE_AGENT_SELECTION}>
+                                auto route
+                            </option>
+                            {!selectedAgentAvailable && explicitSelectedAgent ? (
+                                <option value={explicitSelectedAgent}>
+                                    {explicitSelectedAgent} (selected)
                                 </option>
                             ) : null}
                             {availableAgents.map((agent) => (

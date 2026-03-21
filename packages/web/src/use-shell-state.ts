@@ -25,8 +25,11 @@ import {
 } from './ui-types.js';
 import type { ShellStateStore } from './shell-state-types.js';
 import {
+    AUTO_ROUTE_AGENT_SELECTION,
     readStoredAgentSelections,
+    readStoredDefaultAgent,
     writeStoredAgentSelections,
+    writeStoredDefaultAgent,
 } from './ui-helpers.js';
 
 export function useShellState(): ShellStateStore {
@@ -64,7 +67,9 @@ export function useShellState(): ShellStateStore {
     const [agentSelections, setAgentSelections] = useState<
         Record<string, string>
     >(() => readStoredAgentSelections());
-    const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+    const [defaultAgent, setDefaultAgent] = useState<string | null>(() =>
+        readStoredDefaultAgent(),
+    );
     const [executionMode, setExecutionMode] = useState<'foreground' | 'background'>(
         'foreground',
     );
@@ -114,14 +119,22 @@ export function useShellState(): ShellStateStore {
         authStatus !== null &&
         (!authStatus.authRequired || authStatus.authenticated);
     const canManageAuth = authStatus?.scopes.includes('api:session') ?? false;
-
-    useEffect(() => {
-        setSelectedAgent(agentSelections[selectedChatId] ?? null);
-    }, [agentSelections, selectedChatId]);
+    const chatSelection = agentSelections[selectedChatId];
+    const chatUsesDefaultAgent = chatSelection == null;
+    const chatUsesAutoRoute = chatSelection === AUTO_ROUTE_AGENT_SELECTION;
+    const selectedAgent = chatUsesDefaultAgent
+        ? defaultAgent
+        : chatUsesAutoRoute
+            ? null
+            : chatSelection;
 
     useEffect(() => {
         writeStoredAgentSelections(agentSelections);
     }, [agentSelections]);
+
+    useEffect(() => {
+        writeStoredDefaultAgent(defaultAgent);
+    }, [defaultAgent]);
 
     return {
         auth: {
@@ -139,8 +152,11 @@ export function useShellState(): ShellStateStore {
         },
         chat: {
             agentSelections,
+            chatUsesAutoRoute,
+            chatUsesDefaultAgent,
             chats,
             composerText,
+            defaultAgent,
             draftChatId,
             editingMessageId,
             editingText,
@@ -212,13 +228,13 @@ export function useShellState(): ShellStateStore {
                 setAgentSelections,
                 setChats,
                 setComposerText,
+                setDefaultAgent,
                 setDraftChatId,
                 setEditingMessageId,
                 setEditingText,
                 setExecutionMode,
                 setLastRun,
                 setMessages,
-                setSelectedAgent,
                 setSelectedChatId,
                 setSubmitting,
                 setToolLogs,

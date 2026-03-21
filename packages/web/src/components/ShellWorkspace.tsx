@@ -35,10 +35,14 @@ export interface ShellWorkspaceProps {
     };
     sidebar: {
         availableAgents: AgentAvailability[];
+        chatUsesAutoRoute: boolean;
+        chatUsesDefaultAgent: boolean;
         chatList: ChatSummary[];
         currentActiveRun: ActiveRun | null;
+        defaultAgent: string | null;
         handleCreateChat(): void;
-        handleSelectAgent(agentName: string | null): void;
+        handleDefaultAgentChange(agentName: string | null): void;
+        handleSelectAgent(selection: string): void;
         handleSelectChat(chatId: string): void;
         handleStartSearch(): void;
         latestAssistantRoute: AssistantRouteMetadata | null;
@@ -53,15 +57,18 @@ export interface ShellWorkspaceProps {
     conversation: {
         actionError: string;
         availableAgents: AgentAvailability[];
+        chatUsesAutoRoute: boolean;
+        chatUsesDefaultAgent: boolean;
         composerShowsSearch: boolean;
         composerText: string;
         currentActiveRun: ActiveRun | null;
         dashboardError: string;
+        defaultAgent: string | null;
         editedSuccessorById: Map<number, StoredMessage>;
         editingMessageId: number | null;
         editingText: string;
         executionMode: 'foreground' | 'background';
-        handleAgentChange(agentName: string | null): void;
+        handleAgentChange(selection: string): void;
         handleCancelRun(runId: string): Promise<void>;
         handleEditCancel(): void;
         handleEditSave(messageId: number): Promise<void>;
@@ -117,10 +124,14 @@ export function ShellWorkspace({
             <div className="workspace-grid">
                 <ConversationSidebar
                     availableAgents={sidebar.availableAgents}
+                    chatUsesAutoRoute={sidebar.chatUsesAutoRoute}
+                    chatUsesDefaultAgent={sidebar.chatUsesDefaultAgent}
                     chatList={sidebar.chatList}
                     currentActiveRun={sidebar.currentActiveRun}
+                    defaultAgent={sidebar.defaultAgent}
                     latestAssistantRoute={sidebar.latestAssistantRoute}
                     onCreateChat={sidebar.handleCreateChat}
+                    onDefaultAgentChange={sidebar.handleDefaultAgentChange}
                     onSelectAgent={sidebar.handleSelectAgent}
                     onSelectChat={sidebar.handleSelectChat}
                     onStartSearch={sidebar.handleStartSearch}
@@ -180,9 +191,12 @@ export function ShellWorkspace({
 
                     <ConversationComposer
                         availableAgents={conversation.availableAgents}
+                        chatUsesAutoRoute={conversation.chatUsesAutoRoute}
+                        chatUsesDefaultAgent={conversation.chatUsesDefaultAgent}
                         composerShowsSearch={conversation.composerShowsSearch}
                         composerText={conversation.composerText}
                         currentActiveRun={conversation.currentActiveRun}
+                        defaultAgent={conversation.defaultAgent}
                         executionMode={conversation.executionMode}
                         lastRun={conversation.lastRun}
                         routePreview={conversation.routePreview}
