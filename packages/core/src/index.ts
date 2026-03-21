@@ -95,6 +95,7 @@ export {
     type SearchCommandParseResult,
 } from './memory-search.js';
 export {
+    listToolExecutionLogs,
     ToolExecutionLogger,
     type LogToolExecutionInput,
     type ToolLogEntry,

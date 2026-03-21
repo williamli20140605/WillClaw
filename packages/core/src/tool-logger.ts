@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 import Database from 'better-sqlite3';
@@ -99,6 +99,92 @@ function hydrateToolLog(row: ToolLogRow): ToolLogEntry {
     }
 
     return entry;
+}
+
+function buildListQuery(filters?: ToolLogFilters): {
+    params: Record<string, unknown>;
+    sql: string;
+} {
+    const clauses = ['1 = 1'];
+    const params: Record<string, unknown> = {
+        limit: filters?.limit ?? 100,
+    };
+
+    if (filters?.tool) {
+        clauses.push('tool = @tool');
+        params.tool = filters.tool;
+    }
+
+    if (filters?.action) {
+        clauses.push('action = @action');
+        params.action = filters.action;
+    }
+
+    if (filters?.agent) {
+        clauses.push('agent = @agent');
+        params.agent = filters.agent;
+    }
+
+    if (filters?.chatId) {
+        clauses.push('chat_id = @chatId');
+        params.chatId = filters.chatId;
+    }
+
+    if (filters?.from) {
+        clauses.push('timestamp >= @from');
+        params.from = filters.from;
+    }
+
+    if (filters?.to) {
+        clauses.push('timestamp <= @to');
+        params.to = filters.to;
+    }
+
+    if (filters?.success !== undefined) {
+        clauses.push('success = @success');
+        params.success = filters.success ? 1 : 0;
+    }
+
+    return {
+        params,
+        sql: `
+      SELECT *
+      FROM tool_logs
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY timestamp DESC, id DESC
+      LIMIT @limit
+    `,
+    };
+}
+
+function runListQuery(
+    db: Database.Database,
+    filters?: ToolLogFilters,
+): ToolLogEntry[] {
+    const { params, sql } = buildListQuery(filters);
+    const statement = db.prepare(sql);
+    return (statement.all(params) as ToolLogRow[]).map(hydrateToolLog);
+}
+
+export function listToolExecutionLogs(
+    databasePath: string,
+    filters?: ToolLogFilters,
+): ToolLogEntry[] {
+    if (!existsSync(databasePath)) {
+        return [];
+    }
+
+    const db = new Database(databasePath, {
+        readonly: true,
+        fileMustExist: true,
+    });
+
+    try {
+        db.pragma('busy_timeout = 5000');
+        return runListQuery(db, filters);
+    } finally {
+        db.close();
+    }
 }
 
 export class ToolExecutionLogger {
@@ -203,55 +289,7 @@ export class ToolExecutionLogger {
     }
 
     list(filters?: ToolLogFilters): ToolLogEntry[] {
-        const clauses = ['1 = 1'];
-        const params: Record<string, unknown> = {
-            limit: filters?.limit ?? 100,
-        };
-
-        if (filters?.tool) {
-            clauses.push('tool = @tool');
-            params.tool = filters.tool;
-        }
-
-        if (filters?.action) {
-            clauses.push('action = @action');
-            params.action = filters.action;
-        }
-
-        if (filters?.agent) {
-            clauses.push('agent = @agent');
-            params.agent = filters.agent;
-        }
-
-        if (filters?.chatId) {
-            clauses.push('chat_id = @chatId');
-            params.chatId = filters.chatId;
-        }
-
-        if (filters?.from) {
-            clauses.push('timestamp >= @from');
-            params.from = filters.from;
-        }
-
-        if (filters?.to) {
-            clauses.push('timestamp <= @to');
-            params.to = filters.to;
-        }
-
-        if (filters?.success !== undefined) {
-            clauses.push('success = @success');
-            params.success = filters.success ? 1 : 0;
-        }
-
-        const statement = this.db.prepare(`
-      SELECT *
-      FROM tool_logs
-      WHERE ${clauses.join(' AND ')}
-      ORDER BY timestamp DESC, id DESC
-      LIMIT @limit
-    `);
-
-        return (statement.all(params) as ToolLogRow[]).map(hydrateToolLog);
+        return runListQuery(this.db, filters);
     }
 
     getById(id: number): ToolLogEntry | null {

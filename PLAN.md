@@ -1647,7 +1647,7 @@ daemon:
 - [ ] 鼠标键盘模拟
 - [ ] 应用控制
 - [ ] Playwright 集成
-- [ ] **`willclaw logs`** — tail 日志
+- [x] **`willclaw logs`** — tail 日志
 
 补充进度：
 

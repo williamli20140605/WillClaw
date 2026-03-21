@@ -17,6 +17,7 @@ import {
     installLaunchAgent,
     uninstallLaunchAgent,
 } from './launch-agent.js';
+import { runLogsCommand } from './logs.js';
 
 const program = new Command();
 const TOOL_LABELS = {
@@ -376,6 +377,37 @@ program
             }
         }
     });
+
+program
+    .command('logs')
+    .description('Show recent app logs or tool execution logs.')
+    .option('--home <path>', 'override the default ~/.willclaw home directory')
+    .option('--tool', 'show tool execution logs instead of the app log')
+    .option(
+        '--tool-name <name>',
+        'filter tool execution logs by tool name (implies `--tool`)',
+    )
+    .option('--action <name>', 'filter tool execution logs by action')
+    .option('--agent <name>', 'filter tool execution logs by agent')
+    .option('--chat-id <id>', 'filter tool execution logs by chat id')
+    .option('--success <state>', 'filter tool logs by success: true or false')
+    .option('--lines <count>', 'number of recent lines or entries to show', '20')
+    .option('--no-follow', 'print recent output without streaming new entries')
+    .action(
+        async (options: {
+            action?: string;
+            agent?: string;
+            chatId?: string;
+            follow: boolean;
+            home?: string;
+            lines?: string;
+            success?: string;
+            tool?: boolean;
+            toolName?: string;
+        }) => {
+            await runLogsCommand(options);
+        },
+    );
 
 const pair = program
     .command('pair')
