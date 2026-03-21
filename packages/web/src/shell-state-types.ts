@@ -38,6 +38,7 @@ export interface ShellAuthState {
 }
 
 export interface ShellChatState {
+    agentSelections: Record<string, string>;
     chats: ChatSummary[];
     composerText: string;
     draftChatId: string | null;
@@ -114,6 +115,7 @@ export interface ShellAuthSetters {
 }
 
 export interface ShellChatSetters {
+    setAgentSelections: Dispatch<SetStateAction<Record<string, string>>>;
     setChats: Dispatch<SetStateAction<ChatSummary[]>>;
     setComposerText: Dispatch<SetStateAction<string>>;
     setDraftChatId: Dispatch<SetStateAction<string | null>>;

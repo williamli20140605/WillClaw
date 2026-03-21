@@ -10,9 +10,11 @@ import { createDraftChatId, readJson } from './ui-helpers.js';
 
 type ConversationChatState = Pick<
     ShellChatState,
+    | 'agentSelections'
     | 'composerText'
     | 'editingText'
     | 'executionMode'
+    | 'draftChatId'
     | 'selectedAgent'
     | 'selectedChatId'
 >;
@@ -63,6 +65,21 @@ export function createConversationActions({
 
             setters.chat.setLastRun(result);
             setters.chat.setComposerText('');
+            if (result.chatId !== chat.selectedChatId) {
+                setters.chat.setSelectedChatId(result.chatId);
+                setters.chat.setSelectedAgent(chat.selectedAgent);
+                setters.chat.setDraftChatId((current) =>
+                    current === chat.selectedChatId ? null : current,
+                );
+                setters.chat.setAgentSelections((current) => {
+                    const next = { ...current };
+                    if (chat.selectedAgent) {
+                        next[result.chatId] = chat.selectedAgent;
+                    }
+                    delete next[chat.selectedChatId];
+                    return next;
+                });
+            }
             await Promise.all([
                 loadChatList(),
                 loadMessagesPanel(result.chatId),
@@ -198,6 +215,7 @@ export function createConversationActions({
         startTransition(() => {
             setters.chat.setDraftChatId(draftId);
             setters.chat.setSelectedChatId(draftId);
+            setters.chat.setSelectedAgent(null);
             setters.chat.setMessages([]);
             setters.chat.setLastRun(null);
             setters.chat.setEditingMessageId(null);
@@ -208,6 +226,7 @@ export function createConversationActions({
 
     function handleSelectChat(chatId: string): void {
         setters.chat.setSelectedChatId(chatId);
+        setters.chat.setSelectedAgent(chat.agentSelections[chatId] ?? null);
         setters.chat.setEditingMessageId(null);
         setters.chat.setEditingText('');
         setters.ui.setActionError('');
@@ -221,6 +240,26 @@ export function createConversationActions({
 
     function handleSelectAgent(agentName: string | null): void {
         setters.chat.setSelectedAgent(agentName);
+        setters.chat.setAgentSelections((current) => {
+            if (!agentName) {
+                if (!(chat.selectedChatId in current)) {
+                    return current;
+                }
+
+                const next = { ...current };
+                delete next[chat.selectedChatId];
+                return next;
+            }
+
+            if (current[chat.selectedChatId] === agentName) {
+                return current;
+            }
+
+            return {
+                ...current,
+                [chat.selectedChatId]: agentName,
+            };
+        });
     }
 
     function handleStartSearch(): void {

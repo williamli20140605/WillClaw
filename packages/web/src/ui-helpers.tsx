@@ -12,6 +12,8 @@ import type {
     StoredMessage,
 } from './ui-types.js';
 
+const AGENT_SELECTION_STORAGE_KEY = 'willclaw.selected-agents';
+
 export function collapseWhitespace(value: string): string {
     return value.replace(/\s+/g, ' ').trim();
 }
@@ -31,6 +33,59 @@ export function summarizeText(value: string, limit = 92): string {
 
 export function createDraftChatId(): string {
     return `chat-${Date.now().toString(36)}`;
+}
+
+export function readStoredAgentSelections(): Record<string, string> {
+    if (typeof window === 'undefined') {
+        return {};
+    }
+
+    try {
+        const rawValue = window.localStorage.getItem(
+            AGENT_SELECTION_STORAGE_KEY,
+        );
+        if (!rawValue) {
+            return {};
+        }
+
+        const parsed = JSON.parse(rawValue) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return {};
+        }
+
+        return Object.fromEntries(
+            Object.entries(parsed).filter(
+                (entry): entry is [string, string] =>
+                    typeof entry[0] === 'string' &&
+                    typeof entry[1] === 'string' &&
+                    entry[1].trim().length > 0,
+            ),
+        );
+    } catch {
+        return {};
+    }
+}
+
+export function writeStoredAgentSelections(
+    selections: Record<string, string>,
+): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    try {
+        if (Object.keys(selections).length === 0) {
+            window.localStorage.removeItem(AGENT_SELECTION_STORAGE_KEY);
+            return;
+        }
+
+        window.localStorage.setItem(
+            AGENT_SELECTION_STORAGE_KEY,
+            JSON.stringify(selections),
+        );
+    } catch {
+        // Ignore storage failures so the shell can still function.
+    }
 }
 
 export function formatTimestamp(value?: string): string {

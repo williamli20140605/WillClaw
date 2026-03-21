@@ -1,4 +1,4 @@
-import { useDeferredValue, useState } from 'react';
+import { useDeferredValue, useEffect, useState } from 'react';
 
 import {
     DEFAULT_CHAT,
@@ -24,6 +24,10 @@ import {
     type ToolLogEntry,
 } from './ui-types.js';
 import type { ShellStateStore } from './shell-state-types.js';
+import {
+    readStoredAgentSelections,
+    writeStoredAgentSelections,
+} from './ui-helpers.js';
 
 export function useShellState(): ShellStateStore {
     const [authStatus, setAuthStatus] = useState<AuthStatusPayload | null>(null);
@@ -57,6 +61,9 @@ export function useShellState(): ShellStateStore {
     const [messages, setMessages] = useState<StoredMessage[]>([]);
     const [toolLogs, setToolLogs] = useState<ToolLogEntry[]>([]);
     const [composerText, setComposerText] = useState('');
+    const [agentSelections, setAgentSelections] = useState<
+        Record<string, string>
+    >(() => readStoredAgentSelections());
     const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
     const [executionMode, setExecutionMode] = useState<'foreground' | 'background'>(
         'foreground',
@@ -108,6 +115,14 @@ export function useShellState(): ShellStateStore {
         (!authStatus.authRequired || authStatus.authenticated);
     const canManageAuth = authStatus?.scopes.includes('api:session') ?? false;
 
+    useEffect(() => {
+        setSelectedAgent(agentSelections[selectedChatId] ?? null);
+    }, [agentSelections, selectedChatId]);
+
+    useEffect(() => {
+        writeStoredAgentSelections(agentSelections);
+    }, [agentSelections]);
+
     return {
         auth: {
             adminBusy: authAdminBusy,
@@ -123,6 +138,7 @@ export function useShellState(): ShellStateStore {
             tokenSummaries: authTokenSummaries,
         },
         chat: {
+            agentSelections,
             chats,
             composerText,
             draftChatId,
@@ -193,6 +209,7 @@ export function useShellState(): ShellStateStore {
                 setTokenSummaries: setAuthTokenSummaries,
             },
             chat: {
+                setAgentSelections,
                 setChats,
                 setComposerText,
                 setDraftChatId,
