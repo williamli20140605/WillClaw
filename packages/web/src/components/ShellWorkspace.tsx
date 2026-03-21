@@ -22,7 +22,7 @@ import { ConversationStream } from './ConversationStream.js';
 import { InspectorPanel } from './InspectorPanel.js';
 import { ShellTopBar } from './ShellTopBar.js';
 
-interface ShellWorkspaceProps {
+export interface ShellWorkspaceProps {
     topBar: {
         authBusy: boolean;
         authRequired: boolean;

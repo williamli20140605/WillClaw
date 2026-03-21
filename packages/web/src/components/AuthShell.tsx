@@ -15,7 +15,7 @@ export function AuthLoadingScreen() {
     );
 }
 
-interface AuthUnlockScreenProps {
+export interface AuthUnlockScreenProps {
     authBusy: boolean;
     authStatus: AuthStatusPayload;
     authTokenInput: string;
