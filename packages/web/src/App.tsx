@@ -1,11 +1,8 @@
-import { startTransition, useDeferredValue, useEffect, useState } from 'react';
+import { useDeferredValue, useEffect, useState } from 'react';
 
 import {
     DEFAULT_CHAT,
-    WEB_CHANNEL,
-    WEB_USER,
     type ActiveRun,
-    type AssistantRouteMetadata,
     type AuthSessionSummary,
     type AuthStatusPayload,
     type AuthTokenSummary,
@@ -16,8 +13,6 @@ import {
     type CronPayload,
     type InspectorTab,
     type MemorySearchResult,
-    type PairingGrant,
-    type PairingInvite,
     type PairingPayload,
     type ProviderHealthEntry,
     type QueueSummary,
@@ -28,25 +23,13 @@ import {
     type StoredMessage,
     type ToolLogEntry,
 } from './ui-types.js';
-import type {
-    ActivityInspectorModel,
-    BrowserFormFieldInput,
-    ManagedAuthScope,
-    RuntimeInspectorModel,
-    SearchInspectorModel,
-} from './inspector-types.js';
-import {
-    buildEditedSuccessorMap,
-    createDraftChatId,
-    extractAssistantRouteMetadata,
-    formatStructuredResult,
-    isSearchCommand,
-    readJson,
-    readPayloadString,
-    readPayloadStringArray,
-    shouldTrackRecentEvent,
-    upsertActiveRun,
-} from './ui-helpers.js';
+import { createConversationActions } from './conversation-actions.js';
+import { createDashboardDerivedState } from './dashboard-derived-state.js';
+import { createHostLabActions } from './host-lab-actions.js';
+import { createInspectorModels } from './inspector-models.js';
+import { createShellAccessActions } from './shell-access-actions.js';
+import { createShellLoaders } from './shell-loaders.js';
+import { subscribeShellRealtime } from './shell-realtime.js';
 import {
     AuthLoadingScreen,
     AuthUnlockScreen,
@@ -135,436 +118,41 @@ export function App() {
     const authAllowsDashboard =
         authReady && (!authStatus.authRequired || authStatus.authenticated);
     const canManageAuth = authStatus?.scopes.includes('api:session') ?? false;
-
-    async function loadAuthStatus(): Promise<AuthStatusPayload> {
-        const payload = await readJson<AuthStatusPayload>('/api/auth/status');
-        startTransition(() => {
-            setAuthStatus(payload);
-        });
-        return payload;
-    }
-
-    async function loadStatusPanel(): Promise<void> {
-        const payload = await readJson<StatusPayload>('/api/status');
-        startTransition(() => {
-            setStatus(payload);
-        });
-    }
-
-    async function loadProviderHealthPanel(): Promise<void> {
-        const payload = await readJson<ProviderHealthEntry[]>(
-            '/api/providers/health',
-        );
-        startTransition(() => {
-            setProviderHealth(payload);
-        });
-    }
-
-    async function loadAuthAdminPanel(): Promise<void> {
-        try {
-            const [tokensPayload, sessionsPayload] = await Promise.all([
-                readJson<{ tokens: AuthTokenSummary[] }>('/api/auth/tokens'),
-                readJson<{ sessions: AuthSessionSummary[] }>('/api/auth/sessions'),
-            ]);
-            startTransition(() => {
-                setAuthTokenSummaries(tokensPayload.tokens);
-                setAuthSessions(sessionsPayload.sessions);
-            });
-        } catch {
-            startTransition(() => {
-                setAuthTokenSummaries([]);
-                setAuthSessions([]);
-            });
-        }
-    }
-
-    async function loadPairingPanel(): Promise<void> {
-        const payload = await readJson<PairingPayload>('/api/pairing');
-        startTransition(() => {
-            setPairingState(payload);
-        });
-    }
-
-    async function loadChatList(): Promise<void> {
-        const currentDraftId = draftChatId;
-        const payload = await readJson<ChatSummary[]>(
-            `/api/chats?channel=${WEB_CHANNEL}&limit=24`,
-        );
-        const chatIds = new Set(payload.map((chat) => chat.chatId));
-
-        startTransition(() => {
-            setChats(payload);
-            setDraftChatId((current) =>
-                current && chatIds.has(current) ? null : current,
-            );
-            setSelectedChatId((current) => {
-                if (chatIds.has(current) || current === currentDraftId) {
-                    return current;
-                }
-
-                return payload[0]?.chatId ?? current;
-            });
-        });
-    }
-
-    async function loadMessagesPanel(chatId = selectedChatId): Promise<void> {
-        const params = new URLSearchParams({
-            channel: WEB_CHANNEL,
-            chatId,
-            limit: '120',
-            includeRevoked: 'true',
-        });
-        const payload = await readJson<StoredMessage[]>(
-            `/api/messages?${params.toString()}`,
-        );
-        startTransition(() => {
-            setMessages(payload);
-        });
-    }
-
-    async function loadToolLogsPanel(chatId = selectedChatId): Promise<void> {
-        const params = new URLSearchParams({
-            limit: '16',
-            chatId,
-        });
-        const payload = await readJson<ToolLogEntry[]>(
-            `/api/logs/tools?${params.toString()}`,
-        );
-        startTransition(() => {
-            setToolLogs(payload);
-        });
-    }
-
-    async function loadSchedulerPanel(): Promise<void> {
-        const payload = await readJson<CronPayload>('/api/cron');
-        startTransition(() => {
-            setCronState(payload);
-        });
-    }
-
-    async function loadQueuePanel(): Promise<void> {
-        const payload = await readJson<QueueSummary[]>(
-            `/api/queues?channel=${WEB_CHANNEL}`,
-        );
-        startTransition(() => {
-            setQueueSummaries(payload);
-        });
-    }
-
-    async function loadShellPanels(): Promise<void> {
-        try {
-            await Promise.all([
-                loadAuthAdminPanel(),
-                loadStatusPanel(),
-                loadProviderHealthPanel(),
-                loadPairingPanel(),
-                loadChatList(),
-                loadSchedulerPanel(),
-                loadQueuePanel(),
-            ]);
-            setDashboardError('');
-        } catch (error) {
-            setDashboardError(
-                error instanceof Error ? error.message : 'Failed to load shell data.',
-            );
-        }
-    }
-
-    async function loadSearch(query: string): Promise<void> {
-        if (query.length < 2) {
-            setSearchResults(null);
-            return;
-        }
-
-        setSearchLoading(true);
-
-        try {
-            const params = new URLSearchParams({
-                query,
-                messageLimit:
-                    searchScope === 'files' ||
-                    searchScope === 'memory' ||
-                    searchScope === 'daily_note'
-                        ? '0'
-                        : '6',
-                fileLimit: searchScope === 'messages' ? '0' : '6',
-            });
-
-            if (searchScope === 'memory') {
-                params.set('fileType', 'memory');
-            }
-
-            if (searchScope === 'daily_note') {
-                params.set('fileType', 'daily_note');
-            }
-
-            const payload = await readJson<MemorySearchResult>(
-                `/api/memory/search?${params.toString()}`,
-            );
-            startTransition(() => {
-                setSearchResults(payload);
-            });
-        } catch (error) {
-            setActionError(
-                error instanceof Error ? error.message : 'Search request failed.',
-            );
-        } finally {
-            setSearchLoading(false);
-        }
-    }
-
-    async function loadRoutePreview(text: string): Promise<void> {
-        if (!text || isSearchCommand(text)) {
-            setRoutePreview(null);
-            return;
-        }
-
-        try {
-            const params = new URLSearchParams({ text });
-            const payload = await readJson<RoutePlan>(
-                `/api/route-preview?${params.toString()}`,
-            );
-            startTransition(() => {
-                setRoutePreview(payload);
-            });
-        } catch {
-            setRoutePreview(null);
-        }
-    }
-
-    async function handleAuthLogin(): Promise<void> {
-        const credential = authTokenInput.trim();
-        if (!credential) {
-            setDashboardError('Enter a bearer token or pairing code to unlock the shell.');
-            return;
-        }
-
-        setAuthBusy(true);
-        setDashboardError('');
-
-        try {
-            let payload: AuthStatusPayload;
-
-            try {
-                payload = await readJson<AuthStatusPayload>('/api/auth/session', {
-                    method: 'POST',
-                    headers: {
-                        'content-type': 'application/json',
-                    },
-                    body: JSON.stringify({ token: credential }),
-                });
-            } catch (error) {
-                const message =
-                    error instanceof Error ? error.message : 'Unlock failed.';
-                if (!message.toLowerCase().includes('unauthorized')) {
-                    throw error;
-                }
-
-                payload = await readJson<AuthStatusPayload>('/api/auth/pairing', {
-                    method: 'POST',
-                    headers: {
-                        'content-type': 'application/json',
-                    },
-                    body: JSON.stringify({ code: credential }),
-                });
-            }
-            startTransition(() => {
-                setAuthStatus(payload);
-                setAuthTokenInput('');
-                setRealtimeConnected(false);
-                setRecentEvents([]);
-                setActiveRuns([]);
-            });
-            await Promise.all([
-                loadShellPanels(),
-                loadMessagesPanel(selectedChatId),
-                loadToolLogsPanel(selectedChatId),
-            ]);
-        } catch (error) {
-            setDashboardError(
-                error instanceof Error
-                    ? error.message
-                    : 'Login failed with the provided token.',
-            );
-        } finally {
-            setAuthBusy(false);
-        }
-    }
-
-    async function handleAuthLogout(): Promise<void> {
-        setAuthBusy(true);
-
-        try {
-            const payload = await readJson<AuthStatusPayload>('/api/auth/session', {
-                method: 'DELETE',
-            });
-            startTransition(() => {
-                setAuthStatus(payload);
-                setRealtimeConnected(false);
-                setRecentEvents([]);
-                setActiveRuns([]);
-                setMessages([]);
-                setToolLogs([]);
-            });
-        } catch (error) {
-            setDashboardError(
-                error instanceof Error ? error.message : 'Logout failed.',
-            );
-        } finally {
-            setAuthBusy(false);
-        }
-    }
-
-    async function handleRevokeAuthSession(sessionId: string): Promise<void> {
-        setAuthAdminBusy(true);
-        setActionError('');
-
-        try {
-            await readJson<{ revoked: AuthSessionSummary }>(
-                `/api/auth/sessions/${sessionId}`,
-                {
-                    method: 'DELETE',
-                },
-            );
-            await loadAuthAdminPanel();
-        } catch (error) {
-            setActionError(
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to revoke session.',
-            );
-        } finally {
-            setAuthAdminBusy(false);
-        }
-    }
-
-    async function handleCreateManagedToken(): Promise<void> {
-        setAuthAdminBusy(true);
-        setActionError('');
-
-        try {
-            const payload = await readJson<CreatedAuthToken>('/api/auth/tokens', {
-                method: 'POST',
-                headers: {
-                    'content-type': 'application/json',
-                },
-                body: JSON.stringify({
-                    ...(managedTokenId.trim() ? { id: managedTokenId.trim() } : {}),
-                    scopes: managedTokenScopes,
-                }),
-            });
-            startTransition(() => {
-                setLatestManagedToken(payload);
-                setManagedTokenId('');
-            });
-            await loadAuthAdminPanel();
-        } catch (error) {
-            setActionError(
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to create managed auth token.',
-            );
-        } finally {
-            setAuthAdminBusy(false);
-        }
-    }
-
-    async function handleRevokeAuthToken(tokenId: string): Promise<void> {
-        setAuthAdminBusy(true);
-        setActionError('');
-
-        try {
-            await readJson<{ revoked: AuthTokenSummary }>(`/api/auth/tokens/${tokenId}`, {
-                method: 'DELETE',
-            });
-            await loadAuthAdminPanel();
-        } catch (error) {
-            setActionError(
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to revoke managed auth token.',
-            );
-        } finally {
-            setAuthAdminBusy(false);
-        }
-    }
-
-    async function handleCreatePairingInvite(): Promise<void> {
-        setPairingBusy(true);
-        setActionError('');
-
-        try {
-            const payload = await readJson<CreatedPairingInvite>('/api/pairing/invites', {
-                method: 'POST',
-                headers: {
-                    'content-type': 'application/json',
-                },
-                body: JSON.stringify({
-                    kind: pairingKind,
-                    ...(pairingKind === 'channel'
-                        ? { channels: [pairingChannel] }
-                        : {}),
-                }),
-            });
-            startTransition(() => {
-                setPairingInvite(payload);
-            });
-            await loadPairingPanel();
-        } catch (error) {
-            setActionError(
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to create pairing invite.',
-            );
-        } finally {
-            setPairingBusy(false);
-        }
-    }
-
-    async function handleRevokePairingInvite(inviteId: string): Promise<void> {
-        setPairingBusy(true);
-        setActionError('');
-
-        try {
-            await readJson<PairingInvite>(`/api/pairing/invites/${inviteId}/revoke`, {
-                method: 'POST',
-            });
-            if (pairingInvite?.id === inviteId) {
-                startTransition(() => {
-                    setPairingInvite(null);
-                });
-            }
-            await loadPairingPanel();
-        } catch (error) {
-            setActionError(
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to revoke pairing invite.',
-            );
-        } finally {
-            setPairingBusy(false);
-        }
-    }
-
-    async function handleRevokePairingGrant(grantId: string): Promise<void> {
-        setPairingBusy(true);
-        setActionError('');
-
-        try {
-            await readJson<PairingGrant>(`/api/pairing/grants/${grantId}/revoke`, {
-                method: 'POST',
-            });
-            await loadPairingPanel();
-        } catch (error) {
-            setActionError(
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to revoke pairing grant.',
-            );
-        } finally {
-            setPairingBusy(false);
-        }
-    }
+    const {
+        loadAuthAdminPanel,
+        loadAuthStatus,
+        loadChatList,
+        loadMessagesPanel,
+        loadPairingPanel,
+        loadQueuePanel,
+        loadRoutePreview,
+        loadSchedulerPanel,
+        loadSearch,
+        loadShellPanels,
+        loadToolLogsPanel,
+    } = createShellLoaders({
+        draftChatId,
+        searchScope,
+        selectedChatId,
+        setActionError,
+        setAuthSessions,
+        setAuthStatus,
+        setAuthTokenSummaries,
+        setChats,
+        setCronState,
+        setDashboardError,
+        setDraftChatId,
+        setMessages,
+        setPairingState,
+        setProviderHealth,
+        setQueueSummaries,
+        setRoutePreview,
+        setSearchLoading,
+        setSearchResults,
+        setSelectedChatId,
+        setStatus,
+        setToolLogs,
+    });
 
     useEffect(() => {
         let cancelled = false;
@@ -640,327 +228,18 @@ export function App() {
             setRealtimeConnected(false);
             return;
         }
-
-        const source = new EventSource('/api/events');
-        const eventTypes = [
-            'ready',
-            'chat.run.queued',
-            'chat.run.started',
-            'chat.run.stream.delta',
-            'chat.run.completed',
-            'chat.run.failed',
-            'chat.run.cancelled',
-            'chat.route.selected',
-            'chat.agent.started',
-            'chat.agent.failed',
-            'chat.agent.skipped',
-            'message.created',
-            'message.revoked',
-            'background.task.started',
-            'background.task.completed',
-            'background.task.failed',
-            'scheduler.task.started',
-            'scheduler.task.completed',
-            'scheduler.task.failed',
-        ] as const;
-
-        const handleEvent = (nativeEvent: Event) => {
-            const messageEvent = nativeEvent as MessageEvent<string>;
-
-            try {
-                const event = JSON.parse(messageEvent.data) as RealtimeEvent;
-                if (shouldTrackRecentEvent(event.type)) {
-                    setRecentEvents((current) => [event, ...current].slice(0, 12));
-                }
-
-                switch (event.type) {
-                    case 'ready':
-                        setRealtimeConnected(true);
-                        break;
-                    case 'chat.run.queued': {
-                        const runId = readPayloadString(event.payload, 'runId');
-                        const channel = readPayloadString(event.payload, 'channel');
-                        const chatId = readPayloadString(event.payload, 'chatId');
-                        const executionMode = readPayloadString(
-                            event.payload,
-                            'executionMode',
-                        );
-                        const ahead = event.payload.ahead;
-                        if (!runId || !channel || !chatId) {
-                            break;
-                        }
-
-                        setActiveRuns((current) =>
-                            upsertActiveRun(current, {
-                                runId,
-                                channel,
-                                chatId,
-                                startedAt: event.timestamp,
-                                status: 'queued',
-                                phase:
-                                    typeof ahead === 'number' &&
-                                    Number.isFinite(ahead)
-                                        ? `queued · ${ahead} ahead`
-                                        : 'queued',
-                                streamContent: '',
-                                ...(executionMode ? { executionMode } : {}),
-                            }),
-                        );
-
-                        if (channel === WEB_CHANNEL) {
-                            void loadChatList();
-                            void loadQueuePanel();
-                            if (chatId === selectedChatId) {
-                                void loadMessagesPanel(chatId);
-                            }
-                        }
-                        break;
-                    }
-                    case 'chat.run.started': {
-                        const runId = readPayloadString(event.payload, 'runId');
-                        const channel = readPayloadString(event.payload, 'channel');
-                        const chatId = readPayloadString(event.payload, 'chatId');
-                        const executionMode = readPayloadString(
-                            event.payload,
-                            'executionMode',
-                        );
-                        if (!runId || !channel || !chatId) {
-                            break;
-                        }
-
-                        setActiveRuns((current) =>
-                            upsertActiveRun(current, {
-                                runId,
-                                channel,
-                                chatId,
-                                startedAt: event.timestamp,
-                                status: 'running',
-                                phase: 'running',
-                                streamContent: '',
-                                ...(executionMode ? { executionMode } : {}),
-                            }),
-                        );
-
-                        if (channel === WEB_CHANNEL) {
-                            void loadChatList();
-                            void loadQueuePanel();
-                            if (chatId === selectedChatId) {
-                                void loadMessagesPanel(chatId);
-                            }
-                        }
-                        break;
-                    }
-                    case 'chat.route.selected': {
-                        const runId = readPayloadString(event.payload, 'runId');
-                        const selectedAgent = readPayloadString(
-                            event.payload,
-                            'selectedAgent',
-                        );
-                        if (!runId) {
-                            break;
-                        }
-
-                        setActiveRuns((current) => {
-                            const existing = current.find(
-                                (entry) => entry.runId === runId,
-                            );
-                            if (!existing) {
-                                return current;
-                            }
-
-                            return upsertActiveRun(current, {
-                                ...existing,
-                                ...(selectedAgent ? { agent: selectedAgent } : {}),
-                                ...(() => {
-                                    const reason = readPayloadString(
-                                        event.payload,
-                                        'reason',
-                                    );
-                                    return reason ? { reason } : {};
-                                })(),
-                                ...(() => {
-                                    const explicitAgent = readPayloadString(
-                                        event.payload,
-                                        'explicitAgent',
-                                    );
-                                    return explicitAgent ? { explicitAgent } : {};
-                                })(),
-                                ...(() => {
-                                    const fallbackChain = readPayloadStringArray(
-                                        event.payload,
-                                        'fallbackChain',
-                                    );
-                                    return fallbackChain
-                                        ? { fallbackChain }
-                                        : {};
-                                })(),
-                                phase: selectedAgent
-                                    ? `routing → ${selectedAgent}`
-                                    : 'routing',
-                            });
-                        });
-                        break;
-                    }
-                    case 'chat.agent.started': {
-                        const runId = readPayloadString(event.payload, 'runId');
-                        const agent = readPayloadString(event.payload, 'agent');
-                        if (!runId) {
-                            break;
-                        }
-
-                        setActiveRuns((current) => {
-                            const existing = current.find(
-                                (entry) => entry.runId === runId,
-                            );
-                            if (!existing) {
-                                return current;
-                            }
-
-                            return upsertActiveRun(current, {
-                                ...existing,
-                                ...(agent ? { agent } : {}),
-                                phase: agent ? `running ${agent}` : 'running',
-                                streamContent: '',
-                            });
-                        });
-                        break;
-                    }
-                    case 'chat.run.stream.delta': {
-                        const runId = readPayloadString(event.payload, 'runId');
-                        const agent = readPayloadString(event.payload, 'agent');
-                        const channel = readPayloadString(event.payload, 'channel');
-                        const chatId = readPayloadString(event.payload, 'chatId');
-                        const content = readPayloadString(event.payload, 'content');
-                        const parser = readPayloadString(event.payload, 'parser');
-                        if (!runId || !channel || !chatId || !content) {
-                            break;
-                        }
-
-                        setActiveRuns((current) => {
-                            const existing = current.find(
-                                (entry) => entry.runId === runId,
-                            );
-                            if (!existing) {
-                                return current;
-                            }
-
-                            return upsertActiveRun(current, {
-                                ...existing,
-                                ...(agent ? { agent } : {}),
-                                streamContent: content,
-                                ...(parser ? { streamParser: parser } : {}),
-                                streamUpdatedAt: event.timestamp,
-                                phase: agent ? `streaming ${agent}` : 'streaming',
-                            });
-                        });
-                        break;
-                    }
-                    case 'chat.agent.failed':
-                    case 'chat.agent.skipped': {
-                        const runId = readPayloadString(event.payload, 'runId');
-                        const agent = readPayloadString(event.payload, 'agent');
-                        const detail =
-                            readPayloadString(event.payload, 'error') ??
-                            readPayloadString(event.payload, 'reason');
-                        if (!runId) {
-                            break;
-                        }
-
-                        setActiveRuns((current) => {
-                            const existing = current.find(
-                                (entry) => entry.runId === runId,
-                            );
-                            if (!existing) {
-                                return current;
-                            }
-
-                            return upsertActiveRun(current, {
-                                ...existing,
-                                ...(agent ? { agent } : {}),
-                                ...(detail ? { latestError: detail } : {}),
-                                phase:
-                                    event.type === 'chat.agent.failed'
-                                        ? `retrying after ${agent ?? 'agent'}`
-                                        : `skipping ${agent ?? 'agent'}`,
-                            });
-                        });
-                        break;
-                    }
-                    case 'chat.run.completed':
-                    case 'chat.run.failed':
-                    case 'chat.run.cancelled': {
-                        const runId = readPayloadString(event.payload, 'runId');
-                        const channel = readPayloadString(event.payload, 'channel');
-                        const chatId = readPayloadString(event.payload, 'chatId');
-
-                        if (runId) {
-                            setActiveRuns((current) =>
-                                current.filter((entry) => entry.runId !== runId),
-                            );
-                        }
-
-                        if (channel === WEB_CHANNEL) {
-                            void loadChatList();
-                            void loadQueuePanel();
-                        }
-
-                        if (channel === WEB_CHANNEL && chatId === selectedChatId) {
-                            void loadMessagesPanel(chatId);
-                            void loadToolLogsPanel(chatId);
-                        }
-                        break;
-                    }
-                    case 'message.created':
-                    case 'message.revoked': {
-                        const channel = readPayloadString(event.payload, 'channel');
-                        const chatId = readPayloadString(event.payload, 'chatId');
-
-                        if (channel === WEB_CHANNEL) {
-                            void loadChatList();
-                            void loadQueuePanel();
-                        }
-
-                        if (channel === WEB_CHANNEL && chatId === selectedChatId) {
-                            void loadMessagesPanel(chatId);
-                            void loadToolLogsPanel(chatId);
-                        }
-                        break;
-                    }
-                    case 'background.task.started':
-                    case 'background.task.completed':
-                    case 'background.task.failed':
-                    case 'scheduler.task.started':
-                    case 'scheduler.task.completed':
-                    case 'scheduler.task.failed':
-                        void loadSchedulerPanel();
-                        void loadShellPanels();
-                        break;
-                    default:
-                        break;
-                }
-            } catch {
-                setRealtimeConnected(false);
-            }
-        };
-
-        source.addEventListener('open', () => {
-            setRealtimeConnected(true);
+        return subscribeShellRealtime({
+            loadChatList,
+            loadMessagesPanel,
+            loadQueuePanel,
+            loadSchedulerPanel,
+            loadShellPanels,
+            loadToolLogsPanel,
+            selectedChatId,
+            setActiveRuns,
+            setRealtimeConnected,
+            setRecentEvents,
         });
-        source.addEventListener('error', () => {
-            setRealtimeConnected(false);
-        });
-
-        for (const eventType of eventTypes) {
-            source.addEventListener(eventType, handleEvent);
-        }
-
-        return () => {
-            for (const eventType of eventTypes) {
-                source.removeEventListener(eventType, handleEvent);
-            }
-            source.close();
-            setRealtimeConnected(false);
-        };
     }, [authAllowsDashboard, selectedChatId, draftChatId]);
 
     useEffect(() => {
@@ -979,255 +258,82 @@ export function App() {
         void loadRoutePreview(deferredComposerText);
     }, [authAllowsDashboard, deferredComposerText]);
 
-    async function handleSend(): Promise<void> {
-        const text = composerText.trim();
-        if (!text) {
-            return;
-        }
-
-        setSubmitting(true);
-        setActionError('');
-
-        try {
-            const result = await readJson<ChatResult>('/api/chat', {
-                method: 'POST',
-                headers: {
-                    'content-type': 'application/json',
-                },
-                body: JSON.stringify({
-                    text,
-                    channel: WEB_CHANNEL,
-                    chatId: selectedChatId,
-                    userId: WEB_USER,
-                    executionMode,
-                }),
-            });
-
-            setLastRun(result);
-            setComposerText('');
-            await Promise.all([
-                loadChatList(),
-                loadMessagesPanel(result.chatId),
-                loadToolLogsPanel(result.chatId),
-            ]);
-        } catch (error) {
-            setActionError(error instanceof Error ? error.message : 'Chat failed.');
-        } finally {
-            setSubmitting(false);
-        }
-    }
-
-    async function handleCancelRun(runId: string): Promise<void> {
-        setActionError('');
-
-        try {
-            await readJson(`/api/runs/${runId}/cancel`, {
-                method: 'POST',
-                headers: {
-                    'content-type': 'application/json',
-                },
-                body: JSON.stringify({
-                    annotate: true,
-                }),
-            });
-            await Promise.all([loadMessagesPanel(selectedChatId), loadChatList()]);
-        } catch (error) {
-            setActionError(
-                error instanceof Error ? error.message : 'Cancel request failed.',
-            );
-        }
-    }
-
-    async function handleRevoke(messageId: number): Promise<void> {
-        setActionError('');
-
-        try {
-            await readJson(`/api/messages/${messageId}/revoke`, {
-                method: 'POST',
-            });
-            await Promise.all([
-                loadMessagesPanel(selectedChatId),
-                loadChatList(),
-                loadToolLogsPanel(selectedChatId),
-            ]);
-        } catch (error) {
-            setActionError(
-                error instanceof Error ? error.message : 'Revoke failed.',
-            );
-        }
-    }
-
-    async function handleResend(messageId: number): Promise<void> {
-        setActionError('');
-
-        try {
-            const result = await readJson<ChatResult>(`/api/messages/${messageId}/resend`, {
-                method: 'POST',
-                headers: {
-                    'content-type': 'application/json',
-                },
-                body: JSON.stringify({
-                    channel: WEB_CHANNEL,
-                    chatId: selectedChatId,
-                    userId: WEB_USER,
-                }),
-            });
-            setLastRun(result);
-            await Promise.all([
-                loadChatList(),
-                loadMessagesPanel(selectedChatId),
-                loadToolLogsPanel(selectedChatId),
-            ]);
-        } catch (error) {
-            setActionError(
-                error instanceof Error ? error.message : 'Resend failed.',
-            );
-        }
-    }
-
-    async function handleEditSave(messageId: number): Promise<void> {
-        const text = editingText.trim();
-        if (!text) {
-            return;
-        }
-
-        setActionError('');
-
-        try {
-            const result = await readJson<{ result: ChatResult }>(
-                `/api/messages/${messageId}/edit`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'content-type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        text,
-                    }),
-                },
-            );
-            setEditingMessageId(null);
-            setEditingText('');
-            setLastRun(result.result);
-            await Promise.all([
-                loadChatList(),
-                loadMessagesPanel(selectedChatId),
-                loadToolLogsPanel(selectedChatId),
-            ]);
-        } catch (error) {
-            setActionError(error instanceof Error ? error.message : 'Edit failed.');
-        }
-    }
-
-    async function handleTaskRun(endpoint: string): Promise<void> {
-        setActionError('');
-
-        try {
-            await readJson(endpoint, {
-                method: 'POST',
-            });
-            await Promise.all([loadSchedulerPanel(), loadChatList()]);
-        } catch (error) {
-            setActionError(
-                error instanceof Error ? error.message : 'Task trigger failed.',
-            );
-        }
-    }
-
-    async function runHostAction(
-        endpoint: string,
-        payload: Record<string, unknown>,
-    ): Promise<void> {
-        setHostActionBusy(true);
-        setActionError('');
-
-        try {
-            const result = await readJson<unknown>(endpoint, {
-                method: 'POST',
-                headers: {
-                    'content-type': 'application/json',
-                },
-                body: JSON.stringify(payload),
-            });
-            setHostActionResult(formatStructuredResult(result));
-            await loadToolLogsPanel(selectedChatId);
-        } catch (error) {
-            setActionError(
-                error instanceof Error ? error.message : 'Host action failed.',
-            );
-        } finally {
-            setHostActionBusy(false);
-        }
-    }
-
-    function parseBrowserFormFields(): BrowserFormFieldInput[] {
-        const parsed = JSON.parse(browserFormFieldsText) as unknown;
-        if (!Array.isArray(parsed)) {
-            throw new Error('Form fields JSON must be an array.');
-        }
-
-        const fields = parsed
-            .map((entry) => {
-                if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-                    return null;
-                }
-
-                const record = entry as Record<string, unknown>;
-                const selector =
-                    typeof record.selector === 'string' ? record.selector.trim() : '';
-                const text =
-                    typeof record.text === 'string' ? record.text : '';
-                const clear =
-                    typeof record.clear === 'boolean' ? record.clear : undefined;
-
-                if (!selector || !text) {
-                    return null;
-                }
-
-                return {
-                    selector,
-                    text,
-                    ...(clear !== undefined ? { clear } : {}),
-                };
-            })
-            .filter(
-                (
-                    entry,
-                ): entry is BrowserFormFieldInput => entry !== null,
-            );
-
-        if (fields.length === 0) {
-            throw new Error('Form fields JSON must include at least one field.');
-        }
-
-        return fields;
-    }
-
-    function handleCreateChat(): void {
-        const draftId = createDraftChatId();
-        startTransition(() => {
-            setDraftChatId(draftId);
-            setSelectedChatId(draftId);
-            setMessages([]);
-            setLastRun(null);
-            setEditingMessageId(null);
-            setEditingText('');
-            setActionError('');
+    const { handleTaskRun, parseBrowserFormFields, runHostAction } =
+        createHostLabActions({
+            browserFormFieldsText,
+            loadChatList,
+            loadSchedulerPanel,
+            loadToolLogsPanel,
+            selectedChatId,
+            setActionError,
+            setHostActionBusy,
+            setHostActionResult,
         });
-    }
-
-    function handleSelectChat(chatId: string): void {
-        setSelectedChatId(chatId);
-        setEditingMessageId(null);
-        setEditingText('');
-        setActionError('');
-    }
-
-    function handleInjectIntoComposer(content: string): void {
-        setComposerText((current) =>
-            current.trim() ? `${current.trim()}\n\n${content}` : content,
-        );
-    }
+    const {
+        handleAuthLogin,
+        handleAuthLogout,
+        handleCreateManagedToken,
+        handleCreatePairingInvite,
+        handleRevokeAuthSession,
+        handleRevokeAuthToken,
+        handleRevokePairingGrant,
+        handleRevokePairingInvite,
+    } = createShellAccessActions({
+        authTokenInput,
+        loadAuthAdminPanel,
+        loadMessagesPanel,
+        loadPairingPanel,
+        loadShellPanels,
+        loadToolLogsPanel,
+        managedTokenId,
+        managedTokenScopes,
+        pairingChannel,
+        pairingInvite,
+        pairingKind,
+        selectedChatId,
+        setActionError,
+        setActiveRuns,
+        setAuthAdminBusy,
+        setAuthBusy,
+        setAuthStatus,
+        setAuthTokenInput,
+        setDashboardError,
+        setLatestManagedToken,
+        setManagedTokenId,
+        setMessages,
+        setPairingBusy,
+        setPairingInvite,
+        setRealtimeConnected,
+        setRecentEvents,
+        setToolLogs,
+    });
+    const {
+        handleCancelRun,
+        handleCreateChat,
+        handleEditSave,
+        handleInjectIntoComposer,
+        handleResend,
+        handleRevoke,
+        handleSelectChat,
+        handleSend,
+    } = createConversationActions({
+        composerText,
+        editingText,
+        executionMode,
+        loadChatList,
+        loadMessagesPanel,
+        loadToolLogsPanel,
+        selectedChatId,
+        setActionError,
+        setComposerText,
+        setDraftChatId,
+        setEditingMessageId,
+        setEditingText,
+        setLastRun,
+        setMessages,
+        setSelectedChatId,
+        setSubmitting,
+    });
 
     if (!authReady) {
         return <AuthLoadingScreen />;
@@ -1248,179 +354,116 @@ export function App() {
         );
     }
 
-    const availableAgents = status?.agents.filter((agent) => agent.available) ?? [];
-    const totalTasks =
-        (cronState?.heartbeat ? 1 : 0) +
-        (cronState?.cron.length ?? 0) +
-        (cronState?.maintenance.length ?? 0);
-    const chatList =
-        draftChatId && !chats.some((chat) => chat.chatId === draftChatId)
-            ? [
-                {
-                    channel: WEB_CHANNEL,
-                    chatId: draftChatId,
-                    updatedAt: new Date().toISOString(),
-                    messageCount: 0,
-                    preview: 'Fresh conversation',
-                    role: 'user' as const,
-                },
-                ...chats,
-            ]
-            : chats;
-    const selectedChat =
-        chatList.find((chat) => chat.chatId === selectedChatId) ?? null;
-    const queueSummaryByChatId = new Map(
-        queueSummaries.map((summary) => [summary.chatId, summary] as const),
-    );
-    const editedSuccessorById = buildEditedSuccessorMap(messages);
-    const selectedChatQueue = queueSummaryByChatId.get(selectedChatId) ?? null;
-    const selectedQueueLeadRun = selectedChatQueue?.runs[0] ?? null;
-    const currentActiveRun =
-        activeRuns.find(
-            (entry) =>
-                entry.channel === WEB_CHANNEL && entry.chatId === selectedChatId,
-        ) ?? null;
-    const latestAssistantRoute =
-        [...messages]
-            .reverse()
-            .map((message) => extractAssistantRouteMetadata(message))
-            .find((route): route is AssistantRouteMetadata => Boolean(route)) ??
-        null;
-    const currentRecentEvents = recentEvents.filter((event) => {
-        const eventChannel = readPayloadString(event.payload, 'channel');
-        const eventChatId = readPayloadString(event.payload, 'chatId');
-
-        return (
-            !eventChannel ||
-            eventChannel !== WEB_CHANNEL ||
-            eventChatId === selectedChatId
-        );
-    });
-    const schedulerTasks = [
-        ...(cronState?.heartbeat ? [cronState.heartbeat] : []),
-        ...(cronState?.cron ?? []),
-        ...(cronState?.maintenance ?? []),
-    ];
-    const composerShowsSearch = isSearchCommand(deferredComposerText);
-    const triggerTaskRun = (endpoint: string): void => {
-        void handleTaskRun(endpoint);
-    };
-    const runInspectorHostAction = (
-        endpoint: string,
-        payload: Record<string, unknown>,
-    ): void => {
-        void runHostAction(endpoint, payload);
-    };
-    const createManagedToken = (): void => {
-        void handleCreateManagedToken();
-    };
-    const revokeAuthSession = (sessionId: string): void => {
-        void handleRevokeAuthSession(sessionId);
-    };
-    const revokeAuthToken = (tokenId: string): void => {
-        void handleRevokeAuthToken(tokenId);
-    };
-    const createPairingInvite = (): void => {
-        void handleCreatePairingInvite();
-    };
-    const revokePairingGrant = (grantId: string): void => {
-        void handleRevokePairingGrant(grantId);
-    };
-    const revokePairingInvite = (inviteId: string): void => {
-        void handleRevokePairingInvite(inviteId);
-    };
-    const toggleManagedTokenScope = (scope: ManagedAuthScope): void => {
-        startTransition(() => {
-            setManagedTokenScopes((current) =>
-                current.includes(scope)
-                    ? current.filter((entry) => entry !== scope)
-                    : [...current, scope],
-            );
-        });
-    };
-    const searchInspector: SearchInspectorModel = {
-        deferredSearchQuery,
-        searchLoading,
-        searchQuery,
-        searchResults,
-        searchScope,
-        onInjectIntoComposer: handleInjectIntoComposer,
-        onSearchQueryChange: setSearchQuery,
-        onSearchScopeChange: setSearchScope,
-        onSelectChat: handleSelectChat,
-        onSetInspectorTab: setInspectorTab,
-    };
-    const activityInspector: ActivityInspectorModel = {
+    const {
+        availableAgents,
+        chatList,
+        composerShowsSearch,
         currentActiveRun,
         currentRecentEvents,
+        editedSuccessorById,
+        latestAssistantRoute,
+        queueSummaryByChatId,
+        schedulerTasks,
+        selectedChat,
+        selectedChatQueue,
+        selectedQueueLeadRun,
+        totalTasks,
+    } = createDashboardDerivedState({
+        activeRuns,
+        chats,
+        cronState,
+        deferredComposerText,
+        draftChatId,
+        messages,
+        queueSummaries,
+        recentEvents,
         selectedChatId,
-        toolLogs,
-    };
-    const runtimeInspector: RuntimeInspectorModel = {
-        operations: {
-            onTaskRun: triggerTaskRun,
-            schedulerTasks,
-            selectedChatQueue,
-        },
-        hostLab: {
-            browserFormFieldsText,
-            browserSubmitSelector,
-            browserTarget,
-            hostActionBusy,
-            hostActionResult,
-            parseBrowserFormFields,
-            runHostAction: runInspectorHostAction,
-            screenApp,
-            screenInputText,
-            screenSendClear,
-            screenSendInspectAfter,
-            screenSendLaunchIfNeeded,
-            screenSendPressReturn,
-            screenSendRequireFrontmost,
-            selectedChatId,
-            setActionError,
-            setBrowserFormFieldsText,
-            setBrowserSubmitSelector,
-            setBrowserTarget,
-            setScreenApp,
-            setScreenInputText,
-            setScreenSendClear,
-            setScreenSendInspectAfter,
-            setScreenSendLaunchIfNeeded,
-            setScreenSendPressReturn,
-            setScreenSendRequireFrontmost,
-        },
-        pairing: {
-            onCreatePairingInvite: createPairingInvite,
-            onRevokePairingGrant: revokePairingGrant,
-            onRevokePairingInvite: revokePairingInvite,
-            pairingBusy,
-            pairingChannel,
-            pairingInvite,
-            pairingKind,
-            pairingState,
-            setPairingChannel,
-            setPairingKind,
-        },
-        auth: {
-            authAdminBusy,
-            authSessions,
-            authTokenSummaries,
-            canManageAuth,
-            latestManagedToken,
-            managedTokenId,
-            managedTokenScopes,
-            onCreateManagedToken: createManagedToken,
-            onRevokeAuthSession: revokeAuthSession,
-            onRevokeAuthToken: revokeAuthToken,
-            setManagedTokenId,
-            toggleManagedTokenScope,
-        },
-        status: {
-            providerHealth,
-            status,
-        },
-    };
+        status,
+    });
+    const { activityInspector, runtimeInspector, searchInspector } =
+        createInspectorModels({
+            activityState: {
+                currentActiveRun,
+                currentRecentEvents,
+                selectedChatId,
+                toolLogs,
+            },
+            authState: {
+                authAdminBusy,
+                authSessions,
+                authTokenSummaries,
+                canManageAuth,
+                latestManagedToken,
+                managedTokenId,
+                managedTokenScopes,
+            },
+            hostLabState: {
+                browserFormFieldsText,
+                browserSubmitSelector,
+                browserTarget,
+                hostActionBusy,
+                hostActionResult,
+                screenApp,
+                screenInputText,
+                screenSendClear,
+                screenSendInspectAfter,
+                screenSendLaunchIfNeeded,
+                screenSendPressReturn,
+                screenSendRequireFrontmost,
+                selectedChatId,
+            },
+            pairingState: {
+                pairingBusy,
+                pairingChannel,
+                pairingInvite,
+                pairingKind,
+                pairingState,
+            },
+            runtimeState: {
+                providerHealth,
+                schedulerTasks,
+                selectedChatQueue,
+                status,
+            },
+            searchState: {
+                deferredSearchQuery,
+                searchLoading,
+                searchQuery,
+                searchResults,
+                searchScope,
+            },
+            actions: {
+                handleCreateManagedToken,
+                handleCreatePairingInvite,
+                handleInjectIntoComposer,
+                handleRevokeAuthSession,
+                handleRevokeAuthToken,
+                handleRevokePairingGrant,
+                handleRevokePairingInvite,
+                handleSelectChat,
+                handleTaskRun,
+                parseBrowserFormFields,
+                runHostAction,
+                setActionError,
+                setBrowserFormFieldsText,
+                setBrowserSubmitSelector,
+                setBrowserTarget,
+                setInspectorTab,
+                setManagedTokenId,
+                setManagedTokenScopes,
+                setPairingChannel,
+                setPairingKind,
+                setScreenApp,
+                setScreenInputText,
+                setScreenSendClear,
+                setScreenSendInspectAfter,
+                setScreenSendLaunchIfNeeded,
+                setScreenSendPressReturn,
+                setScreenSendRequireFrontmost,
+                setSearchQuery,
+                setSearchScope,
+            },
+        });
 
     return (
         <main className="app-shell">
