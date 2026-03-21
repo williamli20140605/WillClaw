@@ -1,27 +1,6 @@
 import { formatTimestamp } from '../../ui-helpers.js';
-import {
-  AUTH_SCOPE_OPTIONS,
-  type AuthSessionSummary,
-  type AuthTokenSummary,
-  type CreatedAuthToken,
-} from '../../ui-types.js';
-
-type AuthScopeOption = (typeof AUTH_SCOPE_OPTIONS)[number];
-
-interface AuthSectionProps {
-  authAdminBusy: boolean;
-  authSessions: AuthSessionSummary[];
-  authTokenSummaries: AuthTokenSummary[];
-  canManageAuth: boolean;
-  latestManagedToken: CreatedAuthToken | null;
-  managedTokenId: string;
-  managedTokenScopes: string[];
-  setManagedTokenId(value: string): void;
-  toggleManagedTokenScope(scope: AuthScopeOption): void;
-  onCreateManagedToken(): void;
-  onRevokeAuthSession(sessionId: string): void;
-  onRevokeAuthToken(tokenId: string): void;
-}
+import { AUTH_SCOPE_OPTIONS } from '../../ui-types.js';
+import type { AuthInspectorModel } from '../../inspector-types.js';
 
 export function AuthSection({
   authAdminBusy,
@@ -36,7 +15,7 @@ export function AuthSection({
   onCreateManagedToken,
   onRevokeAuthSession,
   onRevokeAuthToken,
-}: AuthSectionProps) {
+}: AuthInspectorModel) {
   return (
     <section className="inspector-panel">
       <div className="section-header">

@@ -1,15 +1,10 @@
 import { toolPolicySummary } from '../../ui-helpers.js';
-import type { ProviderHealthEntry, StatusPayload } from '../../ui-types.js';
-
-interface RuntimeStatusSectionProps {
-  providerHealth: ProviderHealthEntry[];
-  status: StatusPayload | null;
-}
+import type { RuntimeStatusModel } from '../../inspector-types.js';
 
 export function RuntimeStatusSection({
   providerHealth,
   status,
-}: RuntimeStatusSectionProps) {
+}: RuntimeStatusModel) {
   return (
     <>
       <section className="inspector-panel">

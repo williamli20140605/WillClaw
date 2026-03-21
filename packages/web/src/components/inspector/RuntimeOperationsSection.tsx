@@ -1,17 +1,11 @@
 import { formatTimestamp, taskTone } from '../../ui-helpers.js';
-import type { QueueSummary, SchedulerTaskStatus } from '../../ui-types.js';
-
-interface RuntimeOperationsSectionProps {
-  schedulerTasks: SchedulerTaskStatus[];
-  selectedChatQueue: QueueSummary | null;
-  onTaskRun(endpoint: string): void;
-}
+import type { RuntimeOperationsModel } from '../../inspector-types.js';
 
 export function RuntimeOperationsSection({
+  onTaskRun,
   schedulerTasks,
   selectedChatQueue,
-  onTaskRun,
-}: RuntimeOperationsSectionProps) {
+}: RuntimeOperationsModel) {
   return (
     <>
       <section className="inspector-panel">

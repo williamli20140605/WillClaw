@@ -5,21 +5,20 @@ import {
   formatTimestamp,
   summarizeText,
 } from '../../ui-helpers.js';
-import type { ActiveRun, RealtimeEvent, ToolLogEntry } from '../../ui-types.js';
+import type { ActivityInspectorModel } from '../../inspector-types.js';
 
 interface ActivityInspectorTabProps {
-  currentActiveRun: ActiveRun | null;
-  currentRecentEvents: RealtimeEvent[];
-  selectedChatId: string;
-  toolLogs: ToolLogEntry[];
+  activity: ActivityInspectorModel;
 }
 
-export function ActivityInspectorTab({
-  currentActiveRun,
-  currentRecentEvents,
-  selectedChatId,
-  toolLogs,
-}: ActivityInspectorTabProps) {
+export function ActivityInspectorTab({ activity }: ActivityInspectorTabProps) {
+  const {
+    currentActiveRun,
+    currentRecentEvents,
+    selectedChatId,
+    toolLogs,
+  } = activity;
+
   return (
     <div className="stack-list">
       <section className="inspector-panel">

@@ -1,35 +1,25 @@
 import { cleanSnippet } from '../../ui-helpers.js';
-import type {
-  InspectorTab,
-  MemorySearchResult,
-  SearchScope,
-} from '../../ui-types.js';
+import type { SearchInspectorModel } from '../../inspector-types.js';
+import type { SearchScope } from '../../ui-types.js';
 
 interface SearchInspectorTabProps {
-  deferredSearchQuery: string;
-  searchLoading: boolean;
-  searchQuery: string;
-  searchResults: MemorySearchResult | null;
-  searchScope: SearchScope;
-  onInjectIntoComposer(content: string): void;
-  onSearchQueryChange(value: string): void;
-  onSearchScopeChange(value: SearchScope): void;
-  onSelectChat(chatId: string): void;
-  onSetInspectorTab(tab: InspectorTab): void;
+  search: SearchInspectorModel;
 }
 
-export function SearchInspectorTab({
-  deferredSearchQuery,
-  searchLoading,
-  searchQuery,
-  searchResults,
-  searchScope,
-  onInjectIntoComposer,
-  onSearchQueryChange,
-  onSearchScopeChange,
-  onSelectChat,
-  onSetInspectorTab,
-}: SearchInspectorTabProps) {
+export function SearchInspectorTab({ search }: SearchInspectorTabProps) {
+  const {
+    deferredSearchQuery,
+    searchLoading,
+    searchQuery,
+    searchResults,
+    searchScope,
+    onInjectIntoComposer,
+    onSearchQueryChange,
+    onSearchScopeChange,
+    onSelectChat,
+    onSetInspectorTab,
+  } = search;
+
   return (
     <div className="stack-list">
       <section className="inspector-panel">

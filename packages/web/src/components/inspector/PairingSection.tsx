@@ -1,18 +1,5 @@
 import { formatTimestamp } from '../../ui-helpers.js';
-import type { CreatedPairingInvite, PairingPayload } from '../../ui-types.js';
-
-interface PairingSectionProps {
-  pairingBusy: boolean;
-  pairingChannel: 'telegram' | 'discord' | 'feishu';
-  pairingInvite: CreatedPairingInvite | null;
-  pairingKind: 'web' | 'channel';
-  pairingState: PairingPayload | null;
-  setPairingChannel(value: 'telegram' | 'discord' | 'feishu'): void;
-  setPairingKind(value: 'web' | 'channel'): void;
-  onCreatePairingInvite(): void;
-  onRevokePairingGrant(grantId: string): void;
-  onRevokePairingInvite(inviteId: string): void;
-}
+import type { PairingInspectorModel } from '../../inspector-types.js';
 
 export function PairingSection({
   pairingBusy,
@@ -25,7 +12,7 @@ export function PairingSection({
   onCreatePairingInvite,
   onRevokePairingGrant,
   onRevokePairingInvite,
-}: PairingSectionProps) {
+}: PairingInspectorModel) {
   return (
     <section className="inspector-panel">
       <div className="section-header">

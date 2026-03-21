@@ -28,6 +28,13 @@ import {
     type StoredMessage,
     type ToolLogEntry,
 } from './ui-types.js';
+import type {
+    ActivityInspectorModel,
+    BrowserFormFieldInput,
+    ManagedAuthScope,
+    RuntimeInspectorModel,
+    SearchInspectorModel,
+} from './inspector-types.js';
 import {
     buildEditedSuccessorMap,
     createDraftChatId,
@@ -1153,11 +1160,7 @@ export function App() {
         }
     }
 
-    function parseBrowserFormFields(): Array<{
-        selector: string;
-        text: string;
-        clear?: boolean;
-    }> {
+    function parseBrowserFormFields(): BrowserFormFieldInput[] {
         const parsed = JSON.parse(browserFormFieldsText) as unknown;
         if (!Array.isArray(parsed)) {
             throw new Error('Form fields JSON must be an array.');
@@ -1190,11 +1193,7 @@ export function App() {
             .filter(
                 (
                     entry,
-                ): entry is {
-                    selector: string;
-                    text: string;
-                    clear?: boolean;
-                } => entry !== null,
+                ): entry is BrowserFormFieldInput => entry !== null,
             );
 
         if (fields.length === 0) {
@@ -1303,6 +1302,125 @@ export function App() {
         ...(cronState?.maintenance ?? []),
     ];
     const composerShowsSearch = isSearchCommand(deferredComposerText);
+    const triggerTaskRun = (endpoint: string): void => {
+        void handleTaskRun(endpoint);
+    };
+    const runInspectorHostAction = (
+        endpoint: string,
+        payload: Record<string, unknown>,
+    ): void => {
+        void runHostAction(endpoint, payload);
+    };
+    const createManagedToken = (): void => {
+        void handleCreateManagedToken();
+    };
+    const revokeAuthSession = (sessionId: string): void => {
+        void handleRevokeAuthSession(sessionId);
+    };
+    const revokeAuthToken = (tokenId: string): void => {
+        void handleRevokeAuthToken(tokenId);
+    };
+    const createPairingInvite = (): void => {
+        void handleCreatePairingInvite();
+    };
+    const revokePairingGrant = (grantId: string): void => {
+        void handleRevokePairingGrant(grantId);
+    };
+    const revokePairingInvite = (inviteId: string): void => {
+        void handleRevokePairingInvite(inviteId);
+    };
+    const toggleManagedTokenScope = (scope: ManagedAuthScope): void => {
+        startTransition(() => {
+            setManagedTokenScopes((current) =>
+                current.includes(scope)
+                    ? current.filter((entry) => entry !== scope)
+                    : [...current, scope],
+            );
+        });
+    };
+    const searchInspector: SearchInspectorModel = {
+        deferredSearchQuery,
+        searchLoading,
+        searchQuery,
+        searchResults,
+        searchScope,
+        onInjectIntoComposer: handleInjectIntoComposer,
+        onSearchQueryChange: setSearchQuery,
+        onSearchScopeChange: setSearchScope,
+        onSelectChat: handleSelectChat,
+        onSetInspectorTab: setInspectorTab,
+    };
+    const activityInspector: ActivityInspectorModel = {
+        currentActiveRun,
+        currentRecentEvents,
+        selectedChatId,
+        toolLogs,
+    };
+    const runtimeInspector: RuntimeInspectorModel = {
+        operations: {
+            onTaskRun: triggerTaskRun,
+            schedulerTasks,
+            selectedChatQueue,
+        },
+        hostLab: {
+            browserFormFieldsText,
+            browserSubmitSelector,
+            browserTarget,
+            hostActionBusy,
+            hostActionResult,
+            parseBrowserFormFields,
+            runHostAction: runInspectorHostAction,
+            screenApp,
+            screenInputText,
+            screenSendClear,
+            screenSendInspectAfter,
+            screenSendLaunchIfNeeded,
+            screenSendPressReturn,
+            screenSendRequireFrontmost,
+            selectedChatId,
+            setActionError,
+            setBrowserFormFieldsText,
+            setBrowserSubmitSelector,
+            setBrowserTarget,
+            setScreenApp,
+            setScreenInputText,
+            setScreenSendClear,
+            setScreenSendInspectAfter,
+            setScreenSendLaunchIfNeeded,
+            setScreenSendPressReturn,
+            setScreenSendRequireFrontmost,
+        },
+        pairing: {
+            onCreatePairingInvite: createPairingInvite,
+            onRevokePairingGrant: revokePairingGrant,
+            onRevokePairingInvite: revokePairingInvite,
+            pairingBusy,
+            pairingChannel,
+            pairingInvite,
+            pairingKind,
+            pairingState,
+            setPairingChannel,
+            setPairingKind,
+        },
+        auth: {
+            authAdminBusy,
+            authSessions,
+            authTokenSummaries,
+            canManageAuth,
+            latestManagedToken,
+            managedTokenId,
+            managedTokenScopes,
+            onCreateManagedToken: createManagedToken,
+            onRevokeAuthSession: revokeAuthSession,
+            onRevokeAuthToken: revokeAuthToken,
+            setManagedTokenId,
+            toggleManagedTokenScope,
+        },
+        status: {
+            providerHealth,
+            status,
+        },
+    };
 
     return (
         <main className="app-shell">
@@ -1417,99 +1535,11 @@ export function App() {
                 </section>
 
                 <InspectorPanel
-                    authAdminBusy={authAdminBusy}
-                    authSessions={authSessions}
-                    authTokenSummaries={authTokenSummaries}
-                    browserFormFieldsText={browserFormFieldsText}
-                    browserSubmitSelector={browserSubmitSelector}
-                    browserTarget={browserTarget}
-                    canManageAuth={canManageAuth}
-                    currentActiveRun={currentActiveRun}
-                    currentRecentEvents={currentRecentEvents}
-                    deferredSearchQuery={deferredSearchQuery}
-                    handleCreateManagedToken={() => {
-                        void handleCreateManagedToken();
-                    }}
-                    handleCreatePairingInvite={() => {
-                        void handleCreatePairingInvite();
-                    }}
-                    handleInjectIntoComposer={handleInjectIntoComposer}
-                    handleRevokeAuthSession={(sessionId) => {
-                        void handleRevokeAuthSession(sessionId);
-                    }}
-                    handleRevokeAuthToken={(tokenId) => {
-                        void handleRevokeAuthToken(tokenId);
-                    }}
-                    handleRevokePairingGrant={(grantId) => {
-                        void handleRevokePairingGrant(grantId);
-                    }}
-                    handleRevokePairingInvite={(inviteId) => {
-                        void handleRevokePairingInvite(inviteId);
-                    }}
-                    handleSelectChat={handleSelectChat}
-                    handleTaskRun={(endpoint) => {
-                        void handleTaskRun(endpoint);
-                    }}
-                    hostActionBusy={hostActionBusy}
-                    hostActionResult={hostActionResult}
+                    activity={activityInspector}
                     inspectorTab={inspectorTab}
-                    latestManagedToken={latestManagedToken}
-                    managedTokenId={managedTokenId}
-                    managedTokenScopes={managedTokenScopes}
-                    pairingBusy={pairingBusy}
-                    pairingChannel={pairingChannel}
-                    pairingInvite={pairingInvite}
-                    pairingKind={pairingKind}
-                    pairingState={pairingState}
-                    parseBrowserFormFields={parseBrowserFormFields}
-                    providerHealth={providerHealth}
-                    runHostAction={(endpoint, payload) => {
-                        void runHostAction(endpoint, payload);
-                    }}
-                    schedulerTasks={schedulerTasks}
-                    screenApp={screenApp}
-                    screenInputText={screenInputText}
-                    screenSendClear={screenSendClear}
-                    screenSendInspectAfter={screenSendInspectAfter}
-                    screenSendLaunchIfNeeded={screenSendLaunchIfNeeded}
-                    screenSendPressReturn={screenSendPressReturn}
-                    screenSendRequireFrontmost={screenSendRequireFrontmost}
-                    searchLoading={searchLoading}
-                    searchQuery={searchQuery}
-                    searchResults={searchResults}
-                    searchScope={searchScope}
-                    selectedChatId={selectedChatId}
-                    selectedChatQueue={selectedChatQueue}
-                    setActionError={setActionError}
-                    setBrowserFormFieldsText={setBrowserFormFieldsText}
-                    setBrowserSubmitSelector={setBrowserSubmitSelector}
-                    setBrowserTarget={setBrowserTarget}
-                    setInspectorTab={setInspectorTab}
-                    setManagedTokenId={setManagedTokenId}
-                    setPairingChannel={setPairingChannel}
-                    setPairingKind={setPairingKind}
-                    setScreenApp={setScreenApp}
-                    setScreenInputText={setScreenInputText}
-                    setScreenSendClear={setScreenSendClear}
-                    setScreenSendInspectAfter={setScreenSendInspectAfter}
-                    setScreenSendLaunchIfNeeded={setScreenSendLaunchIfNeeded}
-                    setScreenSendPressReturn={setScreenSendPressReturn}
-                    setScreenSendRequireFrontmost={
-                        setScreenSendRequireFrontmost
-                    }
-                    setSearchQuery={setSearchQuery}
-                    setSearchScope={setSearchScope}
-                    status={status}
-                    toggleManagedTokenScope={(scope) => {
-                        startTransition(() => {
-                            setManagedTokenScopes((current) =>
-                                current.includes(scope)
-                                    ? current.filter((entry) => entry !== scope)
-                                    : [...current, scope],
-                            );
-                        });
-                    }}
-                    toolLogs={toolLogs}
+                    onInspectorTabChange={setInspectorTab}
+                    runtime={runtimeInspector}
+                    search={searchInspector}
                 />
             </div>
         </main>
