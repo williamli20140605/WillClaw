@@ -9,12 +9,7 @@ import {
     AuthLoadingScreen,
     AuthUnlockScreen,
 } from './components/AuthShell.js';
-import { ConversationComposer } from './components/ConversationComposer.js';
-import { ConversationHeader } from './components/ConversationHeader.js';
-import { ConversationSidebar } from './components/ConversationSidebar.js';
-import { ConversationStream } from './components/ConversationStream.js';
-import { InspectorPanel } from './components/InspectorPanel.js';
-import { ShellTopBar } from './components/ShellTopBar.js';
+import { ShellWorkspace } from './components/ShellWorkspace.js';
 
 export function App() {
     const {
@@ -374,107 +369,73 @@ export function App() {
     });
 
     return (
-        <main className="app-shell">
-            <ShellTopBar
-                authBusy={authBusy}
-                authRequired={authStatus.authRequired}
-                availableAgentCount={availableAgents.length}
-                realtimeConnected={realtimeConnected}
-                taskCount={totalTasks}
-                threadCount={chatList.length}
-                tokenId={authStatus.tokenId}
-                onLogout={() => {
-                    void handleAuthLogout();
-                }}
-            />
-
-            <div className="workspace-grid">
-                <ConversationSidebar
-                    availableAgents={availableAgents}
-                    chatList={chatList}
-                    currentActiveRun={currentActiveRun}
-                    latestAssistantRoute={latestAssistantRoute}
-                    onCreateChat={handleCreateChat}
-                    onPrefixAgent={handlePrefixAgent}
-                    onSelectChat={handleSelectChat}
-                    onStartSearch={handleStartSearch}
-                    queueSummaryByChatId={queueSummaryByChatId}
-                    routePreview={routePreview}
-                    selectedChat={selectedChat}
-                    selectedChatId={selectedChatId}
-                    selectedQueueLeadRun={selectedQueueLeadRun}
-                    serverHost={status?.server.host}
-                />
-
-                <section className="panel conversation-shell">
-                    <ConversationHeader
-                        currentActiveRun={currentActiveRun}
-                        lastRun={lastRun}
-                        realtimeConnected={realtimeConnected}
-                        selectedChat={selectedChat}
-                        selectedChatId={selectedChatId}
-                        selectedChatQueue={selectedChatQueue}
-                        selectedQueueLeadRun={selectedQueueLeadRun}
-                        onCancelRun={(runId) => {
-                            void handleCancelRun(runId);
-                        }}
-                    />
-
-                    {dashboardError ? (
-                        <div className="banner banner--danger">{dashboardError}</div>
-                    ) : null}
-                    {actionError ? (
-                        <div className="banner banner--warning">{actionError}</div>
-                    ) : null}
-
-                    <ConversationStream
-                        currentActiveRun={currentActiveRun}
-                        editedSuccessorById={editedSuccessorById}
-                        editingMessageId={editingMessageId}
-                        editingText={editingText}
-                        messages={messages}
-                        onEditCancel={handleEditCancel}
-                        onEditSave={(messageId) => {
-                            void handleEditSave(messageId);
-                        }}
-                        onEditStart={handleEditStart}
-                        onEditTextChange={setEditingText}
-                        onResend={(messageId) => {
-                            void handleResend(messageId);
-                        }}
-                        onRevoke={(messageId) => {
-                            void handleRevoke(messageId);
-                        }}
-                    />
-
-                    <ConversationComposer
-                        availableAgents={availableAgents}
-                        composerShowsSearch={composerShowsSearch}
-                        composerText={composerText}
-                        currentActiveRun={currentActiveRun}
-                        executionMode={executionMode}
-                        lastRun={lastRun}
-                        routePreview={routePreview}
-                        selectedChatId={selectedChatId}
-                        submitting={submitting}
-                        onComposerTextChange={setComposerText}
-                        onExecutionModeChange={setExecutionMode}
-                        onPrefixAgent={handlePrefixAgent}
-                        onSend={() => {
-                            void handleSend();
-                        }}
-                        onStartSearch={handleStartSearch}
-                    />
-                </section>
-
-                <InspectorPanel
-                    activity={activityInspector}
-                    inspectorTab={inspectorTab}
-                    onInspectorTabChange={setInspectorTab}
-                    runtime={runtimeInspector}
-                    search={searchInspector}
-                />
-            </div>
-        </main>
+        <ShellWorkspace
+            topBar={{
+                authBusy,
+                authRequired: authStatus.authRequired,
+                availableAgentCount: availableAgents.length,
+                handleAuthLogout,
+                realtimeConnected,
+                taskCount: totalTasks,
+                threadCount: chatList.length,
+                tokenId: authStatus.tokenId,
+            }}
+            sidebar={{
+                availableAgents,
+                chatList,
+                currentActiveRun,
+                handleCreateChat,
+                handlePrefixAgent,
+                handleSelectChat,
+                handleStartSearch,
+                latestAssistantRoute,
+                queueSummaryByChatId,
+                routePreview,
+                selectedChat,
+                selectedChatId,
+                selectedQueueLeadRun,
+                serverHost: status?.server.host,
+            }}
+            conversation={{
+                actionError,
+                availableAgents,
+                composerShowsSearch,
+                composerText,
+                currentActiveRun,
+                dashboardError,
+                editedSuccessorById,
+                editingMessageId,
+                editingText,
+                executionMode,
+                handleCancelRun,
+                handleEditCancel,
+                handleEditSave,
+                handleEditStart,
+                handlePrefixAgent,
+                handleResend,
+                handleRevoke,
+                handleSend,
+                handleStartSearch,
+                lastRun,
+                messages,
+                realtimeConnected,
+                routePreview,
+                selectedChat,
+                selectedChatId,
+                selectedChatQueue,
+                selectedQueueLeadRun,
+                setComposerText,
+                setEditingText,
+                setExecutionMode,
+                submitting,
+            }}
+            inspector={{
+                activity: activityInspector,
+                inspectorTab,
+                runtime: runtimeInspector,
+                search: searchInspector,
+                setInspectorTab,
+            }}
+        />
     );
 }
