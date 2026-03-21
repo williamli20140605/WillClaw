@@ -1622,7 +1622,11 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
 
     app.post('/api/maintenance/:taskName/run', async (c) => {
         const taskName = c.req.param('taskName');
-        if (taskName !== 'daily_note' && taskName !== 'compact') {
+        if (
+            taskName !== 'daily_note' &&
+            taskName !== 'compact' &&
+            taskName !== 'logs'
+        ) {
             return c.json({ error: 'Unknown maintenance task' }, 404);
         }
 

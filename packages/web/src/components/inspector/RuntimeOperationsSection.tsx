@@ -42,6 +42,13 @@ export function RuntimeOperationsSection({
           >
             Compact memory
           </button>
+          <button
+            className="ghost-btn"
+            onClick={() => onTaskRun('/api/maintenance/logs/run')}
+            type="button"
+          >
+            Clean logs
+          </button>
         </div>
         <div className="stack-list">
           {schedulerTasks.map((task) => (

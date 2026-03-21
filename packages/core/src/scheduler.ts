@@ -4,6 +4,7 @@ import type { Logger } from 'pino';
 import type { WillClawConfig } from './config.js';
 import type { WillClawEventHub } from './events.js';
 import type { BackgroundTaskEngine, BackgroundTaskResult } from './heartbeat.js';
+import type { LogMaintenanceManager, LogRetentionResult } from './log-maintenance.js';
 import type {
     GeneratedDailyNoteResult,
     MemoryCompactResult,
@@ -14,7 +15,8 @@ export type SchedulerTaskKind = 'heartbeat' | 'cron' | 'maintenance';
 export type SchedulerTaskRunResult =
     | BackgroundTaskResult
     | GeneratedDailyNoteResult
-    | MemoryCompactResult;
+    | MemoryCompactResult
+    | LogRetentionResult;
 
 interface RegisteredTask {
     id: string;
@@ -52,6 +54,7 @@ export class WillClawScheduler {
         private readonly config: WillClawConfig,
         private readonly engine: BackgroundTaskEngine,
         private readonly workspaceMemoryManager: WorkspaceMemoryManager,
+        private readonly logMaintenanceManager: LogMaintenanceManager,
         private readonly logger: Logger,
         private readonly eventHub: WillClawEventHub,
     ) { }
@@ -102,6 +105,14 @@ export class WillClawScheduler {
                 runner: async () => await this.workspaceMemoryManager.runScheduledMemoryCompact(),
             });
         }
+
+        this.registerTask({
+            id: 'maintenance:logs',
+            kind: 'maintenance',
+            name: 'logs',
+            schedule: this.config.logging.retention_schedule,
+            runner: async () => await this.logMaintenanceManager.runRetention(),
+        });
     }
 
     stop(): void {
@@ -148,7 +159,9 @@ export class WillClawScheduler {
         return await this.runTask(`cron:${name}`);
     }
 
-    async runMaintenanceNow(name: 'daily_note' | 'compact'): Promise<SchedulerTaskRunResult> {
+    async runMaintenanceNow(
+        name: 'daily_note' | 'compact' | 'logs',
+    ): Promise<SchedulerTaskRunResult> {
         return await this.runTask(`maintenance:${name}`);
     }
 
@@ -256,6 +269,10 @@ export class WillClawScheduler {
 
         if (id === 'maintenance:compact') {
             return await this.workspaceMemoryManager.runScheduledMemoryCompact();
+        }
+
+        if (id === 'maintenance:logs') {
+            return await this.logMaintenanceManager.runRetention();
         }
 
         throw new Error(`Unknown scheduled task: ${id}`);

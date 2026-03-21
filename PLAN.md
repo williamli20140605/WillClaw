@@ -1671,7 +1671,7 @@ daemon:
 - [ ] Web UI 美化
 - [ ] Tailscale 远程访问
 - [ ] `/mode` 工作模式切换
-- [ ] 日志保留策略（自动清理 > 90 天）
+- [x] 日志保留策略（自动清理 > 90 天）
 - [ ] historyMessages git auto-commit（可选）
 - [ ] 搜索结果高亮 + 分页
 

@@ -233,6 +233,7 @@ logging:
   app_log: "${appLogPath}"
   max_output_chars: 2000
   retain_days: 90
+  retention_schedule: "25 3 * * *"
 
 daemon:
   plist_label: com.willclaw.agent

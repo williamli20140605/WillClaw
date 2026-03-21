@@ -292,6 +292,21 @@ export class ToolExecutionLogger {
         return runListQuery(this.db, filters);
     }
 
+    pruneOlderThan(timestamp: string): number {
+        const statement = this.db.prepare(
+            'DELETE FROM tool_logs WHERE timestamp < ?',
+        );
+        const result = statement.run(timestamp);
+        const deletedCount = Number(result.changes);
+
+        if (deletedCount > 0) {
+            this.db.pragma('wal_checkpoint(TRUNCATE)');
+            this.db.exec('VACUUM');
+        }
+
+        return deletedCount;
+    }
+
     getById(id: number): ToolLogEntry | null {
         const statement = this.db.prepare('SELECT * FROM tool_logs WHERE id = ?');
         const row = statement.get(id) as ToolLogRow | undefined;

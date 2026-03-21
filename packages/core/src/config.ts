@@ -361,6 +361,7 @@ const loggingSchema = z
         app_log: z.string().default('~/.willclaw/logs/willclaw.log'),
         max_output_chars: z.coerce.number().int().positive().default(2_000),
         retain_days: z.coerce.number().int().positive().default(90),
+        retention_schedule: z.string().default('25 3 * * *'),
     })
     .passthrough()
     .default({});

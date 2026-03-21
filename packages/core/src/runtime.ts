@@ -17,6 +17,7 @@ import { HistoryExporter } from './history-exporter.js';
 import { BackgroundTaskEngine } from './heartbeat.js';
 import { HostedActionService } from './hosted-actions.js';
 import { createAppLogger } from './logger.js';
+import { LogMaintenanceManager } from './log-maintenance.js';
 import { MemorySearchService } from './memory-search.js';
 import { MemoryStore } from './memory.js';
 import { Orchestrator } from './orchestrator.js';
@@ -65,7 +66,9 @@ export async function createWillClawRuntime(options?: {
     homeDir?: string;
 }): Promise<WillClawRuntime> {
     const { config, paths } = await loadWillClawConfig(options);
-    const logger = await createAppLogger(config.logging.app_log);
+    const { logger, destination: appLogDestination } = await createAppLogger(
+        config.logging.app_log,
+    );
     const eventHub = new WillClawEventHub();
     const promptAssembler = new PromptAssembler(config, paths);
     const agents = createAgentBackends(config);
@@ -99,6 +102,13 @@ export async function createWillClawRuntime(options?: {
         memoryStore,
         fileSystemTool,
         logger,
+    );
+    const logMaintenanceManager = new LogMaintenanceManager(
+        config,
+        paths,
+        logger,
+        appLogDestination,
+        toolLogger,
     );
     const memorySearchService = new MemorySearchService(workspaceMemoryManager);
     const orchestrator = new Orchestrator(
@@ -134,6 +144,7 @@ export async function createWillClawRuntime(options?: {
         config,
         backgroundTaskEngine,
         workspaceMemoryManager,
+        logMaintenanceManager,
         logger,
         eventHub,
     );
