@@ -10,7 +10,11 @@ import { createDraftChatId, readJson } from './ui-helpers.js';
 
 type ConversationChatState = Pick<
     ShellChatState,
-    'composerText' | 'editingText' | 'executionMode' | 'selectedChatId'
+    | 'composerText'
+    | 'editingText'
+    | 'executionMode'
+    | 'selectedAgent'
+    | 'selectedChatId'
 >;
 
 interface ConversationLoaders {
@@ -48,6 +52,7 @@ export function createConversationActions({
                     'content-type': 'application/json',
                 },
                 body: JSON.stringify({
+                    ...(chat.selectedAgent ? { agent: chat.selectedAgent } : {}),
                     text,
                     channel: WEB_CHANNEL,
                     chatId: chat.selectedChatId,
@@ -127,6 +132,9 @@ export function createConversationActions({
                         'content-type': 'application/json',
                     },
                     body: JSON.stringify({
+                        ...(chat.selectedAgent
+                            ? { agent: chat.selectedAgent }
+                            : {}),
                         channel: WEB_CHANNEL,
                         chatId: chat.selectedChatId,
                         userId: WEB_USER,
@@ -163,6 +171,9 @@ export function createConversationActions({
                         'content-type': 'application/json',
                     },
                     body: JSON.stringify({
+                        ...(chat.selectedAgent
+                            ? { agent: chat.selectedAgent }
+                            : {}),
                         text,
                     }),
                 },
@@ -208,12 +219,8 @@ export function createConversationActions({
         );
     }
 
-    function handlePrefixAgent(agentName: string): void {
-        setters.chat.setComposerText((current) =>
-            current.startsWith(`@${agentName}`)
-                ? current
-                : `@${agentName} ${current}`.trim(),
-        );
+    function handleSelectAgent(agentName: string | null): void {
+        setters.chat.setSelectedAgent(agentName);
     }
 
     function handleStartSearch(): void {
@@ -237,7 +244,7 @@ export function createConversationActions({
         handleEditSave,
         handleEditStart,
         handleInjectIntoComposer,
-        handlePrefixAgent,
+        handleSelectAgent,
         handleResend,
         handleRevoke,
         handleSelectChat,

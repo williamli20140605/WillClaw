@@ -189,6 +189,7 @@ Supported agents:
 Routing behavior:
 - \`@agent-name\` in user text forces an explicit backend
 - otherwise WillClaw uses intent-aware heuristics for hosted tools vs read-only coding vs long-context vs coding vs simple QA
+- \`agents.routing\` may override \`simple_qa\`, \`hosted_tools\`, \`read_only_coding\`, \`coding\`, and \`long_context\`
 - routing reasons currently include \`explicit\`, \`mode_hint\`, \`hosted_tools\`, \`long_context\`, \`read_only_coding\`, \`coding\`, and \`simple_qa\`
 - mode hints can bias routing toward hosted-tool or research-style backends without forcing a specific agent name
 - read-only requests may fallback across the configured chain

@@ -21,12 +21,13 @@ interface ConversationSidebarProps {
     latestAssistantRoute: AssistantRouteMetadata | null;
     queueSummaryByChatId: Map<string, QueueSummary>;
     routePreview: RoutePlan | null;
+    selectedAgent: string | null;
     selectedChat: ChatSummary | null;
     selectedChatId: string;
     selectedQueueLeadRun: QueueRunSummary | null;
     serverHost: string | undefined;
     onCreateChat(): void;
-    onPrefixAgent(agentName: string): void;
+    onSelectAgent(agentName: string | null): void;
     onSelectChat(chatId: string): void;
     onStartSearch(): void;
 }
@@ -38,12 +39,13 @@ export function ConversationSidebar({
     latestAssistantRoute,
     queueSummaryByChatId,
     routePreview,
+    selectedAgent,
     selectedChat,
     selectedChatId,
     selectedQueueLeadRun,
     serverHost,
     onCreateChat,
-    onPrefixAgent,
+    onSelectAgent,
     onSelectChat,
     onStartSearch,
 }: ConversationSidebarProps) {
@@ -65,14 +67,21 @@ export function ConversationSidebar({
                     >
                         Start search
                     </button>
-                    {availableAgents.slice(0, 3).map((agent) => (
+                    <button
+                        className="quick-btn"
+                        onClick={() => onSelectAgent(null)}
+                        type="button"
+                    >
+                        Auto
+                    </button>
+                    {availableAgents.slice(0, 2).map((agent) => (
                         <button
                             className="quick-btn"
                             key={agent.name}
-                            onClick={() => onPrefixAgent(agent.name)}
+                            onClick={() => onSelectAgent(agent.name)}
                             type="button"
                         >
-                            @{agent.name}
+                            {agent.name}
                         </button>
                     ))}
                 </div>
@@ -181,13 +190,16 @@ export function ConversationSidebar({
                         <label>Routing</label>
                         <strong>
                             {currentActiveRun?.agent ??
+                                selectedAgent ??
                                 latestAssistantRoute?.selectedAgent ??
                                 routePreview?.selectedAgent ??
-                                'shell'}
+                                'auto'}
                         </strong>
                         <p>
                             {currentActiveRun?.reason
                                 ? routeReasonLabel(currentActiveRun.reason)
+                                : selectedAgent
+                                    ? 'Manually selected for the next prompt.'
                                 : latestAssistantRoute?.reason
                                     ? routeReasonLabel(latestAssistantRoute.reason)
                                     : routePreview

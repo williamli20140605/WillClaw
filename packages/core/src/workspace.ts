@@ -67,6 +67,8 @@ agents:
   default: claude-code
   routing:
     simple_qa: direct-api
+    hosted_tools: direct-api
+    read_only_coding: codex
     coding: claude-code
     long_context: gemini
     system: claude-code

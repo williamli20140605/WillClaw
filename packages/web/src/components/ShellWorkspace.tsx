@@ -38,12 +38,13 @@ export interface ShellWorkspaceProps {
         chatList: ChatSummary[];
         currentActiveRun: ActiveRun | null;
         handleCreateChat(): void;
-        handlePrefixAgent(agentName: string): void;
+        handleSelectAgent(agentName: string | null): void;
         handleSelectChat(chatId: string): void;
         handleStartSearch(): void;
         latestAssistantRoute: AssistantRouteMetadata | null;
         queueSummaryByChatId: Map<string, QueueSummary>;
         routePreview: RoutePlan | null;
+        selectedAgent: string | null;
         selectedChat: ChatSummary | null;
         selectedChatId: string;
         selectedQueueLeadRun: QueueRunSummary | null;
@@ -60,11 +61,11 @@ export interface ShellWorkspaceProps {
         editingMessageId: number | null;
         editingText: string;
         executionMode: 'foreground' | 'background';
+        handleAgentChange(agentName: string | null): void;
         handleCancelRun(runId: string): Promise<void>;
         handleEditCancel(): void;
         handleEditSave(messageId: number): Promise<void>;
         handleEditStart(messageId: number, content: string): void;
-        handlePrefixAgent(agentName: string): void;
         handleResend(messageId: number): Promise<void>;
         handleRevoke(messageId: number): Promise<void>;
         handleSend(): Promise<void>;
@@ -73,6 +74,7 @@ export interface ShellWorkspaceProps {
         messages: StoredMessage[];
         realtimeConnected: boolean;
         routePreview: RoutePlan | null;
+        selectedAgent: string | null;
         selectedChat: ChatSummary | null;
         selectedChatId: string;
         selectedChatQueue: QueueSummary | null;
@@ -119,11 +121,12 @@ export function ShellWorkspace({
                     currentActiveRun={sidebar.currentActiveRun}
                     latestAssistantRoute={sidebar.latestAssistantRoute}
                     onCreateChat={sidebar.handleCreateChat}
-                    onPrefixAgent={sidebar.handlePrefixAgent}
+                    onSelectAgent={sidebar.handleSelectAgent}
                     onSelectChat={sidebar.handleSelectChat}
                     onStartSearch={sidebar.handleStartSearch}
                     queueSummaryByChatId={sidebar.queueSummaryByChatId}
                     routePreview={sidebar.routePreview}
+                    selectedAgent={sidebar.selectedAgent}
                     selectedChat={sidebar.selectedChat}
                     selectedChatId={sidebar.selectedChatId}
                     selectedQueueLeadRun={sidebar.selectedQueueLeadRun}
@@ -183,11 +186,12 @@ export function ShellWorkspace({
                         executionMode={conversation.executionMode}
                         lastRun={conversation.lastRun}
                         routePreview={conversation.routePreview}
+                        selectedAgent={conversation.selectedAgent}
                         selectedChatId={conversation.selectedChatId}
                         submitting={conversation.submitting}
+                        onAgentChange={conversation.handleAgentChange}
                         onComposerTextChange={conversation.setComposerText}
                         onExecutionModeChange={conversation.setExecutionMode}
-                        onPrefixAgent={conversation.handlePrefixAgent}
                         onSend={() => {
                             void conversation.handleSend();
                         }}

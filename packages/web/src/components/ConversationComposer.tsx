@@ -18,11 +18,12 @@ interface ConversationComposerProps {
     executionMode: 'foreground' | 'background';
     lastRun: ChatResult | null;
     routePreview: RoutePlan | null;
+    selectedAgent: string | null;
     selectedChatId: string;
     submitting: boolean;
+    onAgentChange(value: string | null): void;
     onComposerTextChange(value: string): void;
     onExecutionModeChange(value: 'foreground' | 'background'): void;
-    onPrefixAgent(agentName: string): void;
     onSend(): void;
     onStartSearch(): void;
 }
@@ -35,14 +36,20 @@ export function ConversationComposer({
     executionMode,
     lastRun,
     routePreview,
+    selectedAgent,
     selectedChatId,
     submitting,
+    onAgentChange,
     onComposerTextChange,
     onExecutionModeChange,
-    onPrefixAgent,
     onSend,
     onStartSearch,
 }: ConversationComposerProps) {
+    const agentPickerValue = selectedAgent ?? 'auto';
+    const selectedAgentAvailable = selectedAgent
+        ? availableAgents.some((agent) => agent.name === selectedAgent)
+        : true;
+
     return (
         <div className="composer-shell">
             {currentActiveRun ? (
@@ -90,6 +97,14 @@ export function ConversationComposer({
                                 shell command
                             </span>
                             <span className="chip">/search</span>
+                        </>
+                    ) : selectedAgent ? (
+                        <>
+                            <span className="chip" data-tone="teal">
+                                agent {selectedAgent}
+                            </span>
+                            <span className="chip">manual</span>
+                            <span className="chip">no fallback</span>
                         </>
                     ) : routePreview ? (
                         <>
@@ -139,14 +154,36 @@ export function ConversationComposer({
                             <button
                                 className="quiet-btn"
                                 key={agent.name}
-                                onClick={() => onPrefixAgent(agent.name)}
+                                onClick={() => onAgentChange(agent.name)}
                                 type="button"
                             >
-                                @{agent.name}
+                                {agent.name}
                             </button>
                         ))}
                     </div>
                     <div className="composer-controls">
+                        <select
+                            value={agentPickerValue}
+                            onChange={(event) =>
+                                onAgentChange(
+                                    event.target.value === 'auto'
+                                        ? null
+                                        : event.target.value,
+                                )
+                            }
+                        >
+                            <option value="auto">auto route</option>
+                            {!selectedAgentAvailable && selectedAgent ? (
+                                <option value={selectedAgent}>
+                                    {selectedAgent} (selected)
+                                </option>
+                            ) : null}
+                            {availableAgents.map((agent) => (
+                                <option key={agent.name} value={agent.name}>
+                                    {agent.name}
+                                </option>
+                            ))}
+                        </select>
                         <select
                             value={executionMode}
                             onChange={(event) =>

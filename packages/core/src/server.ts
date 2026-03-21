@@ -30,6 +30,7 @@ import type { WorkspaceMemoryManager } from './workspace-memory.js';
 
 const chatRequestSchema = z.object({
     text: z.string().min(1),
+    agent: z.string().min(1).optional(),
     history: z
         .array(
             z.object({
@@ -86,6 +87,7 @@ const cancelRunSchema = z
 
 const editMessageSchema = z.object({
     text: z.string().min(1),
+    agent: z.string().min(1).optional(),
     isGroup: z.boolean().optional(),
     workingDirectory: z.string().optional(),
     executionMode: z.enum(['foreground', 'background']).optional(),
@@ -94,6 +96,7 @@ const editMessageSchema = z.object({
 
 const resendMessageSchema = z
     .object({
+        agent: z.string().min(1).optional(),
         isGroup: z.boolean().optional(),
         workingDirectory: z.string().optional(),
         executionMode: z.enum(['foreground', 'background']).optional(),
@@ -872,9 +875,11 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
             return c.json({ error: 'Route preview text is required' }, 400);
         }
 
+        const agent = c.req.query('agent') ?? undefined;
         const currentMode = c.req.query('currentMode') ?? undefined;
         return c.json(
             runtime.orchestrator.inspectRoute(text, {
+                ...(agent ? { agent } : {}),
                 ...(currentMode ? { currentMode } : {}),
             }),
         );
@@ -1725,6 +1730,10 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
             text: payload.text,
         };
 
+        if (payload.agent) {
+            request.agent = payload.agent;
+        }
+
         if (payload.history) {
             request.history = payload.history;
         }
@@ -1786,6 +1795,9 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
         const request: Parameters<ChatService['editMessage']>[1] = {
             text: payload.text,
         };
+        if (payload.agent) {
+            request.agent = payload.agent;
+        }
         if (payload.isGroup !== undefined) {
             request.isGroup = payload.isGroup;
         }
@@ -1817,6 +1829,9 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
             await c.req.json().catch(() => ({})),
         );
         const request: NonNullable<Parameters<ChatService['resendMessage']>[1]> = {};
+        if (payload?.agent) {
+            request.agent = payload.agent;
+        }
         if (payload?.isGroup !== undefined) {
             request.isGroup = payload.isGroup;
         }

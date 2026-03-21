@@ -64,6 +64,20 @@ function stripExplicitAgent(
     };
 }
 
+function resolveExplicitAgent(
+    text: string,
+    configuredAgents: Iterable<string>,
+    requestedAgent?: string,
+): { explicitAgent?: string; text: string } {
+    const stripped = stripExplicitAgent(text, configuredAgents);
+    const explicitAgent = requestedAgent?.trim() || stripped.explicitAgent;
+
+    return {
+        ...(explicitAgent ? { explicitAgent } : {}),
+        text: stripped.text || text.trim(),
+    };
+}
+
 function looksLikeLongContextRequest(text: string): boolean {
     return (
         text.length > 4_000 ||
@@ -93,15 +107,44 @@ function looksLikeReadOnlyCodingRequest(text: string): boolean {
     );
 }
 
+function stripNegatedMutatingPhrases(text: string): string {
+    return text
+        .replace(
+            /\b(?:do not|don't|dont|no need to|without)\s+(?:write|edit|modify|change|update|create|delete|remove|install|implement|fix)\b/gi,
+            ' ',
+        )
+        .replace(
+            /(?:不要|别|无需|不用|不必)\s*(?:写|改|修改|更新|创建|删除|移除|安装|实现|修复)/g,
+            ' ',
+        );
+}
+
 function looksLikeMutatingRequest(text: string): boolean {
     return /write|edit|modify|change|update|create|delete|remove|install|implement|fix|写|改|修改|更新|创建|删除|安装|实现|修复/i.test(
-        text,
+        stripNegatedMutatingPhrases(text),
     );
+}
+
+type RoutePreferenceKey =
+    | 'hosted_tools'
+    | 'long_context'
+    | 'read_only_coding'
+    | 'coding'
+    | 'simple_qa';
+type RouteModeHint = 'hosted_tools' | 'long_context' | 'coding' | 'simple_qa';
+type RouteReason = 'explicit' | 'mode_hint' | RoutePreferenceKey;
+
+interface RouteSignals {
+    looksLikeCoding: boolean;
+    looksLikeHostedTools: boolean;
+    looksLikeLongContext: boolean;
+    looksLikeReadOnlyCoding: boolean;
+    modeHint: RouteModeHint | null;
 }
 
 function normalizeModeHint(
     currentMode: string | undefined,
-): 'hosted_tools' | 'long_context' | 'coding' | 'simple_qa' | null {
+): RouteModeHint | null {
     const normalized = currentMode?.trim().toLowerCase();
     if (!normalized) {
         return null;
@@ -126,8 +169,48 @@ function normalizeModeHint(
     return null;
 }
 
+function resolveRoutePreferenceKey(
+    reason: RouteReason,
+    modeHint?: RouteModeHint,
+): RoutePreferenceKey | null {
+    if (reason === 'explicit') {
+        return null;
+    }
+
+    if (reason === 'mode_hint') {
+        return modeHint ?? 'simple_qa';
+    }
+
+    return reason;
+}
+
+function determineRouteReason(signals: RouteSignals): RouteReason {
+    if (signals.modeHint != null) {
+        return 'mode_hint';
+    }
+
+    if (signals.looksLikeHostedTools) {
+        return 'hosted_tools';
+    }
+
+    if (signals.looksLikeLongContext) {
+        return 'long_context';
+    }
+
+    if (signals.looksLikeReadOnlyCoding) {
+        return 'read_only_coding';
+    }
+
+    if (signals.looksLikeCoding) {
+        return 'coding';
+    }
+
+    return 'simple_qa';
+}
+
 export interface RunChatRequest {
     text: string;
+    agent?: string;
     history?: ChatMessage[];
     isGroup?: boolean;
     workingDirectory?: string;
@@ -163,19 +246,19 @@ export interface RoutePlan {
     explicitAgent?: string;
     fallbackChain: string[];
     allowFallback: boolean;
-    reason:
-        | 'explicit'
-        | 'mode_hint'
-        | 'hosted_tools'
-        | 'long_context'
-        | 'read_only_coding'
-        | 'coding'
-        | 'simple_qa';
+    reason: RouteReason;
     looksLikeCoding: boolean;
     looksLikeLongContext: boolean;
     looksLikeMutating: boolean;
     looksLikeHostedTools: boolean;
-    modeHint?: 'hosted_tools' | 'long_context' | 'coding' | 'simple_qa';
+    modeHint?: RouteModeHint;
+}
+
+interface AgentRouteCandidate {
+    configuredIndex: number;
+    entry: WillClawConfig['agents']['pool'][string];
+    name: string;
+    toolPolicy: ResolvedAgentToolPolicy;
 }
 
 export class Orchestrator {
@@ -227,6 +310,7 @@ export class Orchestrator {
         }
 
         const routePlan = this.inspectRoute(trimmedText, {
+            ...(request.agent ? { agent: request.agent } : {}),
             ...(request.currentMode
                 ? { currentMode: request.currentMode }
                 : {}),
@@ -498,11 +582,16 @@ export class Orchestrator {
     inspectRoute(
         text: string,
         options?: {
+            agent?: string;
             currentMode?: string;
         },
     ): RoutePlan {
         const trimmedText = text.trim();
-        const explicit = stripExplicitAgent(trimmedText, this.agents.keys());
+        const explicit = resolveExplicitAgent(
+            trimmedText,
+            this.agents.keys(),
+            options?.agent,
+        );
         const strippedText = explicit.text || trimmedText;
         const looksLikeLongContext = looksLikeLongContextRequest(strippedText);
         const looksLikeCoding = looksLikeCodingRequest(strippedText);
@@ -510,32 +599,23 @@ export class Orchestrator {
         const looksLikeHostedTools = looksLikeHostedToolRequest(strippedText);
         const looksLikeReadOnlyCoding = looksLikeReadOnlyCodingRequest(strippedText);
         const modeHint = normalizeModeHint(options?.currentMode);
+        const signals: RouteSignals = {
+            looksLikeCoding,
+            looksLikeHostedTools,
+            looksLikeLongContext,
+            looksLikeReadOnlyCoding,
+            modeHint,
+        };
         const selectedAgent = explicit.explicitAgent
             ? explicit.explicitAgent
-            : this.selectAgent({
-                looksLikeCoding,
-                looksLikeHostedTools,
-                looksLikeLongContext,
-                looksLikeReadOnlyCoding,
-                modeHint,
-            });
+            : this.selectAgent(signals);
         const allowFallback =
             !explicit.explicitAgent &&
             (!looksLikeMutating ||
                 this.config.agents.safety.mutating_fallback);
-        const reason: RoutePlan['reason'] = explicit.explicitAgent
+        const reason: RouteReason = explicit.explicitAgent
             ? 'explicit'
-            : modeHint
-                ? 'mode_hint'
-                : looksLikeHostedTools
-                    ? 'hosted_tools'
-                    : looksLikeLongContext
-                        ? 'long_context'
-                        : looksLikeReadOnlyCoding
-                            ? 'read_only_coding'
-                            : looksLikeCoding
-                                ? 'coding'
-                                : 'simple_qa';
+            : determineRouteReason(signals);
 
         return {
             text: trimmedText,
@@ -548,6 +628,7 @@ export class Orchestrator {
                 selectedAgent,
                 allowFallback,
                 reason,
+                modeHint ?? undefined,
             ),
             allowFallback,
             reason,
@@ -836,78 +917,48 @@ export class Orchestrator {
         };
     }
 
-    private selectAgent(signals: {
-            looksLikeCoding: boolean;
-            looksLikeHostedTools: boolean;
-            looksLikeLongContext: boolean;
-            looksLikeReadOnlyCoding: boolean;
-            modeHint: 'hosted_tools' | 'long_context' | 'coding' | 'simple_qa' | null;
-        },
-    ): string {
-        if (signals.modeHint === 'hosted_tools' || signals.looksLikeHostedTools) {
-            return this.pickFirstConfigured([
-                'direct-api',
+    private selectAgent(signals: RouteSignals): string {
+        const reason = determineRouteReason(signals);
+        const routeKey = resolveRoutePreferenceKey(
+            reason,
+            signals.modeHint ?? undefined,
+        );
+        const ranked = routeKey
+            ? this.rankAgentsForRoute(routeKey)
+            : [];
+
+        return (
+            ranked[0] ??
+            this.pickFirstConfigured([
+                this.config.agents.default,
                 this.config.agents.routing.simple_qa ?? this.config.agents.default,
-                this.config.agents.default,
-            ]);
-        }
-
-        if (signals.modeHint === 'long_context' || signals.looksLikeLongContext) {
-            return (
-                this.config.agents.routing.long_context ?? this.config.agents.default
-            );
-        }
-
-        if (signals.looksLikeReadOnlyCoding) {
-            return this.pickFirstConfigured([
-                'codex',
-                this.config.agents.routing.coding ?? this.config.agents.default,
-                this.config.agents.default,
-            ]);
-        }
-
-        if (signals.modeHint === 'coding' || signals.looksLikeCoding) {
-            return this.config.agents.routing.coding ?? this.config.agents.default;
-        }
-
-        if (signals.modeHint === 'simple_qa') {
-            return this.pickFirstConfigured([
-                this.config.agents.routing.simple_qa ?? this.config.agents.default,
-                'direct-api',
-                this.config.agents.default,
-            ]);
-        }
-
-        return this.config.agents.routing.simple_qa ?? this.config.agents.default;
+            ])
+        );
     }
 
     private buildFallbackChain(
         preferredAgent: string,
         allowFallback: boolean,
-        reason: RoutePlan['reason'],
+        reason: RouteReason,
+        modeHint?: RouteModeHint,
     ): string[] {
         if (!allowFallback) {
             return [preferredAgent];
         }
 
-        const configuredAgents = Object.entries(this.config.agents.pool)
-            .filter(([, entry]) => entry.enabled)
-            .map(([name]) => name);
-        const ordered = [
-            preferredAgent,
-            ...this.getFallbackOrderForReason(reason),
-            ...configuredAgents,
-        ];
+        const routeKey = resolveRoutePreferenceKey(reason, modeHint);
+        const ranked = routeKey
+            ? this.rankAgentsForRoute(routeKey)
+            : this.listEnabledRouteCandidates().map((candidate) => candidate.name);
 
-        return [...new Set(ordered)].filter((name) =>
-            configuredAgents.includes(name),
-        );
+        return [...new Set([preferredAgent, ...ranked])];
     }
 
-    private getFallbackOrderForReason(reason: RoutePlan['reason']): string[] {
-        switch (reason) {
+    private getFallbackOrderForRoute(
+        routeKey: RoutePreferenceKey,
+    ): string[] {
+        switch (routeKey) {
             case 'hosted_tools':
-            case 'mode_hint':
                 return ['direct-api', 'gemini', 'claude-code', 'codex', 'opencode'];
             case 'long_context':
                 return ['gemini', 'direct-api', 'claude-code', 'codex', 'opencode'];
@@ -919,6 +970,184 @@ export class Orchestrator {
             default:
                 return ['direct-api', 'gemini', 'claude-code', 'codex', 'opencode'];
         }
+    }
+
+    private rankAgentsForRoute(routeKey: RoutePreferenceKey): string[] {
+        const fallbackOrder = this.getFallbackOrderForRoute(routeKey);
+        const ranked = this.listEnabledRouteCandidates()
+            .map((candidate) => ({
+                candidate,
+                score: this.scoreRouteCandidate(candidate, routeKey),
+            }))
+            .sort((left, right) => {
+                if (right.score !== left.score) {
+                    return right.score - left.score;
+                }
+
+                const leftFallbackIndex = fallbackOrder.indexOf(left.candidate.name);
+                const rightFallbackIndex = fallbackOrder.indexOf(right.candidate.name);
+                if (leftFallbackIndex !== rightFallbackIndex) {
+                    if (leftFallbackIndex === -1) {
+                        return 1;
+                    }
+
+                    if (rightFallbackIndex === -1) {
+                        return -1;
+                    }
+
+                    return leftFallbackIndex - rightFallbackIndex;
+                }
+
+                return left.candidate.configuredIndex - right.candidate.configuredIndex;
+            });
+
+        return ranked.map(({ candidate }) => candidate.name);
+    }
+
+    private scoreRouteCandidate(
+        candidate: AgentRouteCandidate,
+        routeKey: RoutePreferenceKey,
+    ): number {
+        const { entry, name, toolPolicy } = candidate;
+        const nativeCoding =
+            toolPolicy.shell === 'native' &&
+            toolPolicy.filesystem === 'native';
+        const hostedBrowser = toolPolicy.browser === 'hosted';
+        const hostedScreen = toolPolicy.screen === 'hosted';
+        const hostedMemorySearch = toolPolicy.memory_search === 'hosted';
+        const hostedInteractive = hostedBrowser || hostedScreen;
+        const configuredRouteAgent = this.getConfiguredRouteAgent(routeKey);
+        const fallbackOrder = this.getFallbackOrderForRoute(routeKey);
+        const fallbackIndex = fallbackOrder.indexOf(name);
+        let score = 0;
+
+        if (configuredRouteAgent === name) {
+            score += 400;
+        }
+
+        if (name === this.config.agents.default) {
+            score += 5;
+        }
+
+        if (fallbackIndex >= 0) {
+            score += Math.max(0, 40 - fallbackIndex * 6);
+        }
+
+        if (entry.type === 'cli') {
+            score += 6;
+        }
+
+        if (entry.type === 'api') {
+            score += 4;
+        }
+
+        score += Math.max(0, 10 - candidate.configuredIndex);
+
+        switch (routeKey) {
+            case 'hosted_tools':
+                if (hostedInteractive) {
+                    score += 90;
+                }
+                if (hostedBrowser) {
+                    score += 20;
+                }
+                if (hostedScreen) {
+                    score += 20;
+                }
+                if (hostedMemorySearch) {
+                    score += 10;
+                }
+                if (entry.type === 'api') {
+                    score += 25;
+                }
+                if (nativeCoding && !hostedInteractive) {
+                    score -= 25;
+                }
+                break;
+            case 'long_context':
+                if (entry.type === 'api') {
+                    score += 15;
+                }
+                if (hostedMemorySearch) {
+                    score += 12;
+                }
+                if (name === 'gemini') {
+                    score += 25;
+                }
+                if (hostedInteractive) {
+                    score += 5;
+                }
+                break;
+            case 'read_only_coding':
+                if (nativeCoding) {
+                    score += 85;
+                }
+                if (entry.type === 'cli') {
+                    score += 20;
+                }
+                if (hostedMemorySearch) {
+                    score += 10;
+                }
+                if (entry.type === 'api') {
+                    score -= 30;
+                }
+                if (hostedInteractive) {
+                    score -= 5;
+                }
+                break;
+            case 'coding':
+                if (nativeCoding) {
+                    score += 100;
+                }
+                if (entry.type === 'cli') {
+                    score += 20;
+                }
+                if (hostedMemorySearch) {
+                    score += 4;
+                }
+                if (entry.type === 'api') {
+                    score -= 40;
+                }
+                break;
+            case 'simple_qa':
+                if (entry.type === 'api') {
+                    score += 40;
+                }
+                if (hostedMemorySearch) {
+                    score += 15;
+                }
+                if (hostedInteractive) {
+                    score += 10;
+                }
+                if (nativeCoding) {
+                    score -= 10;
+                }
+                break;
+        }
+
+        return score;
+    }
+
+    private getConfiguredRouteAgent(
+        routeKey: RoutePreferenceKey,
+    ): string | undefined {
+        const configured = this.config.agents.routing[routeKey];
+        if (!configured) {
+            return undefined;
+        }
+
+        return this.config.agents.pool[configured]?.enabled ? configured : undefined;
+    }
+
+    private listEnabledRouteCandidates(): AgentRouteCandidate[] {
+        return Object.entries(this.config.agents.pool)
+            .filter(([, entry]) => entry.enabled)
+            .map(([name, entry], configuredIndex) => ({
+                configuredIndex,
+                entry,
+                name,
+                toolPolicy: resolveAgentToolPolicy(this.config, name),
+            }));
     }
 
     private pickFirstConfigured(candidates: string[]): string {

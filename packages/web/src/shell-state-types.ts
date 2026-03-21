@@ -46,6 +46,7 @@ export interface ShellChatState {
     executionMode: 'foreground' | 'background';
     lastRun: ChatResult | null;
     messages: StoredMessage[];
+    selectedAgent: string | null;
     selectedChatId: string;
     submitting: boolean;
     toolLogs: ToolLogEntry[];
@@ -121,6 +122,7 @@ export interface ShellChatSetters {
     setExecutionMode: Dispatch<SetStateAction<'foreground' | 'background'>>;
     setLastRun: Dispatch<SetStateAction<ChatResult | null>>;
     setMessages: Dispatch<SetStateAction<StoredMessage[]>>;
+    setSelectedAgent: Dispatch<SetStateAction<string | null>>;
     setSelectedChatId: Dispatch<SetStateAction<string>>;
     setSubmitting: Dispatch<SetStateAction<boolean>>;
     setToolLogs: Dispatch<SetStateAction<ToolLogEntry[]>>;

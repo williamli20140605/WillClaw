@@ -220,7 +220,10 @@ export function createShellLoaders({
         }
     }
 
-    async function loadRoutePreview(text: string): Promise<void> {
+    async function loadRoutePreview(
+        text: string,
+        selectedAgent?: string | null,
+    ): Promise<void> {
         if (!text || isSearchCommand(text)) {
             runtime.setRoutePreview(null);
             return;
@@ -228,6 +231,9 @@ export function createShellLoaders({
 
         try {
             const params = new URLSearchParams({ text });
+            if (selectedAgent) {
+                params.set('agent', selectedAgent);
+            }
             const payload = await readJson<RoutePlan>(
                 `/api/route-preview?${params.toString()}`,
             );

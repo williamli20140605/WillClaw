@@ -15,7 +15,7 @@ import { subscribeShellRealtime } from './shell-realtime.js';
 type ShellEffectAuthState = Pick<ShellAuthState, 'allowsDashboard'>;
 type ShellEffectChatState = Pick<
     ShellChatState,
-    'draftChatId' | 'selectedChatId'
+    'draftChatId' | 'selectedAgent' | 'selectedChatId'
 >;
 
 interface ShellEffectLoaders {
@@ -26,7 +26,7 @@ interface ShellEffectLoaders {
     loadChatList(): Promise<void>;
     loadMessagesPanel(chatId?: string): Promise<void>;
     loadQueuePanel(): Promise<void>;
-    loadRoutePreview(text: string): Promise<void>;
+    loadRoutePreview(text: string, selectedAgent?: string | null): Promise<void>;
     loadSchedulerPanel(): Promise<void>;
     loadSearch(query: string): Promise<void>;
     loadShellPanels(): Promise<void>;
@@ -169,6 +169,6 @@ export function useShellEffects({
             return;
         }
 
-        void loadRoutePreview(ui.deferredComposerText);
-    }, [auth.allowsDashboard, ui.deferredComposerText]);
+        void loadRoutePreview(ui.deferredComposerText, chat.selectedAgent);
+    }, [auth.allowsDashboard, chat.selectedAgent, ui.deferredComposerText]);
 }

@@ -57,6 +57,7 @@ export function useShellState(): ShellStateStore {
     const [messages, setMessages] = useState<StoredMessage[]>([]);
     const [toolLogs, setToolLogs] = useState<ToolLogEntry[]>([]);
     const [composerText, setComposerText] = useState('');
+    const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
     const [executionMode, setExecutionMode] = useState<'foreground' | 'background'>(
         'foreground',
     );
@@ -130,6 +131,7 @@ export function useShellState(): ShellStateStore {
             executionMode,
             lastRun,
             messages,
+            selectedAgent,
             selectedChatId,
             submitting,
             toolLogs,
@@ -199,6 +201,7 @@ export function useShellState(): ShellStateStore {
                 setExecutionMode,
                 setLastRun,
                 setMessages,
+                setSelectedAgent,
                 setSelectedChatId,
                 setSubmitting,
                 setToolLogs,
