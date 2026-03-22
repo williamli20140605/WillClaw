@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+
 import { createConversationActions } from './conversation-actions.js';
 import { createHostLabActions } from './host-lab-actions.js';
 import { createShellAccessActions } from './shell-access-actions.js';
@@ -24,12 +26,17 @@ export function useShellController(): ShellControllerState {
         setters,
         ui,
     } = useShellState();
+    const selectedChatIdRef = useRef(chat.selectedChatId);
+    const draftChatIdRef = useRef(chat.draftChatId);
+
+    selectedChatIdRef.current = chat.selectedChatId;
+    draftChatIdRef.current = chat.draftChatId;
 
     const loaders = createShellLoaders({
         selection: {
-            draftChatId: chat.draftChatId,
+            getDraftChatId: () => draftChatIdRef.current,
+            getSelectedChatId: () => selectedChatIdRef.current,
             searchScope: search.scope,
-            selectedChatId: chat.selectedChatId,
         },
         setters,
     });

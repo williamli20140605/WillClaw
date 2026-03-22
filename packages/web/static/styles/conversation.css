@@ -1,12 +1,17 @@
 /* Conversation lane, markdown rendering, and composer */
 
 .conversation-header {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.conversation-header__top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 18px 14px;
-  border-bottom: 1px solid var(--line);
 }
 
 .conversation-copy h2 {
@@ -30,6 +35,16 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.conversation-mobile-actions {
+  display: none;
+  gap: 10px;
+}
+
+.conversation-mobile-actions .btn,
+.conversation-mobile-actions select {
+  flex: 1 1 0;
 }
 
 .banner {

@@ -74,7 +74,7 @@
     max-height: calc(100vh - 118px);
   }
 
-  .conversation-header,
+  .conversation-header__top,
   .run-banner,
   .composer-toolbar {
     flex-direction: column;
@@ -85,6 +85,11 @@
   .run-banner__aside {
     justify-content: flex-start;
     text-align: left;
+  }
+
+  .conversation-mobile-actions {
+    display: flex;
+    flex-wrap: wrap;
   }
 
   .search-grid {

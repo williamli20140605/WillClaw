@@ -147,6 +147,7 @@ export function ShellWorkspace({
                 <section className="panel conversation-shell">
                     <ConversationHeader
                         currentActiveRun={conversation.currentActiveRun}
+                        chatList={sidebar.chatList}
                         lastRun={conversation.lastRun}
                         realtimeConnected={conversation.realtimeConnected}
                         selectedChat={conversation.selectedChat}
@@ -156,6 +157,8 @@ export function ShellWorkspace({
                         onCancelRun={(runId) => {
                             void conversation.handleCancelRun(runId);
                         }}
+                        onCreateChat={sidebar.handleCreateChat}
+                        onSelectChat={sidebar.handleSelectChat}
                     />
 
                     {conversation.dashboardError ? (

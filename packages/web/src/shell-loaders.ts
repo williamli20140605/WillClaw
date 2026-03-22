@@ -24,9 +24,9 @@ import { WEB_CHANNEL } from './ui-types.js';
 import { isSearchCommand, readJson } from './ui-helpers.js';
 
 interface ShellLoaderSelection {
-    draftChatId: ShellChatState['draftChatId'];
+    getDraftChatId(): ShellChatState['draftChatId'];
+    getSelectedChatId(): ShellChatState['selectedChatId'];
     searchScope: ShellSearchState['scope'];
-    selectedChatId: ShellChatState['selectedChatId'];
 }
 
 interface CreateShellLoadersOptions {
@@ -34,12 +34,51 @@ interface CreateShellLoadersOptions {
     setters: ShellSetters;
 }
 
+export function shouldApplyChatPanelPayload(input: {
+    latestRequestId: number;
+    requestId: number;
+    requestedChatId: string;
+    selectedChatId: string;
+}): boolean {
+    return (
+        input.requestId === input.latestRequestId &&
+        input.requestedChatId === input.selectedChatId
+    );
+}
+
+export function resolveSelectedChatIdAfterChatListRefresh(input: {
+    availableChatIds: Set<string>;
+    currentSelectedChatId: string;
+    fallbackChatId: string | undefined;
+    latestDraftChatId: string | null;
+    requestedSelectedChatId: string;
+}): string {
+    if (
+        input.availableChatIds.has(input.currentSelectedChatId) ||
+        input.currentSelectedChatId === input.latestDraftChatId
+    ) {
+        return input.currentSelectedChatId;
+    }
+
+    if (input.currentSelectedChatId !== input.requestedSelectedChatId) {
+        return input.currentSelectedChatId;
+    }
+
+    return input.fallbackChatId ?? input.currentSelectedChatId;
+}
+
 export function createShellLoaders({
     selection,
     setters,
 }: CreateShellLoadersOptions) {
-    const { draftChatId, searchScope, selectedChatId } = selection;
+    const { searchScope } = selection;
     const { auth, chat, pairing, runtime, search, ui } = setters;
+    let latestChatListRequest = 0;
+    let latestMessagesPanelRequest = 0;
+    let latestToolLogsPanelRequest = 0;
+
+    const getSelectedChatId = () => selection.getSelectedChatId();
+    const getDraftChatId = () => selection.getDraftChatId();
 
     async function loadAuthStatus(): Promise<AuthStatusPayload> {
         const payload = await readJson<AuthStatusPayload>('/api/auth/status');
@@ -91,11 +130,16 @@ export function createShellLoaders({
     }
 
     async function loadChatList(): Promise<void> {
-        const currentDraftId = draftChatId;
+        const requestId = ++latestChatListRequest;
+        const requestedSelectedChatId = getSelectedChatId();
         const payload = await readJson<ChatSummary[]>(
             `/api/chats?channel=${WEB_CHANNEL}&limit=24`,
         );
         const chatIds = new Set(payload.map((chat) => chat.chatId));
+
+        if (requestId !== latestChatListRequest) {
+            return;
+        }
 
         startTransition(() => {
             chat.setChats(payload);
@@ -103,16 +147,19 @@ export function createShellLoaders({
                 current && chatIds.has(current) ? null : current,
             );
             chat.setSelectedChatId((current) => {
-                if (chatIds.has(current) || current === currentDraftId) {
-                    return current;
-                }
-
-                return payload[0]?.chatId ?? current;
+                return resolveSelectedChatIdAfterChatListRefresh({
+                    availableChatIds: chatIds,
+                    currentSelectedChatId: current,
+                    fallbackChatId: payload[0]?.chatId,
+                    latestDraftChatId: getDraftChatId(),
+                    requestedSelectedChatId,
+                });
             });
         });
     }
 
-    async function loadMessagesPanel(chatId = selectedChatId): Promise<void> {
+    async function loadMessagesPanel(chatId = getSelectedChatId()): Promise<void> {
+        const requestId = ++latestMessagesPanelRequest;
         const params = new URLSearchParams({
             channel: WEB_CHANNEL,
             chatId,
@@ -122,12 +169,25 @@ export function createShellLoaders({
         const payload = await readJson<StoredMessage[]>(
             `/api/messages?${params.toString()}`,
         );
+
+        if (
+            !shouldApplyChatPanelPayload({
+                latestRequestId: latestMessagesPanelRequest,
+                requestId,
+                requestedChatId: chatId,
+                selectedChatId: getSelectedChatId(),
+            })
+        ) {
+            return;
+        }
+
         startTransition(() => {
             chat.setMessages(payload);
         });
     }
 
-    async function loadToolLogsPanel(chatId = selectedChatId): Promise<void> {
+    async function loadToolLogsPanel(chatId = getSelectedChatId()): Promise<void> {
+        const requestId = ++latestToolLogsPanelRequest;
         const params = new URLSearchParams({
             limit: '16',
             chatId,
@@ -135,6 +195,18 @@ export function createShellLoaders({
         const payload = await readJson<ToolLogEntry[]>(
             `/api/logs/tools?${params.toString()}`,
         );
+
+        if (
+            !shouldApplyChatPanelPayload({
+                latestRequestId: latestToolLogsPanelRequest,
+                requestId,
+                requestedChatId: chatId,
+                selectedChatId: getSelectedChatId(),
+            })
+        ) {
+            return;
+        }
+
         startTransition(() => {
             chat.setToolLogs(payload);
         });
