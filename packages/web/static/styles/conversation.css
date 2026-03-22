@@ -55,6 +55,7 @@
 .conversation-stream {
   display: grid;
   gap: 12px;
+  min-height: 0;
   padding: 16px 18px;
 }
 

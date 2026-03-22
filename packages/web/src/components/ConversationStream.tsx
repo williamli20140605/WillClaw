@@ -42,7 +42,7 @@ export function ConversationStream({
                 <div className="empty empty--hero">
                     <strong>Nothing in this thread yet.</strong>
                     <p>
-                        Start with `@claude-code fix the flaky test`, or use
+                        Pick an agent in the composer, type a prompt, or use
                         `/search release plan` to hit WillClaw memory without
                         invoking a coding agent.
                     </p>

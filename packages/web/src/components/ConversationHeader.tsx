@@ -1,4 +1,5 @@
 import {
+    conversationScopeLabel,
     conversationSubtitle,
     conversationTitle,
 } from '../ui-helpers.js';
@@ -45,7 +46,9 @@ export function ConversationHeader({
                 >
                     {realtimeConnected ? 'live stream' : 'reconnecting'}
                 </span>
-                <span className="chip">{selectedChatId}</span>
+                <span className="chip">
+                    {conversationScopeLabel(selectedChat, selectedChatId)}
+                </span>
                 {selectedChatQueue ? (
                     <span className="chip" data-tone="accent">
                         queue {selectedChatQueue.total}

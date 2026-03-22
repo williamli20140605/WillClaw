@@ -12,6 +12,7 @@
     },
     "scripts": {
         "build": "tsc -b",
+        "test": "node ./scripts/test.mjs",
         "typecheck": "tsc -b --pretty false"
     },
     "dependencies": {

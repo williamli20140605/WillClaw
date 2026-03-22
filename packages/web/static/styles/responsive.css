@@ -32,9 +32,15 @@
   }
 
   .topbar {
-    top: 10px;
+    position: static;
+    top: auto;
     flex-direction: column;
     align-items: stretch;
+    gap: 12px;
+  }
+
+  .brand-copy p {
+    display: none;
   }
 
   .status-cluster {
@@ -45,15 +51,27 @@
     grid-template-columns: 1fr;
   }
 
+  .conversation-shell {
+    order: 1;
+  }
+
+  .sidebar {
+    order: 2;
+  }
+
+  .inspector {
+    order: 3;
+  }
+
   .sidebar,
-  .conversation-shell,
   .inspector {
     max-height: none;
     min-height: 0;
   }
 
   .conversation-shell {
-    min-height: 62vh;
+    min-height: calc(100vh - 118px);
+    max-height: calc(100vh - 118px);
   }
 
   .conversation-header,

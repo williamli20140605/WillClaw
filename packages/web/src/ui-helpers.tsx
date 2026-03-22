@@ -36,7 +36,12 @@ export function summarizeText(value: string, limit = 92): string {
 }
 
 export function createDraftChatId(): string {
-    return `chat-${Date.now().toString(36)}`;
+    const uniqueSuffix =
+        typeof globalThis.crypto?.randomUUID === 'function'
+            ? globalThis.crypto.randomUUID()
+            : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+    return `chat-${uniqueSuffix}`;
 }
 
 export function readStoredAgentSelections(): Record<string, string> {
@@ -260,6 +265,21 @@ export function conversationSubtitle(chat: ChatSummary | null): string {
     return `${chat.messageCount} messages in this thread`;
 }
 
+export function conversationScopeLabel(
+    chat: ChatSummary | null,
+    fallbackChatId: string,
+): string {
+    if (chat) {
+        return 'tracked thread';
+    }
+
+    if (fallbackChatId === 'default') {
+        return 'general shell';
+    }
+
+    return 'draft thread';
+}
+
 export function toolPolicySummary(agent: AgentAvailability): string {
     return Object.entries(agent.toolPolicies)
         .map(([tool, mode]) => `${tool}:${mode}`)
@@ -321,8 +341,14 @@ export function routeReasonLabel(reason?: RoutePlan['reason'] | string): string 
     switch (reason) {
         case 'explicit':
             return 'explicit target';
+        case 'mode_hint':
+            return 'mode hint';
+        case 'hosted_tools':
+            return 'hosted tools';
         case 'long_context':
             return 'long context';
+        case 'read_only_coding':
+            return 'read-only coding';
         case 'coding':
             return 'coding intent';
         case 'simple_qa':

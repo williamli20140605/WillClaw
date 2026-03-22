@@ -1,4 +1,5 @@
 import {
+    conversationScopeLabel,
     AUTO_ROUTE_AGENT_SELECTION,
     conversationSubtitle,
     conversationTitle,
@@ -196,8 +197,10 @@ export function ConversationSidebar({
                 </div>
                 <div className="metric-grid">
                     <article className="metric-card">
-                        <label>Selected</label>
-                        <strong>{selectedChatId.slice(0, 12)}</strong>
+                        <label>Thread</label>
+                        <strong>
+                            {conversationScopeLabel(selectedChat, selectedChatId)}
+                        </strong>
                         <p>{conversationTitle(selectedChat, selectedChatId)}</p>
                     </article>
                     <article className="metric-card">

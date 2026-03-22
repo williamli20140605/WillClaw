@@ -24,7 +24,11 @@ import {
     type ToolLogEntry,
 } from './ui-types.js';
 import type { ShellStateStore } from './shell-state-types.js';
-import { resolveChatAgentState } from './chat-agent-state.js';
+import {
+    resolveChatAgentState,
+    sanitizeChatAgentSelections,
+    sanitizeDefaultAgent,
+} from './chat-agent-state.js';
 import {
     readStoredAgentSelections,
     readStoredDefaultAgent,
@@ -133,6 +137,28 @@ export function useShellState(): ShellStateStore {
     useEffect(() => {
         writeStoredDefaultAgent(defaultAgent);
     }, [defaultAgent]);
+
+    useEffect(() => {
+        if (!status) {
+            return;
+        }
+
+        const configuredAgentNames = status.agents
+            .filter((agent) => agent.enabled)
+            .map((agent) => agent.name);
+        setAgentSelections((current) =>
+            sanitizeChatAgentSelections({
+                agentSelections: current,
+                configuredAgents: configuredAgentNames,
+            }),
+        );
+        setDefaultAgent((current) =>
+            sanitizeDefaultAgent({
+                defaultAgent: current,
+                configuredAgents: configuredAgentNames,
+            }),
+        );
+    }, [status]);
 
     return {
         auth: {

@@ -27,6 +27,14 @@ import type { ToolExecutionLogger } from './tool-logger.js';
 import type { BrowserTool } from './tools/browser.js';
 import type { ScreenTool } from './tools/screen.js';
 import type { WorkspaceMemoryManager } from './workspace-memory.js';
+import { isValidDateKey } from './workspace-memory-date.js';
+
+const dateKeySchema = z
+    .string()
+    .trim()
+    .refine((value) => isValidDateKey(value), {
+        message: 'Date must use YYYY-MM-DD format.',
+    });
 
 const chatRequestSchema = z.object({
     text: z.string().min(1),
@@ -109,13 +117,13 @@ const resendMessageSchema = z
 
 const ensureDailyNoteSchema = z
     .object({
-        date: z.string().optional(),
+        date: dateKeySchema.optional(),
     })
     .optional();
 
 const generateDailyNoteSchema = z
     .object({
-        date: z.string().optional(),
+        date: dateKeySchema.optional(),
         agentName: z.string().optional(),
         workingDirectory: z.string().optional(),
     })
@@ -350,6 +358,21 @@ async function readWebAsset(
         content: await readFile(filePath, 'utf8'),
         contentType: getAssetContentType(filePath),
     };
+}
+
+async function serveWebAsset(
+    requestPath: string,
+): Promise<Response | null> {
+    const asset = await readWebAsset(requestPath.replace(/^\//, ''));
+    if (!asset) {
+        return null;
+    }
+
+    return new Response(asset.content, {
+        headers: {
+            'content-type': asset.contentType,
+        },
+    });
 }
 
 export interface WillClawRuntimeLike {
@@ -802,36 +825,39 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
     });
 
     app.get('/styles.css', async (c) => {
-        const asset = await readWebAsset('styles.css');
-        if (!asset) {
+        const response = await serveWebAsset('/styles.css');
+        if (!response) {
             return c.text('Not found', 404);
         }
 
-        return c.body(asset.content, 200, {
-            'content-type': asset.contentType,
-        });
+        return response;
+    });
+
+    app.get('/styles/*', async (c) => {
+        const response = await serveWebAsset(c.req.path);
+        if (!response) {
+            return c.text('Not found', 404);
+        }
+
+        return response;
     });
 
     app.get('/favicon.svg', async (c) => {
-        const asset = await readWebAsset('favicon.svg');
-        if (!asset) {
+        const response = await serveWebAsset('/favicon.svg');
+        if (!response) {
             return c.text('Not found', 404);
         }
 
-        return c.body(asset.content, 200, {
-            'content-type': asset.contentType,
-        });
+        return response;
     });
 
     app.get('/assets/*', async (c) => {
-        const asset = await readWebAsset(c.req.path.replace(/^\//, ''));
-        if (!asset) {
+        const response = await serveWebAsset(c.req.path);
+        if (!response) {
             return c.text('Not found', 404);
         }
 
-        return c.body(asset.content, 200, {
-            'content-type': asset.contentType,
-        });
+        return response;
     });
 
     app.get('/api/status', async (c) => {

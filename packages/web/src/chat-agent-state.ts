@@ -76,3 +76,40 @@ export function migrateChatAgentSelection(input: {
     delete next[input.fromChatId];
     return next;
 }
+
+export function sanitizeChatAgentSelections(input: {
+    agentSelections: Record<string, string>;
+    configuredAgents: string[];
+}): Record<string, string> {
+    const configured = new Set(input.configuredAgents);
+    let changed = false;
+    const nextEntries = Object.entries(input.agentSelections).filter(
+        ([, selection]) => {
+            const keep =
+                selection === AUTO_ROUTE_AGENT_SELECTION || configured.has(selection);
+            if (!keep) {
+                changed = true;
+            }
+            return keep;
+        },
+    );
+
+    if (!changed && nextEntries.length === Object.keys(input.agentSelections).length) {
+        return input.agentSelections;
+    }
+
+    return Object.fromEntries(nextEntries);
+}
+
+export function sanitizeDefaultAgent(input: {
+    defaultAgent: string | null;
+    configuredAgents: string[];
+}): string | null {
+    if (!input.defaultAgent) {
+        return null;
+    }
+
+    return input.configuredAgents.includes(input.defaultAgent)
+        ? input.defaultAgent
+        : null;
+}

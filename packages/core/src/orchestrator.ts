@@ -64,13 +64,29 @@ function stripExplicitAgent(
     };
 }
 
+function resolveConfiguredAgentName(
+    candidate: string | undefined,
+    configuredAgents: Iterable<string>,
+): string | undefined {
+    const trimmed = candidate?.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+
+    const configured = new Set(configuredAgents);
+    return configured.has(trimmed) ? trimmed : undefined;
+}
+
 function resolveExplicitAgent(
     text: string,
     configuredAgents: Iterable<string>,
     requestedAgent?: string,
 ): { explicitAgent?: string; text: string } {
-    const stripped = stripExplicitAgent(text, configuredAgents);
-    const explicitAgent = requestedAgent?.trim() || stripped.explicitAgent;
+    const configured = new Set(configuredAgents);
+    const stripped = stripExplicitAgent(text, configured);
+    const explicitAgent =
+        resolveConfiguredAgentName(requestedAgent, configured) ??
+        stripped.explicitAgent;
 
     return {
         ...(explicitAgent ? { explicitAgent } : {}),

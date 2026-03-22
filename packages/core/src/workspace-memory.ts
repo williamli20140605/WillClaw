@@ -15,28 +15,19 @@ import type {
     StoredMessage,
 } from './memory.js';
 import type { WillClawPaths } from './paths.js';
+import { buildLocalDayRange, resolveDateKey } from './workspace-memory-date.js';
 
-function toDateKey(input?: Date | string): string {
-    if (!input) {
-        return new Date().toISOString().slice(0, 10);
+function buildDailyNotePath(workspaceMemoryDir: string, dateKey: string): string {
+    const filePath = path.join(workspaceMemoryDir, `${dateKey}.md`);
+    const relativePath = path.relative(workspaceMemoryDir, filePath);
+    if (
+        relativePath.startsWith('..') ||
+        path.isAbsolute(relativePath)
+    ) {
+        throw new Error(`Daily note path escaped workspace memory directory: ${dateKey}`);
     }
 
-    if (typeof input === 'string') {
-        return input;
-    }
-
-    return input.toISOString().slice(0, 10);
-}
-
-function buildDayRange(dateKey: string): { from: string; to: string } {
-    const from = new Date(`${dateKey}T00:00:00.000Z`);
-    const to = new Date(from);
-    to.setUTCDate(to.getUTCDate() + 1);
-
-    return {
-        from: from.toISOString(),
-        to: to.toISOString(),
-    };
+    return filePath;
 }
 
 function buildDailyNoteSkeleton(dateKey: string): string {
@@ -241,8 +232,8 @@ export class WorkspaceMemoryManager {
     async ensureDailyNote(options?: {
         date?: Date | string;
     }): Promise<DailyNoteState> {
-        const dateKey = toDateKey(options?.date);
-        const filePath = path.join(this.paths.workspaceMemoryDir, `${dateKey}.md`);
+        const dateKey = resolveDateKey(options?.date);
+        const filePath = buildDailyNotePath(this.paths.workspaceMemoryDir, dateKey);
         let content = await this.readOptionalText(filePath);
         let created = false;
 
@@ -284,7 +275,7 @@ export class WorkspaceMemoryManager {
             ensureOptions.date = options.date;
         }
         const current = await this.ensureDailyNote(ensureOptions);
-        const range = buildDayRange(current.dateKey);
+        const range = buildLocalDayRange(current.dateKey);
         const messages = this.memoryStore.listMessages({
             from: range.from,
             to: range.to,

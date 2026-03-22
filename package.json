@@ -17,7 +17,7 @@
         "build": "pnpm --filter @willclaw/core build && pnpm --filter @willclaw/cli build && pnpm --filter @willclaw/web build",
         "lint": "eslint .",
         "format": "prettier --write .",
-        "test": "pnpm --filter @willclaw/web test",
+        "test": "pnpm --filter @willclaw/core test && pnpm --filter @willclaw/web test",
         "typecheck": "pnpm --filter @willclaw/core typecheck && pnpm --filter @willclaw/cli typecheck && pnpm --filter @willclaw/web typecheck"
     },
     "devDependencies": {

@@ -41,6 +41,35 @@ interface CreateConversationActionsOptions {
     setters: Pick<ShellSetters, 'chat' | 'ui'>;
 }
 
+export function buildChatRequestPayload(chat: ConversationChatState, text: string) {
+    return {
+        ...(chat.selectedAgent ? { agent: chat.selectedAgent } : {}),
+        text,
+        channel: WEB_CHANNEL,
+        chatId: chat.selectedChatId,
+        userId: WEB_USER,
+        executionMode: chat.executionMode,
+    };
+}
+
+export function buildEditRequestPayload(chat: ConversationChatState, text: string) {
+    return {
+        ...(chat.selectedAgent ? { agent: chat.selectedAgent } : {}),
+        text,
+        executionMode: chat.executionMode,
+    };
+}
+
+export function buildResendRequestPayload(chat: ConversationChatState) {
+    return {
+        ...(chat.selectedAgent ? { agent: chat.selectedAgent } : {}),
+        channel: WEB_CHANNEL,
+        chatId: chat.selectedChatId,
+        userId: WEB_USER,
+        executionMode: chat.executionMode,
+    };
+}
+
 export function createConversationActions({
     chat,
     loaders,
@@ -63,14 +92,7 @@ export function createConversationActions({
                 headers: {
                     'content-type': 'application/json',
                 },
-                body: JSON.stringify({
-                    ...(chat.selectedAgent ? { agent: chat.selectedAgent } : {}),
-                    text,
-                    channel: WEB_CHANNEL,
-                    chatId: chat.selectedChatId,
-                    userId: WEB_USER,
-                    executionMode: chat.executionMode,
-                }),
+                body: JSON.stringify(buildChatRequestPayload(chat, text)),
             });
 
             setters.chat.setLastRun(result);
@@ -156,14 +178,7 @@ export function createConversationActions({
                     headers: {
                         'content-type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        ...(chat.selectedAgent
-                            ? { agent: chat.selectedAgent }
-                            : {}),
-                        channel: WEB_CHANNEL,
-                        chatId: chat.selectedChatId,
-                        userId: WEB_USER,
-                    }),
+                    body: JSON.stringify(buildResendRequestPayload(chat)),
                 },
             );
             setters.chat.setLastRun(result);
@@ -195,12 +210,7 @@ export function createConversationActions({
                     headers: {
                         'content-type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        ...(chat.selectedAgent
-                            ? { agent: chat.selectedAgent }
-                            : {}),
-                        text,
-                    }),
+                    body: JSON.stringify(buildEditRequestPayload(chat, text)),
                 },
             );
             setters.chat.setEditingMessageId(null);

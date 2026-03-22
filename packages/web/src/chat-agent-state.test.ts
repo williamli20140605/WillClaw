@@ -5,6 +5,8 @@ import {
     applyChatAgentSelection,
     migrateChatAgentSelection,
     resolveChatAgentState,
+    sanitizeChatAgentSelections,
+    sanitizeDefaultAgent,
 } from './chat-agent-state.js';
 import {
     AUTO_ROUTE_AGENT_SELECTION,
@@ -112,4 +114,30 @@ test('migrateChatAgentSelection moves explicit overrides from drafts to real cha
         'chat-1': AUTO_ROUTE_AGENT_SELECTION,
         existing: 'codex',
     });
+});
+
+test('sanitizeChatAgentSelections drops selections for agents that are no longer configured', () => {
+    const result = sanitizeChatAgentSelections({
+        agentSelections: {
+            'chat-1': 'codex',
+            'chat-2': AUTO_ROUTE_AGENT_SELECTION,
+            'chat-3': 'retired-agent',
+        },
+        configuredAgents: ['codex', 'claude-code'],
+    });
+
+    assert.deepEqual(result, {
+        'chat-1': 'codex',
+        'chat-2': AUTO_ROUTE_AGENT_SELECTION,
+    });
+});
+
+test('sanitizeDefaultAgent clears a default agent that is no longer configured', () => {
+    assert.equal(
+        sanitizeDefaultAgent({
+            defaultAgent: 'retired-agent',
+            configuredAgents: ['codex', 'claude-code'],
+        }),
+        null,
+    );
 });
