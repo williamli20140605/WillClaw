@@ -7,7 +7,10 @@ import {
 } from './ui-types.js';
 import type { ShellChatState, ShellSetters } from './shell-state-types.js';
 import {
-    INHERIT_DEFAULT_AGENT_SELECTION,
+    applyChatAgentSelection,
+    migrateChatAgentSelection,
+} from './chat-agent-state.js';
+import {
     createDraftChatId,
     readJson,
 } from './ui-helpers.js';
@@ -77,15 +80,13 @@ export function createConversationActions({
                 setters.chat.setDraftChatId((current) =>
                     current === chat.selectedChatId ? null : current,
                 );
-                setters.chat.setAgentSelections((current) => {
-                    const next = { ...current };
-                    const currentSelection = current[chat.selectedChatId];
-                    if (currentSelection) {
-                        next[result.chatId] = currentSelection;
-                    }
-                    delete next[chat.selectedChatId];
-                    return next;
-                });
+                setters.chat.setAgentSelections((current) =>
+                    migrateChatAgentSelection({
+                        agentSelections: current,
+                        fromChatId: chat.selectedChatId,
+                        toChatId: result.chatId,
+                    }),
+                );
             }
             await Promise.all([
                 loadChatList(),
@@ -244,26 +245,13 @@ export function createConversationActions({
     }
 
     function handleSelectAgent(selection: string): void {
-        setters.chat.setAgentSelections((current) => {
-            if (selection === INHERIT_DEFAULT_AGENT_SELECTION) {
-                if (!(chat.selectedChatId in current)) {
-                    return current;
-                }
-
-                const next = { ...current };
-                delete next[chat.selectedChatId];
-                return next;
-            }
-
-            if (current[chat.selectedChatId] === selection) {
-                return current;
-            }
-
-            return {
-                ...current,
-                [chat.selectedChatId]: selection,
-            };
-        });
+        setters.chat.setAgentSelections((current) =>
+            applyChatAgentSelection({
+                agentSelections: current,
+                selectedChatId: chat.selectedChatId,
+                selection,
+            }),
+        );
     }
 
     function handleDefaultAgentChange(agentName: string | null): void {

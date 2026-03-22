@@ -24,8 +24,8 @@ import {
     type ToolLogEntry,
 } from './ui-types.js';
 import type { ShellStateStore } from './shell-state-types.js';
+import { resolveChatAgentState } from './chat-agent-state.js';
 import {
-    AUTO_ROUTE_AGENT_SELECTION,
     readStoredAgentSelections,
     readStoredDefaultAgent,
     writeStoredAgentSelections,
@@ -119,14 +119,12 @@ export function useShellState(): ShellStateStore {
         authStatus !== null &&
         (!authStatus.authRequired || authStatus.authenticated);
     const canManageAuth = authStatus?.scopes.includes('api:session') ?? false;
-    const chatSelection = agentSelections[selectedChatId];
-    const chatUsesDefaultAgent = chatSelection == null;
-    const chatUsesAutoRoute = chatSelection === AUTO_ROUTE_AGENT_SELECTION;
-    const selectedAgent = chatUsesDefaultAgent
-        ? defaultAgent
-        : chatUsesAutoRoute
-            ? null
-            : chatSelection;
+    const { chatUsesAutoRoute, chatUsesDefaultAgent, selectedAgent } =
+        resolveChatAgentState({
+            agentSelections,
+            defaultAgent,
+            selectedChatId,
+        });
 
     useEffect(() => {
         writeStoredAgentSelections(agentSelections);
