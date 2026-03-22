@@ -5,6 +5,10 @@ import type {
     MemorySearchResult,
     WorkspaceMemoryManager,
 } from './workspace-memory.js';
+import {
+    buildLocalDayRange,
+    isValidDateKey,
+} from './workspace-memory-date.js';
 
 export const MEMORY_SEARCH_BRIDGE_PREFIX = 'WILLCLAW_MEMORY_SEARCH';
 const DEFAULT_MESSAGE_LIMIT = 5;
@@ -32,21 +36,6 @@ function clampLimit(value: number | undefined, fallback: number): number {
     }
 
     return Math.min(MAX_LIMIT, Math.max(1, Math.trunc(value)));
-}
-
-function isDateKey(value: string): boolean {
-    return /^\d{4}-\d{2}-\d{2}$/.test(value);
-}
-
-function buildDayRange(dateKey: string): { from: string; to: string } {
-    const from = new Date(`${dateKey}T00:00:00.000Z`);
-    const to = new Date(from);
-    to.setUTCDate(to.getUTCDate() + 1);
-
-    return {
-        from: from.toISOString(),
-        to: to.toISOString(),
-    };
 }
 
 function normalizeSnippet(snippet: string): string {
@@ -107,9 +96,12 @@ function normalizeRequest(
     if (typeof input.fileType === 'string' && input.fileType.trim()) {
         request.fileType = input.fileType.trim();
     }
-    if (typeof input.date === 'string' && isDateKey(input.date.trim())) {
+    if (
+        typeof input.date === 'string' &&
+        isValidDateKey(input.date.trim())
+    ) {
         request.dateKey = input.date.trim();
-        Object.assign(request, buildDayRange(request.dateKey));
+        Object.assign(request, buildLocalDayRange(request.dateKey));
         request.filepathLike = `%/${request.dateKey}.md`;
     }
     if (input.filesOnly === true) {
@@ -209,7 +201,7 @@ export class MemorySearchService {
                 } else if (token === '--chat') {
                     request.chatId = value;
                 } else if (token === '--date') {
-                    if (!isDateKey(value)) {
+                    if (!isValidDateKey(value)) {
                         return {
                             kind: 'search',
                             error: 'Date must use YYYY-MM-DD format.',
@@ -218,7 +210,7 @@ export class MemorySearchService {
                     }
 
                     request.dateKey = value;
-                    Object.assign(request, buildDayRange(value));
+                    Object.assign(request, buildLocalDayRange(value));
                     request.filepathLike = `%/${value}.md`;
                 } else {
                     const parsed = Number(value);

@@ -512,6 +512,10 @@ function normalizeConfigPaths(
         },
         tools: {
             ...config.tools,
+            shell: {
+                ...config.tools.shell,
+                blocked_commands: [...config.tools.shell.blocked_commands],
+            },
             filesystem: {
                 ...config.tools.filesystem,
                 archive_dir: resolveConfiguredPath(

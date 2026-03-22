@@ -5,6 +5,7 @@ import {
     buildChatRequestPayload,
     buildEditRequestPayload,
     buildResendRequestPayload,
+    createConversationActions,
 } from './conversation-actions.js';
 
 const baseChatState = {
@@ -47,4 +48,81 @@ test('buildResendRequestPayload preserves execution mode for resend', () => {
         userId: 'web-ui',
         executionMode: 'background',
     });
+});
+
+test('handleSelectChat clears previous thread state before async reload', () => {
+    const calls: Array<[string, unknown]> = [];
+    const actions = createConversationActions({
+        chat: baseChatState,
+        loaders: {
+            async loadChatList() {},
+            async loadMessagesPanel() {},
+            async loadToolLogsPanel() {},
+        },
+        setters: {
+            chat: {
+                setAgentSelections() {
+                    throw new Error('unused');
+                },
+                setChats() {
+                    throw new Error('unused');
+                },
+                setComposerText() {
+                    throw new Error('unused');
+                },
+                setDefaultAgent() {
+                    throw new Error('unused');
+                },
+                setDraftChatId() {
+                    throw new Error('unused');
+                },
+                setEditingMessageId(value) {
+                    calls.push(['setEditingMessageId', value]);
+                },
+                setEditingText(value) {
+                    calls.push(['setEditingText', value]);
+                },
+                setExecutionMode() {
+                    throw new Error('unused');
+                },
+                setLastRun() {
+                    throw new Error('unused');
+                },
+                setMessages(value) {
+                    calls.push(['setMessages', value]);
+                },
+                setSelectedChatId(value) {
+                    calls.push(['setSelectedChatId', value]);
+                },
+                setSubmitting() {
+                    throw new Error('unused');
+                },
+                setToolLogs(value) {
+                    calls.push(['setToolLogs', value]);
+                },
+            },
+            ui: {
+                setActionError(value) {
+                    calls.push(['setActionError', value]);
+                },
+                setDashboardError() {
+                    throw new Error('unused');
+                },
+                setInspectorTab() {
+                    throw new Error('unused');
+                },
+            },
+        },
+    });
+
+    actions.handleSelectChat('chat-456');
+
+    assert.deepEqual(calls, [
+        ['setSelectedChatId', 'chat-456'],
+        ['setMessages', []],
+        ['setToolLogs', []],
+        ['setEditingMessageId', null],
+        ['setEditingText', ''],
+        ['setActionError', ''],
+    ]);
 });

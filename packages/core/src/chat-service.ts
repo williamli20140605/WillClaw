@@ -105,6 +105,10 @@ export interface RevokeMessagesResult {
     noteMessageId?: number;
 }
 
+interface RevokeMessageOptions {
+    annotate?: boolean;
+}
+
 export interface EditMessageRequest extends Omit<ChatServiceRequest, 'text'> {
     text: string;
 }
@@ -659,7 +663,10 @@ export class ChatService {
         return response;
     }
 
-    async revokeMessage(messageId: number): Promise<RevokeMessagesResult | null> {
+    async revokeMessage(
+        messageId: number,
+        options?: RevokeMessageOptions,
+    ): Promise<RevokeMessagesResult | null> {
         const message = this.memoryStore.getMessageById(messageId);
         if (!message) {
             return null;
@@ -685,23 +692,28 @@ export class ChatService {
             channel: message.channel,
             chatId: message.chatId,
         });
-        const noteMessage = await this.createSystemMessage({
-            channel: message.channel,
-            chatId: message.chatId,
-            content: `Revoked ${revokedMessages.length} message(s) linked to message #${message.id}.`,
-            metadata: {
-                subtype: 'message_revoked',
-                targetMessageId: message.id,
-                runId: message.runId ?? null,
-                revokedMessageIds: revokedMessages.map((entry) => entry.id),
-            },
-        });
+        const noteMessage =
+            options?.annotate === false
+                ? null
+                : await this.createSystemMessage({
+                    channel: message.channel,
+                    chatId: message.chatId,
+                    content: `Revoked ${revokedMessages.length} message(s) linked to message #${message.id}.`,
+                    metadata: {
+                        subtype: 'message_revoked',
+                        targetMessageId: message.id,
+                        runId: message.runId ?? null,
+                        revokedMessageIds: revokedMessages.map((entry) => entry.id),
+                    },
+                });
 
         const response: RevokeMessagesResult = {
             targetMessageId: message.id,
             revokedMessageIds: revokedMessages.map((entry) => entry.id),
-            noteMessageId: noteMessage.id,
         };
+        if (noteMessage) {
+            response.noteMessageId = noteMessage.id;
+        }
         if (message.runId) {
             response.runId = message.runId;
         }
@@ -722,18 +734,22 @@ export class ChatService {
             throw new Error('Only user messages can be edited.');
         }
 
-        const revoked = await this.revokeMessage(messageId);
-        if (!revoked) {
-            return null;
-        }
-
+        const history = this.buildEditedChatHistory({
+            channel: original.channel,
+            chatId: original.chatId,
+            ...(original.runId ? { excludedRunId: original.runId } : {}),
+        });
         const result = await this.handleChat({
             ...request,
             channel: original.channel,
             chatId: original.chatId,
             userId: original.userId,
+            history,
             text: request.text,
             editOf: original.id,
+        });
+        const revoked = await this.revokeMessage(messageId, {
+            annotate: false,
         });
         const noteMessage = await this.createSystemMessage({
             channel: original.channel,
@@ -747,7 +763,7 @@ export class ChatService {
         });
 
         return {
-            revokedMessageIds: revoked.revokedMessageIds,
+            revokedMessageIds: revoked?.revokedMessageIds ?? [],
             noteMessageId: noteMessage.id,
             result,
         };
@@ -838,6 +854,30 @@ export class ChatService {
                     message.runId && excludedRunIds.has(message.runId)
                 );
             })
+            .slice(-this.config.memory.max_history_messages)
+            .map((message) => ({
+                role: message.role,
+                content: message.content,
+            }));
+    }
+
+    private buildEditedChatHistory(input: {
+        channel: string;
+        chatId: string;
+        excludedRunId?: string;
+    }): NonNullable<RunChatRequest['history']> {
+        const windowSize = this.config.memory.max_history_messages + 8;
+        const messages = this.memoryStore.listMessages({
+            channel: input.channel,
+            chatId: input.chatId,
+            limit: windowSize,
+        });
+
+        return messages
+            .filter(
+                (message) =>
+                    !input.excludedRunId || message.runId !== input.excludedRunId,
+            )
             .slice(-this.config.memory.max_history_messages)
             .map((message) => ({
                 role: message.role,

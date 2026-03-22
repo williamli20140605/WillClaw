@@ -334,7 +334,7 @@ export function upsertActiveRun(
 }
 
 export function isSearchCommand(text: string): boolean {
-    return text.trim().startsWith('/search');
+    return /^\/search(?:\s|$)/.test(text.trim());
 }
 
 export function routeReasonLabel(reason?: RoutePlan['reason'] | string): string {

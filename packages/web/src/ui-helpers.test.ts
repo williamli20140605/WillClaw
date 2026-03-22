@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
     conversationScopeLabel,
     createDraftChatId,
+    isSearchCommand,
     routeReasonLabel,
 } from './ui-helpers.js';
 
@@ -44,4 +45,11 @@ test('conversationScopeLabel hides raw ids behind user-facing thread labels', ()
         ),
         'tracked thread',
     );
+});
+
+test('isSearchCommand only matches the builtin slash command token', () => {
+    assert.equal(isSearchCommand('/search'), true);
+    assert.equal(isSearchCommand('/search release plan'), true);
+    assert.equal(isSearchCommand('/searcher release plan'), false);
+    assert.equal(isSearchCommand('please /search release plan'), false);
 });

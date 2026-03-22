@@ -242,10 +242,14 @@ export function createConversationActions({
     }
 
     function handleSelectChat(chatId: string): void {
-        setters.chat.setSelectedChatId(chatId);
-        setters.chat.setEditingMessageId(null);
-        setters.chat.setEditingText('');
-        setters.ui.setActionError('');
+        startTransition(() => {
+            setters.chat.setSelectedChatId(chatId);
+            setters.chat.setMessages([]);
+            setters.chat.setToolLogs([]);
+            setters.chat.setEditingMessageId(null);
+            setters.chat.setEditingText('');
+            setters.ui.setActionError('');
+        });
     }
 
     function handleInjectIntoComposer(content: string): void {
