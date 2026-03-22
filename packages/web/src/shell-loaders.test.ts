@@ -71,3 +71,18 @@ test('resolveSelectedChatIdAfterChatListRefresh falls back only when selection d
         'chat-local-change',
     );
 });
+
+test('shouldApplyChatPanelPayload rejects stale responses after later renders advance the request id', () => {
+    const requestIdFromOldRender = 2;
+    const latestSharedRequestId = 3;
+
+    assert.equal(
+        shouldApplyChatPanelPayload({
+            latestRequestId: latestSharedRequestId,
+            requestId: requestIdFromOldRender,
+            requestedChatId: 'chat-1',
+            selectedChatId: 'chat-1',
+        }),
+        false,
+    );
+});

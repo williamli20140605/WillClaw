@@ -172,8 +172,17 @@
 .workspace-grid {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 360px;
+  grid-template-areas: "sidebar conversation inspector";
   gap: 14px;
   align-items: start;
+}
+
+.sidebar {
+  grid-area: sidebar;
+}
+
+.inspector {
+  grid-area: inspector;
 }
 
 .sidebar,
@@ -186,6 +195,7 @@
 }
 
 .conversation-shell {
+  grid-area: conversation;
   min-height: calc(100vh - 116px);
   display: grid;
   grid-template-rows: auto auto 1fr auto;

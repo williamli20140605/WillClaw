@@ -28,15 +28,25 @@ export function useShellController(): ShellControllerState {
     } = useShellState();
     const selectedChatIdRef = useRef(chat.selectedChatId);
     const draftChatIdRef = useRef(chat.draftChatId);
+    const searchScopeRef = useRef(search.scope);
+    const loaderRequestStateRef = useRef({
+        chatList: 0,
+        messages: 0,
+        routePreview: 0,
+        search: 0,
+        toolLogs: 0,
+    });
 
     selectedChatIdRef.current = chat.selectedChatId;
     draftChatIdRef.current = chat.draftChatId;
+    searchScopeRef.current = search.scope;
 
     const loaders = createShellLoaders({
+        requestState: loaderRequestStateRef.current,
         selection: {
             getDraftChatId: () => draftChatIdRef.current,
+            getSearchScope: () => searchScopeRef.current,
             getSelectedChatId: () => selectedChatIdRef.current,
-            searchScope: search.scope,
         },
         setters,
     });

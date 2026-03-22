@@ -122,28 +122,6 @@ export function ShellWorkspace({
             />
 
             <div className="workspace-grid">
-                <ConversationSidebar
-                    availableAgents={sidebar.availableAgents}
-                    chatUsesAutoRoute={sidebar.chatUsesAutoRoute}
-                    chatUsesDefaultAgent={sidebar.chatUsesDefaultAgent}
-                    chatList={sidebar.chatList}
-                    currentActiveRun={sidebar.currentActiveRun}
-                    defaultAgent={sidebar.defaultAgent}
-                    latestAssistantRoute={sidebar.latestAssistantRoute}
-                    onCreateChat={sidebar.handleCreateChat}
-                    onDefaultAgentChange={sidebar.handleDefaultAgentChange}
-                    onSelectAgent={sidebar.handleSelectAgent}
-                    onSelectChat={sidebar.handleSelectChat}
-                    onStartSearch={sidebar.handleStartSearch}
-                    queueSummaryByChatId={sidebar.queueSummaryByChatId}
-                    routePreview={sidebar.routePreview}
-                    selectedAgent={sidebar.selectedAgent}
-                    selectedChat={sidebar.selectedChat}
-                    selectedChatId={sidebar.selectedChatId}
-                    selectedQueueLeadRun={sidebar.selectedQueueLeadRun}
-                    serverHost={sidebar.serverHost}
-                />
-
                 <section className="panel conversation-shell">
                     <ConversationHeader
                         currentActiveRun={conversation.currentActiveRun}
@@ -215,6 +193,28 @@ export function ShellWorkspace({
                         onStartSearch={conversation.handleStartSearch}
                     />
                 </section>
+
+                <ConversationSidebar
+                    availableAgents={sidebar.availableAgents}
+                    chatUsesAutoRoute={sidebar.chatUsesAutoRoute}
+                    chatUsesDefaultAgent={sidebar.chatUsesDefaultAgent}
+                    chatList={sidebar.chatList}
+                    currentActiveRun={sidebar.currentActiveRun}
+                    defaultAgent={sidebar.defaultAgent}
+                    latestAssistantRoute={sidebar.latestAssistantRoute}
+                    onCreateChat={sidebar.handleCreateChat}
+                    onDefaultAgentChange={sidebar.handleDefaultAgentChange}
+                    onSelectAgent={sidebar.handleSelectAgent}
+                    onSelectChat={sidebar.handleSelectChat}
+                    onStartSearch={sidebar.handleStartSearch}
+                    queueSummaryByChatId={sidebar.queueSummaryByChatId}
+                    routePreview={sidebar.routePreview}
+                    selectedAgent={sidebar.selectedAgent}
+                    selectedChat={sidebar.selectedChat}
+                    selectedChatId={sidebar.selectedChatId}
+                    selectedQueueLeadRun={sidebar.selectedQueueLeadRun}
+                    serverHost={sidebar.serverHost}
+                />
 
                 <InspectorPanel
                     activity={inspector.activity}

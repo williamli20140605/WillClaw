@@ -25,11 +25,20 @@ import { isSearchCommand, readJson } from './ui-helpers.js';
 
 interface ShellLoaderSelection {
     getDraftChatId(): ShellChatState['draftChatId'];
+    getSearchScope(): ShellSearchState['scope'];
     getSelectedChatId(): ShellChatState['selectedChatId'];
-    searchScope: ShellSearchState['scope'];
+}
+
+interface ShellLoaderRequestState {
+    chatList: number;
+    messages: number;
+    routePreview: number;
+    search: number;
+    toolLogs: number;
 }
 
 interface CreateShellLoadersOptions {
+    requestState: ShellLoaderRequestState;
     selection: ShellLoaderSelection;
     setters: ShellSetters;
 }
@@ -68,17 +77,15 @@ export function resolveSelectedChatIdAfterChatListRefresh(input: {
 }
 
 export function createShellLoaders({
+    requestState,
     selection,
     setters,
 }: CreateShellLoadersOptions) {
-    const { searchScope } = selection;
     const { auth, chat, pairing, runtime, search, ui } = setters;
-    let latestChatListRequest = 0;
-    let latestMessagesPanelRequest = 0;
-    let latestToolLogsPanelRequest = 0;
 
     const getSelectedChatId = () => selection.getSelectedChatId();
     const getDraftChatId = () => selection.getDraftChatId();
+    const getSearchScope = () => selection.getSearchScope();
 
     async function loadAuthStatus(): Promise<AuthStatusPayload> {
         const payload = await readJson<AuthStatusPayload>('/api/auth/status');
@@ -130,14 +137,14 @@ export function createShellLoaders({
     }
 
     async function loadChatList(): Promise<void> {
-        const requestId = ++latestChatListRequest;
+        const requestId = ++requestState.chatList;
         const requestedSelectedChatId = getSelectedChatId();
         const payload = await readJson<ChatSummary[]>(
             `/api/chats?channel=${WEB_CHANNEL}&limit=24`,
         );
         const chatIds = new Set(payload.map((chat) => chat.chatId));
 
-        if (requestId !== latestChatListRequest) {
+        if (requestId !== requestState.chatList) {
             return;
         }
 
@@ -159,7 +166,7 @@ export function createShellLoaders({
     }
 
     async function loadMessagesPanel(chatId = getSelectedChatId()): Promise<void> {
-        const requestId = ++latestMessagesPanelRequest;
+        const requestId = ++requestState.messages;
         const params = new URLSearchParams({
             channel: WEB_CHANNEL,
             chatId,
@@ -172,7 +179,7 @@ export function createShellLoaders({
 
         if (
             !shouldApplyChatPanelPayload({
-                latestRequestId: latestMessagesPanelRequest,
+                latestRequestId: requestState.messages,
                 requestId,
                 requestedChatId: chatId,
                 selectedChatId: getSelectedChatId(),
@@ -187,7 +194,7 @@ export function createShellLoaders({
     }
 
     async function loadToolLogsPanel(chatId = getSelectedChatId()): Promise<void> {
-        const requestId = ++latestToolLogsPanelRequest;
+        const requestId = ++requestState.toolLogs;
         const params = new URLSearchParams({
             limit: '16',
             chatId,
@@ -198,7 +205,7 @@ export function createShellLoaders({
 
         if (
             !shouldApplyChatPanelPayload({
-                latestRequestId: latestToolLogsPanelRequest,
+                latestRequestId: requestState.toolLogs,
                 requestId,
                 requestedChatId: chatId,
                 selectedChatId: getSelectedChatId(),
@@ -251,10 +258,14 @@ export function createShellLoaders({
 
     async function loadSearch(query: string): Promise<void> {
         if (query.length < 2) {
+            requestState.search += 1;
             search.setResults(null);
+            search.setLoading(false);
             return;
         }
 
+        const requestId = ++requestState.search;
+        const searchScope = getSearchScope();
         search.setLoading(true);
 
         try {
@@ -280,15 +291,26 @@ export function createShellLoaders({
             const payload = await readJson<MemorySearchResult>(
                 `/api/memory/search?${params.toString()}`,
             );
+
+            if (requestId !== requestState.search) {
+                return;
+            }
+
             startTransition(() => {
                 search.setResults(payload);
             });
         } catch (error) {
+            if (requestId !== requestState.search) {
+                return;
+            }
+
             ui.setActionError(
                 error instanceof Error ? error.message : 'Search request failed.',
             );
         } finally {
-            search.setLoading(false);
+            if (requestId === requestState.search) {
+                search.setLoading(false);
+            }
         }
     }
 
@@ -297,9 +319,12 @@ export function createShellLoaders({
         selectedAgent?: string | null,
     ): Promise<void> {
         if (!text || isSearchCommand(text)) {
+            requestState.routePreview += 1;
             runtime.setRoutePreview(null);
             return;
         }
+
+        const requestId = ++requestState.routePreview;
 
         try {
             const params = new URLSearchParams({ text });
@@ -309,11 +334,18 @@ export function createShellLoaders({
             const payload = await readJson<RoutePlan>(
                 `/api/route-preview?${params.toString()}`,
             );
+
+            if (requestId !== requestState.routePreview) {
+                return;
+            }
+
             startTransition(() => {
                 runtime.setRoutePreview(payload);
             });
         } catch {
-            runtime.setRoutePreview(null);
+            if (requestId === requestState.routePreview) {
+                runtime.setRoutePreview(null);
+            }
         }
     }
 

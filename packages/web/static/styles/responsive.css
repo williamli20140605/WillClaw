@@ -13,10 +13,12 @@
 @media (max-width: 1120px) {
   .workspace-grid {
     grid-template-columns: 252px minmax(0, 1fr);
+    grid-template-areas:
+      "sidebar conversation"
+      "inspector inspector";
   }
 
   .inspector {
-    grid-column: 1 / -1;
     max-height: none;
   }
 
@@ -49,18 +51,10 @@
 
   .workspace-grid {
     grid-template-columns: 1fr;
-  }
-
-  .conversation-shell {
-    order: 1;
-  }
-
-  .sidebar {
-    order: 2;
-  }
-
-  .inspector {
-    order: 3;
+    grid-template-areas:
+      "conversation"
+      "sidebar"
+      "inspector";
   }
 
   .sidebar,
