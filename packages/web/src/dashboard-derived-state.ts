@@ -74,8 +74,8 @@ export function createDashboardDerivedState({
 
     return (
       !eventChannel ||
-      eventChannel !== WEB_CHANNEL ||
-      eventChatId === selectedChatId
+      (eventChannel === WEB_CHANNEL &&
+        (!eventChatId || eventChatId === selectedChatId))
     );
   });
   const schedulerTasks = [

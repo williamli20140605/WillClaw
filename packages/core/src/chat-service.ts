@@ -82,6 +82,8 @@ export interface QueuedRunInfo {
     status: 'queued' | 'running';
     position: number;
     ahead: number;
+    agent?: string;
+    startedAt?: string;
 }
 
 export interface ChatQueueSummary {
@@ -555,6 +557,8 @@ export class ChatService {
                     };
 
                 const status = runningState ? 'running' : 'queued';
+                const commandRun = this.memoryStore.getCommandRun(runId);
+                const orchestratorRun = this.orchestrator.getActiveRun(runId);
                 const runInfo: QueuedRunInfo = {
                     runId,
                     channel: state.channel,
@@ -564,6 +568,20 @@ export class ChatService {
                     status,
                     position: index + 1,
                     ahead: index,
+                    ...(orchestratorRun?.agent
+                        ? { agent: orchestratorRun.agent }
+                        : commandRun?.agent
+                            ? { agent: commandRun.agent }
+                            : {}),
+                    ...(orchestratorRun
+                        ? {
+                            startedAt: new Date(
+                                orchestratorRun.startedAt,
+                            ).toISOString(),
+                        }
+                        : commandRun?.timestamp
+                            ? { startedAt: commandRun.timestamp }
+                            : {}),
                 };
 
                 summary.total += 1;

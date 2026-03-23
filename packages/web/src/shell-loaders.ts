@@ -1,6 +1,7 @@
 import { startTransition } from 'react';
 
 import type {
+    ActiveRun,
     AuthSessionSummary,
     AuthStatusPayload,
     AuthTokenSummary,
@@ -32,6 +33,7 @@ interface ShellLoaderSelection {
 interface ShellLoaderRequestState {
     chatList: number;
     messages: number;
+    queue: number;
     routePreview: number;
     search: number;
     toolLogs: number;
@@ -74,6 +76,88 @@ export function resolveSelectedChatIdAfterChatListRefresh(input: {
     }
 
     return input.fallbackChatId ?? input.currentSelectedChatId;
+}
+
+export function syncActiveRunsWithQueueSummaries(input: {
+    currentActiveRuns: ActiveRun[];
+    queueSummaries: QueueSummary[];
+}): ActiveRun[] {
+    const nonWebRuns = input.currentActiveRuns.filter(
+        (run) => run.channel !== WEB_CHANNEL,
+    );
+    const currentByRunId = new Map(
+        input.currentActiveRuns.map((run) => [run.runId, run] as const),
+    );
+    const webRuns = input.queueSummaries.flatMap((summary) =>
+        summary.runs.map((run) => {
+            const existing = currentByRunId.get(run.runId);
+            const existingRunningRun =
+                existing?.status === 'running' ? existing : null;
+            const startedAt = run.startedAt ?? existing?.startedAt ?? '';
+
+            if (run.status === 'queued') {
+                return {
+                    runId: run.runId,
+                    channel: run.channel,
+                    chatId: run.chatId,
+                    startedAt,
+                    status: 'queued' as const,
+                    phase:
+                        typeof run.ahead === 'number' && Number.isFinite(run.ahead)
+                            ? `queued · ${run.ahead} ahead`
+                            : 'queued',
+                    ...(run.agent
+                        ? { agent: run.agent }
+                        : existing?.agent
+                            ? { agent: existing.agent }
+                            : {}),
+                    ...(existing?.executionMode
+                        ? { executionMode: existing.executionMode }
+                        : {}),
+                };
+            }
+
+            return {
+                runId: run.runId,
+                channel: run.channel,
+                chatId: run.chatId,
+                startedAt,
+                status: 'running' as const,
+                phase:
+                    existingRunningRun?.phase ??
+                    (run.agent ? `running ${run.agent}` : 'running'),
+                ...(run.agent
+                    ? { agent: run.agent }
+                    : existing?.agent
+                        ? { agent: existing.agent }
+                        : {}),
+                ...(existing?.executionMode
+                    ? { executionMode: existing.executionMode }
+                    : {}),
+                ...(existing?.explicitAgent
+                    ? { explicitAgent: existing.explicitAgent }
+                    : {}),
+                ...(existing?.fallbackChain
+                    ? { fallbackChain: existing.fallbackChain }
+                    : {}),
+                ...(existing?.reason ? { reason: existing.reason } : {}),
+                ...(existing?.latestError
+                    ? { latestError: existing.latestError }
+                    : {}),
+                ...(existing?.streamContent
+                    ? { streamContent: existing.streamContent }
+                    : {}),
+                ...(existing?.streamParser
+                    ? { streamParser: existing.streamParser }
+                    : {}),
+                ...(existing?.streamUpdatedAt
+                    ? { streamUpdatedAt: existing.streamUpdatedAt }
+                    : {}),
+            };
+        }),
+    );
+
+    return [...webRuns, ...nonWebRuns].slice(0, 8);
 }
 
 export function createShellLoaders({
@@ -227,11 +311,23 @@ export function createShellLoaders({
     }
 
     async function loadQueuePanel(): Promise<void> {
+        const requestId = ++requestState.queue;
         const payload = await readJson<QueueSummary[]>(
             `/api/queues?channel=${WEB_CHANNEL}`,
         );
+
+        if (requestId !== requestState.queue) {
+            return;
+        }
+
         startTransition(() => {
             runtime.setQueueSummaries(payload);
+            runtime.setActiveRuns((current) =>
+                syncActiveRunsWithQueueSummaries({
+                    currentActiveRuns: current,
+                    queueSummaries: payload,
+                }),
+            );
         });
     }
 

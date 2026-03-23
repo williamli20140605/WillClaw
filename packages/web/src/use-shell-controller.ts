@@ -32,6 +32,7 @@ export function useShellController(): ShellControllerState {
     const loaderRequestStateRef = useRef({
         chatList: 0,
         messages: 0,
+        queue: 0,
         routePreview: 0,
         search: 0,
         toolLogs: 0,

@@ -73,6 +73,11 @@ export function subscribeShellRealtime({
             switch (event.type) {
                 case 'ready':
                     setRealtimeConnected(true);
+                    void loadChatList();
+                    void loadQueuePanel();
+                    void loadSchedulerPanel();
+                    void loadMessagesPanel(selectedChatId);
+                    void loadToolLogsPanel(selectedChatId);
                     break;
                 case 'chat.run.queued': {
                     const runId = readPayloadString(event.payload, 'runId');

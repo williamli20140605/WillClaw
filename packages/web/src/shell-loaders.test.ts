@@ -2,9 +2,26 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    createShellLoaders,
     resolveSelectedChatIdAfterChatListRefresh,
+    syncActiveRunsWithQueueSummaries,
     shouldApplyChatPanelPayload,
 } from './shell-loaders.js';
+
+function createDeferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error?: unknown) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+    });
+
+    return {
+        promise,
+        reject,
+        resolve,
+    };
+}
 
 test('shouldApplyChatPanelPayload only accepts the latest request for the selected chat', () => {
     assert.equal(
@@ -85,4 +102,295 @@ test('shouldApplyChatPanelPayload rejects stale responses after later renders ad
         }),
         false,
     );
+});
+
+test('syncActiveRunsWithQueueSummaries preserves richer running metadata while hydrating queue state', () => {
+    assert.deepEqual(
+        syncActiveRunsWithQueueSummaries({
+            currentActiveRuns: [
+                {
+                    runId: 'run-1',
+                    channel: 'web',
+                    chatId: 'chat-1',
+                    startedAt: '2026-03-22T00:00:00.000Z',
+                    status: 'running',
+                    phase: 'streaming codex',
+                    agent: 'codex',
+                    streamContent: 'partial output',
+                    streamUpdatedAt: '2026-03-22T00:00:05.000Z',
+                },
+                {
+                    runId: 'run-other',
+                    channel: 'telegram',
+                    chatId: 'chat-telegram',
+                    startedAt: '2026-03-22T00:01:00.000Z',
+                    status: 'running',
+                    phase: 'running',
+                },
+            ],
+            queueSummaries: [
+                {
+                    channel: 'web',
+                    chatId: 'chat-1',
+                    total: 2,
+                    queued: 1,
+                    running: 1,
+                    runs: [
+                        {
+                            runId: 'run-1',
+                            channel: 'web',
+                            chatId: 'chat-1',
+                            userId: 'web-ui',
+                            userMessageId: 1,
+                            status: 'running',
+                            position: 1,
+                            ahead: 0,
+                            agent: 'codex',
+                            startedAt: '2026-03-22T00:00:00.000Z',
+                        },
+                        {
+                            runId: 'run-2',
+                            channel: 'web',
+                            chatId: 'chat-1',
+                            userId: 'web-ui',
+                            userMessageId: 2,
+                            status: 'queued',
+                            position: 2,
+                            ahead: 1,
+                            startedAt: '2026-03-22T00:00:10.000Z',
+                        },
+                    ],
+                },
+            ],
+        }),
+        [
+            {
+                runId: 'run-1',
+                channel: 'web',
+                chatId: 'chat-1',
+                startedAt: '2026-03-22T00:00:00.000Z',
+                status: 'running',
+                phase: 'streaming codex',
+                agent: 'codex',
+                streamContent: 'partial output',
+                streamUpdatedAt: '2026-03-22T00:00:05.000Z',
+            },
+            {
+                runId: 'run-2',
+                channel: 'web',
+                chatId: 'chat-1',
+                startedAt: '2026-03-22T00:00:10.000Z',
+                status: 'queued',
+                phase: 'queued · 1 ahead',
+            },
+            {
+                runId: 'run-other',
+                channel: 'telegram',
+                chatId: 'chat-telegram',
+                startedAt: '2026-03-22T00:01:00.000Z',
+                status: 'running',
+                phase: 'running',
+            },
+        ],
+    );
+});
+
+test('syncActiveRunsWithQueueSummaries promotes stale queued metadata to running state', () => {
+    assert.deepEqual(
+        syncActiveRunsWithQueueSummaries({
+            currentActiveRuns: [
+                {
+                    runId: 'run-1',
+                    channel: 'web',
+                    chatId: 'chat-1',
+                    startedAt: '2026-03-22T00:00:00.000Z',
+                    status: 'queued',
+                    phase: 'queued · 2 ahead',
+                },
+            ],
+            queueSummaries: [
+                {
+                    channel: 'web',
+                    chatId: 'chat-1',
+                    total: 1,
+                    queued: 0,
+                    running: 1,
+                    runs: [
+                        {
+                            runId: 'run-1',
+                            channel: 'web',
+                            chatId: 'chat-1',
+                            userId: 'web-ui',
+                            userMessageId: 1,
+                            status: 'running',
+                            position: 1,
+                            ahead: 0,
+                            agent: 'codex',
+                            startedAt: '2026-03-22T00:00:00.000Z',
+                        },
+                    ],
+                },
+            ],
+        }),
+        [
+            {
+                runId: 'run-1',
+                channel: 'web',
+                chatId: 'chat-1',
+                startedAt: '2026-03-22T00:00:00.000Z',
+                status: 'running',
+                phase: 'running codex',
+                agent: 'codex',
+            },
+        ],
+    );
+});
+
+test('loadQueuePanel ignores stale responses that resolve after a newer refresh', async () => {
+    const originalFetch = globalThis.fetch;
+    const firstFetch = createDeferred<Response>();
+    const secondFetch = createDeferred<Response>();
+    let fetchCount = 0;
+    let queueSummaries: unknown = null;
+    let activeRuns: Array<{ runId: string }> = [];
+
+    globalThis.fetch = (async () => {
+        fetchCount += 1;
+        return fetchCount === 1 ? firstFetch.promise : secondFetch.promise;
+    }) as typeof fetch;
+
+    try {
+        const loaders = createShellLoaders({
+            requestState: {
+                chatList: 0,
+                messages: 0,
+                queue: 0,
+                routePreview: 0,
+                search: 0,
+                toolLogs: 0,
+            },
+            selection: {
+                getDraftChatId: () => null,
+                getSearchScope: () => 'all',
+                getSelectedChatId: () => 'chat-1',
+            },
+            setters: {
+                auth: {},
+                chat: {},
+                pairing: {},
+                runtime: {
+                    setActiveRuns(
+                        value:
+                            | Array<{ runId: string }>
+                            | ((current: Array<{ runId: string }>) => Array<{ runId: string }>),
+                    ) {
+                        activeRuns =
+                            typeof value === 'function'
+                                ? value(activeRuns)
+                                : value;
+                    },
+                    setQueueSummaries(value: unknown) {
+                        queueSummaries = value;
+                    },
+                },
+                search: {},
+                ui: {},
+            } as never,
+        });
+
+        const staleLoad = loaders.loadQueuePanel();
+        const freshLoad = loaders.loadQueuePanel();
+
+        secondFetch.resolve({
+            ok: true,
+            json: async () => [
+                {
+                    channel: 'web',
+                    chatId: 'chat-1',
+                    total: 1,
+                    queued: 0,
+                    running: 1,
+                    runs: [
+                        {
+                            runId: 'run-new',
+                            channel: 'web',
+                            chatId: 'chat-1',
+                            userId: 'web-ui',
+                            userMessageId: 2,
+                            status: 'running',
+                            position: 1,
+                            ahead: 0,
+                            agent: 'codex',
+                            startedAt: '2026-03-22T00:00:10.000Z',
+                        },
+                    ],
+                },
+            ],
+        } as Response);
+        await freshLoad;
+
+        firstFetch.resolve({
+            ok: true,
+            json: async () => [
+                {
+                    channel: 'web',
+                    chatId: 'chat-1',
+                    total: 1,
+                    queued: 1,
+                    running: 0,
+                    runs: [
+                        {
+                            runId: 'run-old',
+                            channel: 'web',
+                            chatId: 'chat-1',
+                            userId: 'web-ui',
+                            userMessageId: 1,
+                            status: 'queued',
+                            position: 1,
+                            ahead: 0,
+                            startedAt: '2026-03-22T00:00:00.000Z',
+                        },
+                    ],
+                },
+            ],
+        } as Response);
+        await staleLoad;
+
+        assert.deepEqual(queueSummaries, [
+            {
+                channel: 'web',
+                chatId: 'chat-1',
+                total: 1,
+                queued: 0,
+                running: 1,
+                runs: [
+                    {
+                        runId: 'run-new',
+                        channel: 'web',
+                        chatId: 'chat-1',
+                        userId: 'web-ui',
+                        userMessageId: 2,
+                        status: 'running',
+                        position: 1,
+                        ahead: 0,
+                        agent: 'codex',
+                        startedAt: '2026-03-22T00:00:10.000Z',
+                    },
+                ],
+            },
+        ]);
+        assert.deepEqual(activeRuns, [
+            {
+                runId: 'run-new',
+                channel: 'web',
+                chatId: 'chat-1',
+                startedAt: '2026-03-22T00:00:10.000Z',
+                status: 'running',
+                phase: 'running codex',
+                agent: 'codex',
+            },
+        ]);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
 });

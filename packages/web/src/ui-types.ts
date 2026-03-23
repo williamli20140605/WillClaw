@@ -246,6 +246,8 @@ export interface QueueRunSummary {
     status: 'queued' | 'running';
     position: number;
     ahead: number;
+    agent?: string;
+    startedAt?: string;
 }
 
 export interface QueueSummary {

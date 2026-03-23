@@ -116,6 +116,53 @@ function normalizeSectionText(title: string, content: string): string {
     return `## ${title}\n${content.trim()}`;
 }
 
+function normalizeWorkspaceIncludePath(inputPath: string): string {
+    const trimmedPath = inputPath.trim();
+    if (!trimmedPath) {
+        throw new Error('Prompt include path cannot be empty.');
+    }
+
+    if (!/\.md$/i.test(trimmedPath)) {
+        throw new Error(
+            `Prompt include path must point to a Markdown file: ${inputPath}`,
+        );
+    }
+
+    return path.normalize(trimmedPath);
+}
+
+function resolveWorkspaceInclude(
+    workspaceDir: string,
+    inputPath: string,
+): {
+    sectionName: string;
+    filePath: string;
+} {
+    const normalizedRelativePath = normalizeWorkspaceIncludePath(inputPath);
+    if (path.isAbsolute(normalizedRelativePath)) {
+        throw new Error(
+            `Prompt include path must stay within the workspace directory: ${inputPath}`,
+        );
+    }
+
+    const filePath = path.resolve(workspaceDir, normalizedRelativePath);
+    const relativePath = path.relative(workspaceDir, filePath);
+    if (
+        !relativePath ||
+        relativePath.startsWith('..') ||
+        path.isAbsolute(relativePath)
+    ) {
+        throw new Error(
+            `Prompt include path must stay within the workspace directory: ${inputPath}`,
+        );
+    }
+
+    return {
+        sectionName: relativePath.split(path.sep).join('/'),
+        filePath,
+    };
+}
+
 export class PromptAssembler {
     constructor(
         private readonly config: WillClawConfig,
@@ -141,18 +188,33 @@ export class PromptAssembler {
                 shouldIncludeEntry(entry, resolvedOptions),
             ).map((entry) => entry.fileName),
         );
+        const orderedFileNames = [...fileNames];
 
-        for (const extraFile of resolvedOptions.extraFiles) {
-            fileNames.add(extraFile);
+        for (const includedFile of this.config.workspace.include_files) {
+            if (!fileNames.has(includedFile)) {
+                fileNames.add(includedFile);
+                orderedFileNames.push(includedFile);
+            }
         }
 
-        for (const fileName of fileNames) {
+        for (const extraFile of resolvedOptions.extraFiles) {
+            if (!fileNames.has(extraFile)) {
+                fileNames.add(extraFile);
+                orderedFileNames.push(extraFile);
+            }
+        }
+
+        for (const fileName of orderedFileNames) {
             if (remainingChars <= 0) {
                 truncated = true;
                 break;
             }
 
-            const filePath = path.join(this.paths.workspaceDir, fileName);
+            const resolvedFile = resolveWorkspaceInclude(
+                this.paths.workspaceDir,
+                fileName,
+            );
+            const filePath = resolvedFile.filePath;
             const fileContent = await readOptionalFile(filePath);
             if (!fileContent || !fileContent.trim()) {
                 continue;
@@ -173,7 +235,7 @@ export class PromptAssembler {
 
             chunks.push(boundedSection.content);
             sections.push({
-                name: fileName,
+                name: resolvedFile.sectionName,
                 source: 'file',
                 filePath,
                 chars: boundedSection.content.length,

@@ -62,6 +62,7 @@ function renderDefaultConfig(paths: WillClawPaths): string {
 workspace:
   bootstrapMaxChars: 20000
   bootstrapTotalMaxChars: 100000
+  include_files: []
 
 agents:
   default: claude-code

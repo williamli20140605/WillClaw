@@ -97,6 +97,7 @@ const workspaceSchema = z
     .object({
         bootstrapMaxChars: z.coerce.number().int().positive().default(20_000),
         bootstrapTotalMaxChars: z.coerce.number().int().positive().default(100_000),
+        include_files: z.array(z.string()).default([]),
     })
     .passthrough()
     .default({});
