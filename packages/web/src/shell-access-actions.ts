@@ -14,7 +14,11 @@ import type {
     ShellPairingState,
     ShellSetters,
 } from './shell-state-types.js';
-import { readJson } from './ui-helpers.js';
+import {
+    HttpError,
+    isUnauthorizedHttpError,
+    readJson,
+} from './ui-helpers.js';
 
 interface ShellAccessLoaders {
     loadAuthAdminPanel(): Promise<void>;
@@ -81,19 +85,35 @@ export function createShellAccessActions({
                     body: JSON.stringify({ token: credential }),
                 });
             } catch (error) {
-                const message =
-                    error instanceof Error ? error.message : 'Unlock failed.';
-                if (!message.toLowerCase().includes('unauthorized')) {
+                if (!isUnauthorizedHttpError(error)) {
                     throw error;
                 }
 
-                payload = await readJson<AuthStatusPayload>('/api/auth/pairing', {
-                    method: 'POST',
-                    headers: {
-                        'content-type': 'application/json',
-                    },
-                    body: JSON.stringify({ code: credential }),
-                });
+                try {
+                    payload = await readJson<AuthStatusPayload>(
+                        '/api/auth/pairing',
+                        {
+                            method: 'POST',
+                            headers: {
+                                'content-type': 'application/json',
+                            },
+                            body: JSON.stringify({ code: credential }),
+                        },
+                    );
+                } catch (pairingError) {
+                    if (
+                        pairingError instanceof HttpError &&
+                        pairingError.status === 404
+                    ) {
+                        throw error;
+                    }
+
+                    if (isUnauthorizedHttpError(pairingError)) {
+                        throw new Error('Invalid bearer token or pairing code.');
+                    }
+
+                    throw pairingError;
+                }
             }
             startTransition(() => {
                 setters.auth.setStatus(payload);

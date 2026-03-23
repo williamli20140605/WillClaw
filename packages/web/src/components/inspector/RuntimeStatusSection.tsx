@@ -22,6 +22,9 @@ export function RuntimeStatusSection({
                 <strong>{entry.provider}</strong>
                 <div className="chip-row">
                   <span className="chip">{entry.tool}</span>
+                  <span className="chip">
+                    {entry.configured ? 'configured' : 'unconfigured'}
+                  </span>
                   <span
                     className="chip"
                     data-tone={

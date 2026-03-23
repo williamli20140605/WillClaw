@@ -58,6 +58,7 @@ export interface ChatServiceRequest extends RunChatRequest {
     chatId?: string;
     userId?: string;
     editOf?: number;
+    metadata?: Record<string, unknown>;
 }
 
 export interface ChatServiceResult extends RunChatResult {
@@ -155,6 +156,9 @@ export class ChatService {
         };
         if (request.editOf != null) {
             userMessageInput.editOf = request.editOf;
+        }
+        if (request.metadata) {
+            userMessageInput.metadata = request.metadata;
         }
 
         const userMessage = this.memoryStore.saveMessage(userMessageInput);

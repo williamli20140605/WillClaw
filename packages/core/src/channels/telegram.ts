@@ -7,6 +7,10 @@ import type { Orchestrator } from '../orchestrator.js';
 import type { PairingManager } from '../pairing.js';
 import type { WillClawScheduler } from '../scheduler.js';
 
+import {
+    createInboundMessageMetadata,
+    findLinkedUserMessageByChannelMessageId,
+} from './message-links.js';
 import { ChannelShellCommands } from './shell-commands.js';
 import type { ChannelAdapter } from './types.js';
 
@@ -239,24 +243,44 @@ export class TelegramChannel implements ChannelAdapter {
         }
 
         if (edited && !text.startsWith('/')) {
+            const linkedMessage = findLinkedUserMessageByChannelMessageId({
+                memoryStore: this.memoryStore,
+                channel: this.name,
+                chatId: String(message.chat.id),
+                userId: String(sender.id),
+                channelMessageId: String(message.message_id),
+            });
+            if (!linkedMessage) {
+                this.logger.debug(
+                    {
+                        channel: this.name,
+                        chatId: message.chat.id,
+                        userId: sender.id,
+                        messageId: message.message_id,
+                    },
+                    'Ignoring Telegram edited message without a linked stored user message',
+                );
+                return;
+            }
+
             try {
-                const handled = await this.shellCommands.handle({
-                    text: `/edit ${text}`,
-                    channel: this.name,
-                    chatId: String(message.chat.id),
-                    userId: String(message.from?.id ?? '0'),
+                await this.sendChatAction(token, message.chat.id, 'typing');
+                const result = await this.chatService.editMessage(linkedMessage.id, {
+                    text,
                     isGroup: message.chat.type !== 'private',
                     workingDirectory: this.workingDirectory,
-                    reply: async (content) => {
-                        await this.sendTelegramMessage(token, message.chat.id, content);
-                    },
-                    showTyping: async () => {
-                        await this.sendChatAction(token, message.chat.id, 'typing');
-                    },
+                    metadata: createInboundMessageMetadata(
+                        String(message.message_id),
+                    ),
                 });
-                if (handled) {
-                    return;
+                if (result) {
+                    await this.sendTelegramMessage(
+                        token,
+                        message.chat.id,
+                        `Edited message #${linkedMessage.id}.\n\n${result.result.content}`,
+                    );
                 }
+                return;
             } catch (error) {
                 this.logger.error(
                     {
@@ -313,6 +337,9 @@ export class TelegramChannel implements ChannelAdapter {
                 userId: String(sender.id),
                 isGroup: message.chat.type !== 'private',
                 workingDirectory: this.workingDirectory,
+                metadata: createInboundMessageMetadata(
+                    String(message.message_id),
+                ),
             });
             if (pendingAhead > 0) {
                 await this.sendTelegramMessage(

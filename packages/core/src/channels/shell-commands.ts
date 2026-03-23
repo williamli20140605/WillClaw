@@ -60,6 +60,7 @@ export class ChannelShellCommands {
                 const latestRun = this.findLatestTrackedRun(
                     input.channel,
                     input.chatId,
+                    input.userId,
                 );
                 const queue = this.findQueue(input.channel, input.chatId);
                 const lines = [
@@ -79,6 +80,11 @@ export class ChannelShellCommands {
                 return true;
             }
             case '/pair': {
+                if (!this.pairingManager.isEnabled()) {
+                    await input.reply('Pairing is disabled.');
+                    return true;
+                }
+
                 if (!args) {
                     await input.reply('Usage: /pair <pairing-code>');
                     return true;
@@ -126,6 +132,7 @@ export class ChannelShellCommands {
                 const latestUserMessage = this.findLatestUserMessage(
                     input.channel,
                     input.chatId,
+                    input.userId,
                 );
                 if (!latestUserMessage) {
                     await input.reply('Nothing to undo in this chat yet.');
@@ -147,6 +154,7 @@ export class ChannelShellCommands {
                 const latestUserMessage = this.findLatestUserMessage(
                     input.channel,
                     input.chatId,
+                    input.userId,
                 );
                 if (!latestUserMessage) {
                     await input.reply('No user message found to edit.');
@@ -181,6 +189,7 @@ export class ChannelShellCommands {
                 const latestUserMessage = this.findLatestUserMessage(
                     input.channel,
                     input.chatId,
+                    input.userId,
                 );
                 if (!latestUserMessage) {
                     await input.reply('No user message found to resend.');
@@ -215,6 +224,7 @@ export class ChannelShellCommands {
                 const latestRun = this.findLatestTrackedRun(
                     input.channel,
                     input.chatId,
+                    input.userId,
                 );
                 if (!latestRun || !latestRun.active) {
                     await input.reply('No active run found in this chat.');
@@ -269,6 +279,7 @@ export class ChannelShellCommands {
     private findLatestUserMessage(
         channel: string,
         chatId: string,
+        userId: string,
     ): StoredMessage | null {
         const messages = this.memoryStore.listMessages({
             channel,
@@ -279,7 +290,7 @@ export class ChannelShellCommands {
 
         for (let index = messages.length - 1; index >= 0; index -= 1) {
             const message = messages[index];
-            if (message?.role === 'user') {
+            if (message?.role === 'user' && message.userId === userId) {
                 return message;
             }
         }
@@ -290,6 +301,7 @@ export class ChannelShellCommands {
     private findLatestTrackedRun(
         channel: string,
         chatId: string,
+        userId: string,
     ): {
         run: NonNullable<ReturnType<ChatService['getRunStatus']>['run']>;
         active: boolean;
@@ -302,7 +314,12 @@ export class ChannelShellCommands {
         });
 
         for (let index = messages.length - 1; index >= 0; index -= 1) {
-            const runId = messages[index]?.runId;
+            const message = messages[index];
+            if (message?.role !== 'user' || message.userId !== userId) {
+                continue;
+            }
+
+            const runId = message.runId;
             if (!runId) {
                 continue;
             }

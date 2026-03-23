@@ -38,6 +38,10 @@ export function getHealthyProviderActions(
             continue;
         }
 
+        if (!entry.configured) {
+            continue;
+        }
+
         for (const action of entry.actions) {
             if (action.healthy) {
                 allowed.add(action.action);

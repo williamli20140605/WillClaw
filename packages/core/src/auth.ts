@@ -142,7 +142,13 @@ function parseCookies(header: string | null | undefined): Map<string, string> {
             continue;
         }
 
-        cookies.set(name, decodeURIComponent(rawValue.join('=').trim()));
+        const serializedValue = rawValue.join('=').trim();
+
+        try {
+            cookies.set(name, decodeURIComponent(serializedValue));
+        } catch {
+            cookies.set(name, serializedValue);
+        }
     }
 
     return cookies;

@@ -1,4 +1,5 @@
 import { access, mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 import { displayPath, getWillClawPaths, type WillClawPaths } from './paths.js';
 import { syncWillClawWorkspaceSkills } from './workspace-skills.js';
@@ -23,6 +24,72 @@ export interface InitWorkspaceResult {
     createdConfig: boolean;
 }
 
+export interface SyncWorkspaceBootstrapOptions {
+    workspaceDir: string;
+    overwrite?: boolean;
+}
+
+export interface SyncWorkspaceBootstrapResult {
+    workspaceDir: string;
+    filesWritten: string[];
+}
+
+const GENERATED_WORKSPACE_BOOTSTRAP_FILES = [
+    {
+        fileName: 'IDENTITY.md',
+        content: `# Identity
+
+You are WillClaw.
+
+- You orchestrate external coding agents from a local, shell-first runtime.
+- You keep responses action-oriented, concise, and useful.
+- You preserve auditability whenever WillClaw owns a tool action.`,
+    },
+    {
+        fileName: 'AGENTS.md',
+        content: `# Agents
+
+- Respect any explicit user-selected agent.
+- Use routing and fallback only when the request is not explicitly pinned.
+- Prefer the configured tool policy for each agent instead of assuming capabilities.`,
+    },
+    {
+        fileName: 'RULES.md',
+        content: `# Rules
+
+- Stay within the configured workspace and runtime context unless the user asks otherwise.
+- Prefer hosted tools only when they are explicitly exposed and healthy.
+- Keep edits and explanations grounded in the current repository state.`,
+    },
+    {
+        fileName: 'WORK_MODES.md',
+        content: `# Work Modes
+
+- Chat mode handles normal conversations, coding requests, and shell-side memory commands.
+- Heartbeat mode performs lightweight operational checks and should reply \`HEARTBEAT_OK\` when no action is needed.
+- Background maintenance should summarize concrete actions taken instead of narrating internal reasoning.`,
+    },
+    {
+        fileName: 'MEMORY.md',
+        content: `# Memory
+
+Store stable facts, preferences, long-running tasks, and important constraints here.`,
+    },
+    {
+        fileName: 'HEARTBEAT.md',
+        content: `# Heartbeat
+
+Check for actionable issues across channels, queues, scheduled work, and recent failures.
+If nothing needs attention, reply exactly \`HEARTBEAT_OK\`.`,
+    },
+    {
+        fileName: 'PROJECT_HEARTBEAT.md',
+        content: `# Project Heartbeat
+
+Capture project-specific follow-ups, blockers, and maintenance checks that should be revisited during heartbeat runs.`,
+    },
+] as const;
+
 async function pathExists(targetPath: string): Promise<boolean> {
     try {
         await access(targetPath);
@@ -30,6 +97,43 @@ async function pathExists(targetPath: string): Promise<boolean> {
     } catch {
         return false;
     }
+}
+
+async function writeGeneratedWorkspaceFile(input: {
+    content: string;
+    filePath: string;
+    filesWritten: string[];
+    overwrite: boolean;
+}): Promise<void> {
+    if (!input.overwrite && (await pathExists(input.filePath))) {
+        return;
+    }
+
+    await mkdir(path.dirname(input.filePath), { recursive: true });
+    await writeFile(input.filePath, input.content, 'utf8');
+    input.filesWritten.push(input.filePath);
+}
+
+export async function syncWillClawWorkspaceBootstrap(
+    options: SyncWorkspaceBootstrapOptions,
+): Promise<SyncWorkspaceBootstrapResult> {
+    const workspaceDir = path.resolve(options.workspaceDir);
+    const overwrite = options.overwrite ?? true;
+    const filesWritten: string[] = [];
+
+    for (const file of GENERATED_WORKSPACE_BOOTSTRAP_FILES) {
+        await writeGeneratedWorkspaceFile({
+            content: file.content,
+            filePath: path.join(workspaceDir, file.fileName),
+            filesWritten,
+            overwrite,
+        });
+    }
+
+    return {
+        workspaceDir,
+        filesWritten,
+    };
 }
 
 function renderDefaultConfig(paths: WillClawPaths): string {
@@ -259,6 +363,10 @@ export async function initializeWillClawHome(options?: {
         await writeFile(paths.configPath, renderDefaultConfig(paths), 'utf8');
     }
 
+    await syncWillClawWorkspaceBootstrap({
+        workspaceDir: paths.workspaceDir,
+        overwrite: false,
+    });
     await syncWillClawWorkspaceSkills({
         workspaceDir: paths.workspaceDir,
         overwrite: false,

@@ -53,6 +53,7 @@ export interface ShellWorkspaceProps {
         selectedChatId: string;
         selectedQueueLeadRun: QueueRunSummary | null;
         serverHost: string | undefined;
+        trackedThreadCount: number;
     };
     conversation: {
         actionError: string;
@@ -106,6 +107,52 @@ export function ShellWorkspace({
     conversation,
     inspector,
 }: ShellWorkspaceProps) {
+    const composer = (
+        <ConversationComposer
+            availableAgents={conversation.availableAgents}
+            chatUsesAutoRoute={conversation.chatUsesAutoRoute}
+            chatUsesDefaultAgent={conversation.chatUsesDefaultAgent}
+            composerShowsSearch={conversation.composerShowsSearch}
+            composerText={conversation.composerText}
+            currentActiveRun={conversation.currentActiveRun}
+            defaultAgent={conversation.defaultAgent}
+            executionMode={conversation.executionMode}
+            lastRun={conversation.lastRun}
+            routePreview={conversation.routePreview}
+            selectedAgent={conversation.selectedAgent}
+            selectedChatId={conversation.selectedChatId}
+            submitting={conversation.submitting}
+            onAgentChange={conversation.handleAgentChange}
+            onComposerTextChange={conversation.setComposerText}
+            onExecutionModeChange={conversation.setExecutionMode}
+            onSend={() => {
+                void conversation.handleSend();
+            }}
+            onStartSearch={conversation.handleStartSearch}
+        />
+    );
+    const stream = (
+        <ConversationStream
+            currentActiveRun={conversation.currentActiveRun}
+            editedSuccessorById={conversation.editedSuccessorById}
+            editingMessageId={conversation.editingMessageId}
+            editingText={conversation.editingText}
+            messages={conversation.messages}
+            onEditCancel={conversation.handleEditCancel}
+            onEditSave={(messageId) => {
+                void conversation.handleEditSave(messageId);
+            }}
+            onEditStart={conversation.handleEditStart}
+            onEditTextChange={conversation.setEditingText}
+            onResend={(messageId) => {
+                void conversation.handleResend(messageId);
+            }}
+            onRevoke={(messageId) => {
+                void conversation.handleRevoke(messageId);
+            }}
+        />
+    );
+
     return (
         <main className="app-shell">
             <ShellTopBar
@@ -150,48 +197,8 @@ export function ShellWorkspace({
                         </div>
                     ) : null}
 
-                    <ConversationStream
-                        currentActiveRun={conversation.currentActiveRun}
-                        editedSuccessorById={conversation.editedSuccessorById}
-                        editingMessageId={conversation.editingMessageId}
-                        editingText={conversation.editingText}
-                        messages={conversation.messages}
-                        onEditCancel={conversation.handleEditCancel}
-                        onEditSave={(messageId) => {
-                            void conversation.handleEditSave(messageId);
-                        }}
-                        onEditStart={conversation.handleEditStart}
-                        onEditTextChange={conversation.setEditingText}
-                        onResend={(messageId) => {
-                            void conversation.handleResend(messageId);
-                        }}
-                        onRevoke={(messageId) => {
-                            void conversation.handleRevoke(messageId);
-                        }}
-                    />
-
-                    <ConversationComposer
-                        availableAgents={conversation.availableAgents}
-                        chatUsesAutoRoute={conversation.chatUsesAutoRoute}
-                        chatUsesDefaultAgent={conversation.chatUsesDefaultAgent}
-                        composerShowsSearch={conversation.composerShowsSearch}
-                        composerText={conversation.composerText}
-                        currentActiveRun={conversation.currentActiveRun}
-                        defaultAgent={conversation.defaultAgent}
-                        executionMode={conversation.executionMode}
-                        lastRun={conversation.lastRun}
-                        routePreview={conversation.routePreview}
-                        selectedAgent={conversation.selectedAgent}
-                        selectedChatId={conversation.selectedChatId}
-                        submitting={conversation.submitting}
-                        onAgentChange={conversation.handleAgentChange}
-                        onComposerTextChange={conversation.setComposerText}
-                        onExecutionModeChange={conversation.setExecutionMode}
-                        onSend={() => {
-                            void conversation.handleSend();
-                        }}
-                        onStartSearch={conversation.handleStartSearch}
-                    />
+                    {conversation.messages.length === 0 ? composer : stream}
+                    {conversation.messages.length === 0 ? stream : composer}
                 </section>
 
                 <ConversationSidebar
@@ -214,6 +221,7 @@ export function ShellWorkspace({
                     selectedChatId={sidebar.selectedChatId}
                     selectedQueueLeadRun={sidebar.selectedQueueLeadRun}
                     serverHost={sidebar.serverHost}
+                    trackedThreadCount={sidebar.trackedThreadCount}
                 />
 
                 <InspectorPanel

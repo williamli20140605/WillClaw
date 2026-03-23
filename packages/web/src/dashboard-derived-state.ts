@@ -42,6 +42,7 @@ export function createDashboardDerivedState({
           {
             channel: WEB_CHANNEL,
             chatId: draftChatId,
+            isDraft: true,
             updatedAt: new Date().toISOString(),
             messageCount: 0,
             preview: 'Fresh conversation',
@@ -98,6 +99,7 @@ export function createDashboardDerivedState({
     selectedChat,
     selectedChatQueue,
     selectedQueueLeadRun,
+    trackedThreadCount: chats.length,
     totalTasks,
   };
 }

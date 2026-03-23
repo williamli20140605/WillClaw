@@ -764,6 +764,10 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
     });
 
     app.post('/api/pairing/invites', async (c) => {
+        if (!runtime.pairingManager.isEnabled()) {
+            return c.json({ error: 'Pairing is disabled' }, 404);
+        }
+
         const payload = pairingInviteCreateSchema.parse(
             await c.req.json().catch(() => ({})),
         );
@@ -895,7 +899,7 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
         return response;
     });
 
-    app.get('/api/route-preview', (c) => {
+    app.get('/api/route-preview', async (c) => {
         const text = c.req.query('text') ?? '';
         if (!text.trim()) {
             return c.json({ error: 'Route preview text is required' }, 400);
@@ -904,7 +908,7 @@ export function createWillClawApp(runtime: WillClawRuntimeLike): Hono<{
         const agent = c.req.query('agent') ?? undefined;
         const currentMode = c.req.query('currentMode') ?? undefined;
         return c.json(
-            runtime.orchestrator.inspectRoute(text, {
+            await runtime.orchestrator.inspectRouteWithAvailability(text, {
                 ...(agent ? { agent } : {}),
                 ...(currentMode ? { currentMode } : {}),
             }),

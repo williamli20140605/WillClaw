@@ -1,7 +1,10 @@
 import type { RunHostAction } from '../../inspector-types.js';
+import type { ProviderHealthEntry } from '../../ui-types.js';
+import { healthyConfiguredProviderActions } from '../../ui-helpers.js';
 
 interface ScreenHostCardProps {
   hostActionBusy: boolean;
+  providerHealth: ProviderHealthEntry[];
   runHostAction: RunHostAction;
   screenApp: string;
   screenInputText: string;
@@ -22,6 +25,7 @@ interface ScreenHostCardProps {
 
 export function ScreenHostCard({
   hostActionBusy,
+  providerHealth,
   runHostAction,
   screenApp,
   screenInputText,
@@ -39,6 +43,21 @@ export function ScreenHostCard({
   setScreenSendPressReturn,
   setScreenSendRequireFrontmost,
 }: ScreenHostCardProps) {
+  const availableActions = healthyConfiguredProviderActions(
+    providerHealth,
+    'screen',
+  );
+  const canInspectApp = availableActions.includes('inspect_app');
+  const canFrontmost = availableActions.includes('frontmost_app');
+  const canOpenApp = availableActions.includes('open_app');
+  const canActivateApp = availableActions.includes('activate_app');
+  const canSendText = availableActions.includes('send_text');
+  const canSee = availableActions.includes('see');
+  const canCapture = availableActions.includes('capture');
+  const canOcr = availableActions.includes('ocr');
+  const trimmedApp = screenApp.trim();
+  const trimmedInput = screenInputText.trim();
+
   return (
     <article className="host-action-card">
       <label className="field-label" htmlFor="screen-app">
@@ -116,13 +135,20 @@ export function ScreenHostCard({
       <div className="toolbar">
         <button
           className="ghost-btn"
-          disabled={hostActionBusy || !screenApp.trim()}
+          disabled={hostActionBusy || !trimmedApp || !canInspectApp}
           onClick={() =>
             runHostAction('/api/tools/screen/inspect-app', {
-              app: screenApp.trim(),
+              app: trimmedApp,
               chatId: selectedChatId,
               languages: ['en-US', 'zh-Hans'],
             })
+          }
+          title={
+            !trimmedApp
+              ? 'Enter an app name first.'
+              : !canInspectApp
+                ? 'No configured healthy screen provider can inspect apps right now.'
+                : undefined
           }
           type="button"
         >
@@ -130,11 +156,16 @@ export function ScreenHostCard({
         </button>
         <button
           className="ghost-btn"
-          disabled={hostActionBusy}
+          disabled={hostActionBusy || !canFrontmost}
           onClick={() =>
             runHostAction('/api/tools/screen/frontmost-app', {
               chatId: selectedChatId,
             })
+          }
+          title={
+            !canFrontmost
+              ? 'No configured healthy provider can inspect the frontmost app right now.'
+              : undefined
           }
           type="button"
         >
@@ -142,12 +173,19 @@ export function ScreenHostCard({
         </button>
         <button
           className="ghost-btn"
-          disabled={hostActionBusy || !screenApp.trim()}
+          disabled={hostActionBusy || !trimmedApp || !canOpenApp}
           onClick={() =>
             runHostAction('/api/tools/screen/open-app', {
-              app: screenApp.trim(),
+              app: trimmedApp,
               chatId: selectedChatId,
             })
+          }
+          title={
+            !trimmedApp
+              ? 'Enter an app name first.'
+              : !canOpenApp
+                ? 'No configured healthy provider can open apps right now.'
+                : undefined
           }
           type="button"
         >
@@ -155,12 +193,19 @@ export function ScreenHostCard({
         </button>
         <button
           className="ghost-btn"
-          disabled={hostActionBusy || !screenApp.trim()}
+          disabled={hostActionBusy || !trimmedApp || !canActivateApp}
           onClick={() =>
             runHostAction('/api/tools/screen/activate-app', {
-              app: screenApp.trim(),
+              app: trimmedApp,
               chatId: selectedChatId,
             })
+          }
+          title={
+            !trimmedApp
+              ? 'Enter an app name first.'
+              : !canActivateApp
+                ? 'No configured healthy provider can activate apps right now.'
+                : undefined
           }
           type="button"
         >
@@ -168,10 +213,10 @@ export function ScreenHostCard({
         </button>
         <button
           className="ghost-btn"
-          disabled={hostActionBusy || !screenApp.trim() || !screenInputText.trim()}
+          disabled={hostActionBusy || !trimmedApp || !trimmedInput || !canSendText}
           onClick={() =>
             runHostAction('/api/tools/screen/send-text', {
-              app: screenApp.trim(),
+              app: trimmedApp,
               chatId: selectedChatId,
               clear: screenSendClear,
               inspectAfter: screenSendInspectAfter,
@@ -184,22 +229,36 @@ export function ScreenHostCard({
               text: screenInputText,
             })
           }
+          title={
+            !trimmedApp
+              ? 'Enter an app name first.'
+              : !trimmedInput
+                ? 'Enter text to send first.'
+                : !canSendText
+                  ? 'No configured healthy provider can send desktop text right now.'
+                  : undefined
+          }
           type="button"
         >
           Send Text
         </button>
         <button
           className="ghost-btn"
-          disabled={hostActionBusy}
+          disabled={hostActionBusy || !canSee}
           onClick={() =>
             runHostAction('/api/tools/screen/see', {
-              ...(screenApp.trim()
-                ? { app: screenApp.trim() }
+              ...(trimmedApp
+                ? { app: trimmedApp }
                 : { mode: 'frontmost' }),
               annotate: true,
               chatId: selectedChatId,
               path: `/tmp/willclaw-see-${Date.now().toString(36)}.png`,
             })
+          }
+          title={
+            !canSee
+              ? 'No configured healthy provider can inspect desktop UI right now.'
+              : undefined
           }
           type="button"
         >
@@ -207,15 +266,20 @@ export function ScreenHostCard({
         </button>
         <button
           className="ghost-btn"
-          disabled={hostActionBusy}
+          disabled={hostActionBusy || !canCapture}
           onClick={() =>
             runHostAction('/api/tools/screen/capture', {
-              ...(screenApp.trim()
-                ? { app: screenApp.trim() }
+              ...(trimmedApp
+                ? { app: trimmedApp }
                 : { mode: 'screen' }),
               chatId: selectedChatId,
               filePath: `/tmp/willclaw-screen-${Date.now().toString(36)}.png`,
             })
+          }
+          title={
+            !canCapture
+              ? 'No configured healthy provider can capture the screen right now.'
+              : undefined
           }
           type="button"
         >
@@ -223,20 +287,29 @@ export function ScreenHostCard({
         </button>
         <button
           className="ghost-btn"
-          disabled={hostActionBusy}
+          disabled={hostActionBusy || !canOcr}
           onClick={() =>
             runHostAction('/api/tools/screen/ocr', {
-              ...(screenApp.trim()
-                ? { app: screenApp.trim() }
+              ...(trimmedApp
+                ? { app: trimmedApp }
                 : { mode: 'screen' }),
               chatId: selectedChatId,
             })
+          }
+          title={
+            !canOcr
+              ? 'No configured healthy provider can OCR the screen right now.'
+              : undefined
           }
           type="button"
         >
           OCR
         </button>
       </div>
+      <p className="muted">
+        Healthy configured screen actions:{' '}
+        {availableActions.length > 0 ? availableActions.join(', ') : 'none'}.
+      </p>
       <p className="muted">
         Uses macOS app control plus Peekaboo-first desktop actions. OCR uses
         Apple Vision after capture.

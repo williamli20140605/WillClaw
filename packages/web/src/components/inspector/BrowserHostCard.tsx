@@ -2,6 +2,8 @@ import type {
   BrowserFormFieldInput,
   RunHostAction,
 } from '../../inspector-types.js';
+import type { ProviderHealthEntry } from '../../ui-types.js';
+import { healthyConfiguredProviderActions } from '../../ui-helpers.js';
 
 interface BrowserHostCardProps {
   browserFormFieldsText: string;
@@ -9,6 +11,7 @@ interface BrowserHostCardProps {
   browserTarget: string;
   hostActionBusy: boolean;
   parseBrowserFormFields(): BrowserFormFieldInput[];
+  providerHealth: ProviderHealthEntry[];
   runHostAction: RunHostAction;
   selectedChatId: string;
   setActionError(message: string): void;
@@ -23,6 +26,7 @@ export function BrowserHostCard({
   browserTarget,
   hostActionBusy,
   parseBrowserFormFields,
+  providerHealth,
   runHostAction,
   selectedChatId,
   setActionError,
@@ -30,6 +34,17 @@ export function BrowserHostCard({
   setBrowserSubmitSelector,
   setBrowserTarget,
 }: BrowserHostCardProps) {
+  const availableActions = healthyConfiguredProviderActions(
+    providerHealth,
+    'browser',
+  );
+  const canOpen = availableActions.includes('open');
+  const canInspect = availableActions.includes('inspect_page');
+  const canFill = availableActions.includes('fill_form');
+  const canSnapshot = availableActions.includes('snapshot');
+  const canScreenshot = availableActions.includes('screenshot');
+  const trimmedTarget = browserTarget.trim();
+
   return (
     <article className="host-action-card">
       <label className="field-label" htmlFor="browser-target">
@@ -68,12 +83,19 @@ export function BrowserHostCard({
       <div className="toolbar">
         <button
           className="ghost-btn"
-          disabled={hostActionBusy}
+          disabled={hostActionBusy || !trimmedTarget || !canOpen}
           onClick={() =>
             runHostAction('/api/tools/browser/open', {
               chatId: selectedChatId,
-              target: browserTarget.trim(),
+              target: trimmedTarget,
             })
+          }
+          title={
+            !trimmedTarget
+              ? 'Enter a browser target URL first.'
+              : !canOpen
+                ? 'No configured healthy browser provider can open URLs right now.'
+                : undefined
           }
           type="button"
         >
@@ -81,14 +103,21 @@ export function BrowserHostCard({
         </button>
         <button
           className="ghost-btn"
-          disabled={hostActionBusy}
+          disabled={hostActionBusy || !trimmedTarget || !canInspect}
           onClick={() =>
             runHostAction('/api/tools/browser/inspect-page', {
               chatId: selectedChatId,
               compact: true,
               interactive: true,
-              target: browserTarget.trim(),
+              target: trimmedTarget,
             })
+          }
+          title={
+            !trimmedTarget
+              ? 'Enter a browser target URL first.'
+              : !canInspect
+                ? 'No configured healthy browser provider can inspect pages right now.'
+                : undefined
           }
           type="button"
         >
@@ -96,7 +125,7 @@ export function BrowserHostCard({
         </button>
         <button
           className="ghost-btn"
-          disabled={hostActionBusy}
+          disabled={hostActionBusy || !canFill}
           onClick={() => {
             try {
               const fields = parseBrowserFormFields();
@@ -120,13 +149,18 @@ export function BrowserHostCard({
               );
             }
           }}
+          title={
+            !canFill
+              ? 'No configured healthy browser provider can fill forms right now.'
+              : undefined
+          }
           type="button"
         >
           Fill Form
         </button>
         <button
           className="ghost-btn"
-          disabled={hostActionBusy}
+          disabled={hostActionBusy || !canSnapshot}
           onClick={() =>
             runHostAction('/api/tools/browser/snapshot', {
               chatId: selectedChatId,
@@ -134,13 +168,18 @@ export function BrowserHostCard({
               interactive: true,
             })
           }
+          title={
+            !canSnapshot
+              ? 'No configured healthy browser provider can snapshot the current session right now.'
+              : undefined
+          }
           type="button"
         >
           Snapshot
         </button>
         <button
           className="ghost-btn"
-          disabled={hostActionBusy}
+          disabled={hostActionBusy || !canScreenshot}
           onClick={() =>
             runHostAction('/api/tools/browser/screenshot', {
               chatId: selectedChatId,
@@ -148,14 +187,21 @@ export function BrowserHostCard({
               fullPage: true,
             })
           }
+          title={
+            !canScreenshot
+              ? 'No configured healthy browser provider can capture browser screenshots right now.'
+              : undefined
+          }
           type="button"
         >
           Screenshot
         </button>
       </div>
       <p className="muted">
-        Reuses the current web chat as the hosted browser session.
+        Healthy configured browser actions:{' '}
+        {availableActions.length > 0 ? availableActions.join(', ') : 'none'}.
       </p>
+      <p className="muted">Reuses the current web chat as the hosted browser session.</p>
     </article>
   );
 }

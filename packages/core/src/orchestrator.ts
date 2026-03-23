@@ -277,6 +277,11 @@ interface AgentRouteCandidate {
     toolPolicy: ResolvedAgentToolPolicy;
 }
 
+interface InspectRouteOptions {
+    agent?: string;
+    currentMode?: string;
+}
+
 export class Orchestrator {
     private readonly activeRuns = new Map<
         string,
@@ -319,13 +324,26 @@ export class Orchestrator {
         return availability;
     }
 
+    async inspectRouteWithAvailability(
+        text: string,
+        options?: InspectRouteOptions,
+    ): Promise<RoutePlan> {
+        const availableAgents = new Set(
+            (await this.listAgents())
+                .filter((agent) => agent.available)
+                .map((agent) => agent.name),
+        );
+
+        return this.buildRoutePlan(text, options, availableAgents);
+    }
+
     async runChat(request: RunChatRequest): Promise<RunChatResult> {
         const trimmedText = request.text.trim();
         if (!trimmedText) {
             throw new Error('Chat text cannot be empty.');
         }
 
-        const routePlan = this.inspectRoute(trimmedText, {
+        const routePlan = await this.inspectRouteWithAvailability(trimmedText, {
             ...(request.agent ? { agent: request.agent } : {}),
             ...(request.currentMode
                 ? { currentMode: request.currentMode }
@@ -597,10 +615,15 @@ export class Orchestrator {
 
     inspectRoute(
         text: string,
-        options?: {
-            agent?: string;
-            currentMode?: string;
-        },
+        options?: InspectRouteOptions,
+    ): RoutePlan {
+        return this.buildRoutePlan(text, options);
+    }
+
+    private buildRoutePlan(
+        text: string,
+        options?: InspectRouteOptions,
+        availableAgentNames?: Set<string>,
     ): RoutePlan {
         const trimmedText = text.trim();
         const explicit = resolveExplicitAgent(
@@ -624,7 +647,7 @@ export class Orchestrator {
         };
         const selectedAgent = explicit.explicitAgent
             ? explicit.explicitAgent
-            : this.selectAgent(signals);
+            : this.selectAgent(signals, availableAgentNames);
         const allowFallback =
             !explicit.explicitAgent &&
             (!looksLikeMutating ||
@@ -645,6 +668,7 @@ export class Orchestrator {
                 allowFallback,
                 reason,
                 modeHint ?? undefined,
+                availableAgentNames,
             ),
             allowFallback,
             reason,
@@ -933,14 +957,17 @@ export class Orchestrator {
         };
     }
 
-    private selectAgent(signals: RouteSignals): string {
+    private selectAgent(
+        signals: RouteSignals,
+        availableAgentNames?: Set<string>,
+    ): string {
         const reason = determineRouteReason(signals);
         const routeKey = resolveRoutePreferenceKey(
             reason,
             signals.modeHint ?? undefined,
         );
         const ranked = routeKey
-            ? this.rankAgentsForRoute(routeKey)
+            ? this.rankAgentsForRoute(routeKey, availableAgentNames)
             : [];
 
         return (
@@ -948,7 +975,7 @@ export class Orchestrator {
             this.pickFirstConfigured([
                 this.config.agents.default,
                 this.config.agents.routing.simple_qa ?? this.config.agents.default,
-            ])
+            ], availableAgentNames)
         );
     }
 
@@ -957,6 +984,7 @@ export class Orchestrator {
         allowFallback: boolean,
         reason: RouteReason,
         modeHint?: RouteModeHint,
+        availableAgentNames?: Set<string>,
     ): string[] {
         if (!allowFallback) {
             return [preferredAgent];
@@ -964,8 +992,10 @@ export class Orchestrator {
 
         const routeKey = resolveRoutePreferenceKey(reason, modeHint);
         const ranked = routeKey
-            ? this.rankAgentsForRoute(routeKey)
-            : this.listEnabledRouteCandidates().map((candidate) => candidate.name);
+            ? this.rankAgentsForRoute(routeKey, availableAgentNames)
+            : this.listRouteCandidates(availableAgentNames).map(
+                (candidate) => candidate.name,
+            );
 
         return [...new Set([preferredAgent, ...ranked])];
     }
@@ -988,9 +1018,15 @@ export class Orchestrator {
         }
     }
 
-    private rankAgentsForRoute(routeKey: RoutePreferenceKey): string[] {
+    private rankAgentsForRoute(
+        routeKey: RoutePreferenceKey,
+        availableAgentNames?: Set<string>,
+    ): string[] {
         const fallbackOrder = this.getFallbackOrderForRoute(routeKey);
-        const ranked = this.listEnabledRouteCandidates()
+        const ranked = this.listPreferredRouteCandidates(
+            routeKey,
+            availableAgentNames,
+        )
             .map((candidate) => ({
                 candidate,
                 score: this.scoreRouteCandidate(candidate, routeKey),
@@ -1155,8 +1191,10 @@ export class Orchestrator {
         return this.config.agents.pool[configured]?.enabled ? configured : undefined;
     }
 
-    private listEnabledRouteCandidates(): AgentRouteCandidate[] {
-        return Object.entries(this.config.agents.pool)
+    private listRouteCandidates(
+        availableAgentNames?: Set<string>,
+    ): AgentRouteCandidate[] {
+        const enabledCandidates = Object.entries(this.config.agents.pool)
             .filter(([, entry]) => entry.enabled)
             .map(([name, entry], configuredIndex) => ({
                 configuredIndex,
@@ -1164,9 +1202,53 @@ export class Orchestrator {
                 name,
                 toolPolicy: resolveAgentToolPolicy(this.config, name),
             }));
+
+        if (!availableAgentNames || availableAgentNames.size === 0) {
+            return enabledCandidates;
+        }
+
+        const availableCandidates = enabledCandidates.filter((candidate) =>
+            availableAgentNames.has(candidate.name),
+        );
+
+        return availableCandidates.length > 0
+            ? availableCandidates
+            : enabledCandidates;
     }
 
-    private pickFirstConfigured(candidates: string[]): string {
+    private listPreferredRouteCandidates(
+        routeKey: RoutePreferenceKey,
+        availableAgentNames?: Set<string>,
+    ): AgentRouteCandidate[] {
+        const candidates = this.listRouteCandidates(availableAgentNames);
+        if (routeKey !== 'hosted_tools') {
+            return candidates;
+        }
+
+        const hostedCandidates = candidates.filter(
+            (candidate) =>
+                candidate.toolPolicy.browser === 'hosted' ||
+                candidate.toolPolicy.screen === 'hosted',
+        );
+
+        return hostedCandidates.length > 0 ? hostedCandidates : candidates;
+    }
+
+    private pickFirstConfigured(
+        candidates: string[],
+        availableAgentNames?: Set<string>,
+    ): string {
+        if (availableAgentNames && availableAgentNames.size > 0) {
+            for (const candidate of candidates) {
+                if (
+                    this.config.agents.pool[candidate]?.enabled &&
+                    availableAgentNames.has(candidate)
+                ) {
+                    return candidate;
+                }
+            }
+        }
+
         for (const candidate of candidates) {
             if (this.config.agents.pool[candidate]?.enabled) {
                 return candidate;

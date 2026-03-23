@@ -31,6 +31,7 @@ interface ConversationSidebarProps {
     selectedChatId: string;
     selectedQueueLeadRun: QueueRunSummary | null;
     serverHost: string | undefined;
+    trackedThreadCount: number;
     onCreateChat(): void;
     onDefaultAgentChange(agentName: string | null): void;
     onSelectAgent(selection: string): void;
@@ -53,6 +54,7 @@ export function ConversationSidebar({
     selectedChatId,
     selectedQueueLeadRun,
     serverHost,
+    trackedThreadCount,
     onCreateChat,
     onDefaultAgentChange,
     onSelectAgent,
@@ -68,7 +70,7 @@ export function ConversationSidebar({
             <div className="sidebar-section">
                 <div className="section-header">
                     <h2>Conversations</h2>
-                    <span>{chatList.length} tracked</span>
+                    <span>{trackedThreadCount} tracked</span>
                 </div>
                 <button className="btn btn-block" onClick={onCreateChat} type="button">
                     New conversation
@@ -171,6 +173,11 @@ export function ConversationSidebar({
                                         </span>
                                         {chat.agent ? (
                                             <span className="chip">{chat.agent}</span>
+                                        ) : null}
+                                        {chat.isDraft ? (
+                                            <span className="chip" data-tone="accent">
+                                                draft
+                                            </span>
                                         ) : null}
                                         {chatQueue?.queued ? (
                                             <span className="chip" data-tone="accent">

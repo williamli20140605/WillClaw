@@ -36,6 +36,8 @@ import { FileSystemTool } from './tools/filesystem.js';
 import { ScreenTool } from './tools/screen.js';
 import { ShellTool } from './tools/shell.js';
 import { WorkspaceMemoryManager } from './workspace-memory.js';
+import { syncWillClawWorkspaceBootstrap } from './workspace.js';
+import { syncWillClawWorkspaceSkills } from './workspace-skills.js';
 
 export interface WillClawRuntime {
     config: WillClawConfig;
@@ -66,6 +68,14 @@ export async function createWillClawRuntime(options?: {
     homeDir?: string;
 }): Promise<WillClawRuntime> {
     const { config, paths } = await loadWillClawConfig(options);
+    await syncWillClawWorkspaceBootstrap({
+        workspaceDir: paths.workspaceDir,
+        overwrite: false,
+    });
+    await syncWillClawWorkspaceSkills({
+        workspaceDir: paths.workspaceDir,
+        overwrite: false,
+    });
     const { logger, destination: appLogDestination } = await createAppLogger(
         config.logging.app_log,
     );

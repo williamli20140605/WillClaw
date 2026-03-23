@@ -12,6 +12,7 @@ export function HostLabSection({
   hostActionBusy,
   hostActionResult,
   parseBrowserFormFields,
+  providerHealth,
   runHostAction,
   screenApp,
   screenInputText,
@@ -37,7 +38,7 @@ export function HostLabSection({
     <section className="inspector-panel">
       <div className="section-header">
         <h3>Host Lab</h3>
-        <span>agent-browser / peekaboo / macOS</span>
+        <span>configured hosted providers</span>
       </div>
       <div className="stack-list">
         <BrowserHostCard
@@ -46,6 +47,7 @@ export function HostLabSection({
           browserTarget={browserTarget}
           hostActionBusy={hostActionBusy}
           parseBrowserFormFields={parseBrowserFormFields}
+          providerHealth={providerHealth}
           runHostAction={runHostAction}
           selectedChatId={selectedChatId}
           setActionError={setActionError}
@@ -55,6 +57,7 @@ export function HostLabSection({
         />
         <ScreenHostCard
           hostActionBusy={hostActionBusy}
+          providerHealth={providerHealth}
           runHostAction={runHostAction}
           screenApp={screenApp}
           screenInputText={screenInputText}

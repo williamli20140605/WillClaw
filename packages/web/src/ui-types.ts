@@ -149,6 +149,7 @@ export interface ChatSummary {
     messageCount: number;
     preview: string;
     role: MessageRole;
+    isDraft?: boolean;
     agent?: string;
     runId?: string;
 }

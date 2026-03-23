@@ -9,6 +9,7 @@ import type { Orchestrator } from '../orchestrator.js';
 import type { PairingManager } from '../pairing.js';
 import type { WillClawScheduler } from '../scheduler.js';
 
+import { createInboundMessageMetadata } from './message-links.js';
 import { ChannelShellCommands } from './shell-commands.js';
 import type { ChannelAdapter } from './types.js';
 
@@ -147,6 +148,53 @@ function parseTextContent(rawContent: string | undefined): string | null {
 
 function stripFeishuMentions(text: string): string {
     return text.replace(/<at\b[^>]*>.*?<\/at>/gis, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function collectMentionStrings(
+    value: unknown,
+    target: Set<string>,
+    depth = 0,
+): void {
+    if (depth > 4 || value == null) {
+        return;
+    }
+
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (normalized) {
+            target.add(normalized);
+        }
+        return;
+    }
+
+    if (Array.isArray(value)) {
+        for (const entry of value) {
+            collectMentionStrings(entry, target, depth + 1);
+        }
+        return;
+    }
+
+    if (typeof value === 'object') {
+        for (const [key, nested] of Object.entries(value)) {
+            target.add(key.trim().toLowerCase());
+            collectMentionStrings(nested, target, depth + 1);
+        }
+    }
+}
+
+function isLikelyBotMention(mention: Record<string, unknown>): boolean {
+    const strings = new Set<string>();
+    collectMentionStrings(mention, strings);
+
+    return [...strings].some(
+        (entry) =>
+            entry === 'app' ||
+            entry === 'bot' ||
+            entry === 'chat_bot' ||
+            entry === 'assistant' ||
+            entry.includes('bot') ||
+            entry.includes('app'),
+    );
 }
 
 export class FeishuChannel implements ChannelAdapter {
@@ -387,6 +435,7 @@ export class FeishuChannel implements ChannelAdapter {
                 userId,
                 isGroup: message.chat_type !== 'p2p',
                 workingDirectory: this.workingDirectory,
+                metadata: createInboundMessageMetadata(message.message_id),
             });
             if (pendingAhead > 0) {
                 await this.replyToMessage(
@@ -547,13 +596,22 @@ export class FeishuChannel implements ChannelAdapter {
             return true;
         }
 
+        if (stripFeishuMentions(rawText).startsWith('/')) {
+            return true;
+        }
+
         if (!this.config.require_mention_in_groups) {
             return true;
         }
 
-        return Array.isArray(message.mentions) && message.mentions.length > 0
-            ? true
-            : /<at\b/i.test(rawText);
+        if (!/<at\b/i.test(rawText)) {
+            return false;
+        }
+
+        return (
+            Array.isArray(message.mentions) &&
+            message.mentions.some((mention) => isLikelyBotMention(mention))
+        );
     }
 
     private isDuplicateEvent(eventId: string): boolean {

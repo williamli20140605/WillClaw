@@ -132,6 +132,7 @@ export function createInspectorModels({
       },
       hostLab: {
         ...hostLabState,
+        providerHealth: runtimeState.providerHealth,
         parseBrowserFormFields: actions.parseBrowserFormFields,
         runHostAction: actions.runHostAction,
         setActionError: actions.setActionError,

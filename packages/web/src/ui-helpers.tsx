@@ -6,6 +6,7 @@ import type {
     AgentAvailability,
     AssistantRouteMetadata,
     ChatSummary,
+    ProviderHealthEntry,
     RealtimeEvent,
     RoutePlan,
     SchedulerResult,
@@ -17,6 +18,20 @@ const DEFAULT_AGENT_STORAGE_KEY = 'willclaw.default-agent';
 
 export const AUTO_ROUTE_AGENT_SELECTION = '__auto__';
 export const INHERIT_DEFAULT_AGENT_SELECTION = '__default__';
+
+export class HttpError extends Error {
+    readonly status: number;
+
+    constructor(message: string, status: number) {
+        super(message);
+        this.name = 'HttpError';
+        this.status = status;
+    }
+}
+
+export function isUnauthorizedHttpError(error: unknown): boolean {
+    return error instanceof HttpError && error.status === 401;
+}
 
 export function collapseWhitespace(value: string): string {
     return value.replace(/\s+/g, ' ').trim();
@@ -240,6 +255,10 @@ export function conversationTitle(
     chat: ChatSummary | null,
     fallbackChatId: string,
 ): string {
+    if (chat?.isDraft) {
+        return 'Fresh conversation';
+    }
+
     const preview = chat ? summarizeText(chat.preview, 42) : '';
     if (preview) {
         return preview;
@@ -253,6 +272,10 @@ export function conversationTitle(
 }
 
 export function conversationSubtitle(chat: ChatSummary | null): string {
+    if (chat?.isDraft) {
+        return 'New local draft. Send a message to create a persisted thread.';
+    }
+
     if (!chat) {
         return 'Fresh conversation. Route a prompt to any coding agent shell-side.';
     }
@@ -269,6 +292,10 @@ export function conversationScopeLabel(
     chat: ChatSummary | null,
     fallbackChatId: string,
 ): string {
+    if (chat?.isDraft) {
+        return 'draft thread';
+    }
+
     if (chat) {
         return 'tracked thread';
     }
@@ -284,6 +311,35 @@ export function toolPolicySummary(agent: AgentAvailability): string {
     return Object.entries(agent.toolPolicies)
         .map(([tool, mode]) => `${tool}:${mode}`)
         .join(' · ');
+}
+
+export function healthyConfiguredProviderActions(
+    providerHealth: ProviderHealthEntry[],
+    tool: ProviderHealthEntry['tool'],
+): string[] {
+    const actions = new Set<string>();
+
+    for (const entry of providerHealth) {
+        if (entry.tool !== tool || !entry.configured) {
+            continue;
+        }
+
+        for (const action of entry.actions) {
+            if (action.healthy) {
+                actions.add(action.action);
+            }
+        }
+    }
+
+    return [...actions];
+}
+
+export function isHostedActionAvailable(
+    providerHealth: ProviderHealthEntry[],
+    tool: ProviderHealthEntry['tool'],
+    action: string,
+): boolean {
+    return healthyConfiguredProviderActions(providerHealth, tool).includes(action);
 }
 
 export function taskTone(
@@ -520,7 +576,7 @@ export async function readJson<T>(
             // ignore parse failures
         }
 
-        throw new Error(detail);
+        throw new HttpError(detail, response.status);
     }
 
     return (await response.json()) as T;

@@ -145,6 +145,22 @@ type BrowserAction =
     | 'fill_form'
     | 'inspect_page';
 
+type BrowserProviderMode = 'any' | 'structured';
+
+export function getConfiguredBrowserProviders(
+    config: WillClawConfig,
+    mode: BrowserProviderMode = 'any',
+): BrowserToolProvider[] {
+    if (mode === 'structured') {
+        return config.tools.browser.providers.filter(
+            (provider): provider is BrowserToolProvider =>
+                provider === 'agent-browser',
+        );
+    }
+
+    return [...config.tools.browser.providers];
+}
+
 function normalizeBrowserTarget(target: string): string {
     const url = new URL(target);
     if (!['http:', 'https:', 'file:'].includes(url.protocol)) {
@@ -290,6 +306,7 @@ export class BrowserTool {
         action: BrowserAction;
         context: BrowserToolContext;
         input: string;
+        providers?: BrowserToolProvider[];
         run: (
             provider: BrowserToolProvider,
         ) => Promise<{
@@ -299,8 +316,19 @@ export class BrowserTool {
         }>;
     }): Promise<T> {
         const failures: string[] = [];
+        const providers = options.providers
+            ? this.config.tools.browser.providers.filter((provider) =>
+                options.providers?.includes(provider),
+            )
+            : [...this.config.tools.browser.providers];
 
-        for (const provider of this.config.tools.browser.providers) {
+        if (providers.length === 0) {
+            throw new Error(
+                `No configured browser provider supports ${options.action}`,
+            );
+        }
+
+        for (const provider of providers) {
             const startedAt = Date.now();
 
             try {
@@ -344,6 +372,7 @@ export class BrowserTool {
     async openUrl(
         target: string,
         context: BrowserToolContext,
+        providers?: BrowserToolProvider[],
     ): Promise<BrowserOpenResult> {
         const normalizedTarget = normalizeBrowserTarget(target);
         const sessionName = resolveSessionName(context);
@@ -352,6 +381,7 @@ export class BrowserTool {
             action: 'open_url',
             context,
             input: normalizedTarget,
+            ...(providers ? { providers } : {}),
             run: async (provider) => {
                 if (provider === 'agent-browser') {
                     const command: BrowserCommand = {
@@ -409,6 +439,7 @@ export class BrowserTool {
             action: 'snapshot',
             context,
             input: JSON.stringify(options),
+            providers: getConfiguredBrowserProviders(this.config, 'structured'),
             run: async (provider) => {
                 if (provider !== 'agent-browser') {
                     throw new Error(
@@ -471,6 +502,7 @@ export class BrowserTool {
             action: 'click',
             context,
             input: JSON.stringify(options),
+            providers: getConfiguredBrowserProviders(this.config, 'structured'),
             run: async (provider) => {
                 if (provider !== 'agent-browser') {
                     throw new Error(`${provider} does not support browser click actions`);
@@ -527,6 +559,7 @@ export class BrowserTool {
                 clear: options.clear ?? false,
                 text: options.text,
             }),
+            providers: getConfiguredBrowserProviders(this.config, 'structured'),
             run: async (provider) => {
                 if (provider !== 'agent-browser') {
                     throw new Error(`${provider} does not support browser typing actions`);
@@ -586,6 +619,7 @@ export class BrowserTool {
                 fullPage: options.fullPage ?? false,
                 annotate: options.annotate ?? false,
             }),
+            providers: getConfiguredBrowserProviders(this.config, 'structured'),
             run: async (provider) => {
                 if (provider !== 'agent-browser') {
                     throw new Error(
@@ -638,7 +672,11 @@ export class BrowserTool {
         options: BrowserInspectPageOptions,
         context: BrowserToolContext,
     ): Promise<BrowserInspectPageResult> {
-        const open = await this.openUrl(options.target, context);
+        const open = await this.openUrl(
+            options.target,
+            context,
+            getConfiguredBrowserProviders(this.config, 'structured'),
+        );
         const snapshot = await this.snapshot(
             {
                 ...(options.interactive !== undefined
@@ -689,7 +727,11 @@ export class BrowserTool {
 
         let open: BrowserOpenResult | undefined;
         if (options.target) {
-            open = await this.openUrl(options.target, context);
+            open = await this.openUrl(
+                options.target,
+                context,
+                getConfiguredBrowserProviders(this.config, 'structured'),
+            );
         }
 
         const fieldResults: BrowserTypeResult[] = [];

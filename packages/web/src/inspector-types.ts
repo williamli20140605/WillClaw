@@ -65,6 +65,7 @@ export interface HostLabModel {
   hostActionBusy: boolean;
   hostActionResult: string;
   parseBrowserFormFields(): BrowserFormFieldInput[];
+  providerHealth: ProviderHealthEntry[];
   runHostAction: RunHostAction;
   screenApp: string;
   screenInputText: string;

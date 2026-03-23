@@ -122,6 +122,7 @@ export function useShellController(): ShellControllerState {
         selectedChat,
         selectedChatQueue,
         selectedQueueLeadRun,
+        trackedThreadCount,
         totalTasks,
     } = createShellViewModels({
         actions: {
@@ -149,7 +150,7 @@ export function useShellController(): ShellControllerState {
                 handleAuthLogout: accessActions.handleAuthLogout,
                 realtimeConnected: runtime.realtimeConnected,
                 taskCount: totalTasks,
-                threadCount: chatList.length,
+                threadCount: trackedThreadCount,
                 tokenId: auth.status.tokenId,
             },
             sidebar: {
@@ -173,6 +174,7 @@ export function useShellController(): ShellControllerState {
                 selectedChatId: chat.selectedChatId,
                 selectedQueueLeadRun,
                 serverHost: runtime.status?.server.host,
+                trackedThreadCount,
             },
             conversation: {
                 actionError: ui.actionError,

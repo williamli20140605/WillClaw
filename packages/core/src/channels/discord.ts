@@ -15,6 +15,10 @@ import type { Orchestrator } from '../orchestrator.js';
 import type { PairingManager } from '../pairing.js';
 import type { WillClawScheduler } from '../scheduler.js';
 
+import {
+    createInboundMessageMetadata,
+    findLinkedUserMessageByChannelMessageId,
+} from './message-links.js';
 import { ChannelShellCommands } from './shell-commands.js';
 import type { ChannelAdapter } from './types.js';
 
@@ -255,26 +259,43 @@ export class DiscordChannel implements ChannelAdapter {
         }
 
         if (edited && !text.startsWith('/')) {
+            const linkedMessage = findLinkedUserMessageByChannelMessageId({
+                memoryStore: this.memoryStore,
+                channel: this.name,
+                chatId: message.channelId,
+                userId: message.author.id,
+                channelMessageId: message.id,
+            });
+            if (!linkedMessage) {
+                this.logger.debug(
+                    {
+                        channel: this.name,
+                        chatId: message.channelId,
+                        userId: message.author.id,
+                        messageId: message.id,
+                    },
+                    'Ignoring Discord edited message without a linked stored user message',
+                );
+                return;
+            }
+
             try {
-                const handled = await this.shellCommands.handle({
-                    text: `/edit ${text}`,
-                    channel: this.name,
-                    chatId: message.channelId,
-                    userId: message.author.id,
+                if (isSendableChannel(message.channel)) {
+                    await message.channel.sendTyping();
+                }
+                const result = await this.chatService.editMessage(linkedMessage.id, {
+                    text,
                     isGroup: message.channel.type !== ChannelType.DM,
                     workingDirectory: this.workingDirectory,
-                    reply: async (content) => {
-                        await this.sendMessage(message.channelId, content);
-                    },
-                    showTyping: async () => {
-                        if (isSendableChannel(message.channel)) {
-                            await message.channel.sendTyping();
-                        }
-                    },
+                    metadata: createInboundMessageMetadata(message.id),
                 });
-                if (handled) {
-                    return;
+                if (result) {
+                    await this.sendMessage(
+                        message.channelId,
+                        `Edited message #${linkedMessage.id}.\n\n${result.result.content}`,
+                    );
                 }
+                return;
             } catch (error) {
                 this.logger.error(
                     {
@@ -347,6 +368,7 @@ export class DiscordChannel implements ChannelAdapter {
                 userId: message.author.id,
                 isGroup: message.channel.type !== ChannelType.DM,
                 workingDirectory: this.workingDirectory,
+                metadata: createInboundMessageMetadata(message.id),
             });
             if (pendingAhead > 0) {
                 await this.sendMessage(

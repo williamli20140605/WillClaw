@@ -162,6 +162,10 @@ export class PairingManager {
         scopes?: AuthScope[];
         channels?: PairingChannel[];
     }): Promise<CreatedPairingInvite> {
+        if (!this.isEnabled()) {
+            throw new Error('Pairing is disabled.');
+        }
+
         await this.ensureLoaded();
 
         const code = `wc_pair_${randomBytes(9).toString('base64url')}`;
@@ -213,6 +217,10 @@ export class PairingManager {
     }
 
     async redeemWebInvite(code: string): Promise<PairingRedeemResult | null> {
+        if (!this.isEnabled()) {
+            return null;
+        }
+
         await this.ensureLoaded();
 
         const invite = this.findMatchingInvite(code, 'web');
@@ -236,6 +244,10 @@ export class PairingManager {
         userId: string;
         code: string;
     }): Promise<PairingGrantView | null> {
+        if (!this.isEnabled()) {
+            return null;
+        }
+
         await this.ensureLoaded();
 
         if (!isPairingChannel(options.channel)) {

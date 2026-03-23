@@ -73,3 +73,30 @@ test('createDashboardDerivedState keeps activity scoped to the selected web conv
         ['global', 'web-selected', 'web-channel-wide'],
     );
 });
+
+test('createDashboardDerivedState keeps draft threads separate from tracked counts', () => {
+    const state = createDashboardDerivedState({
+        activeRuns: [],
+        chats: [
+            {
+                channel: 'web',
+                chatId: 'chat-1',
+                updatedAt: '2026-03-22T00:00:00.000Z',
+                messageCount: 1,
+                preview: 'Persisted thread',
+                role: 'user',
+            },
+        ],
+        cronState: null,
+        deferredComposerText: '',
+        draftChatId: 'chat-draft',
+        messages: [],
+        queueSummaries: [],
+        recentEvents: [],
+        selectedChatId: 'chat-draft',
+        status: null,
+    });
+
+    assert.equal(state.chatList[0]?.isDraft, true);
+    assert.equal(state.trackedThreadCount, 1);
+});

@@ -38,7 +38,8 @@
     top: auto;
     flex-direction: column;
     align-items: stretch;
-    gap: 12px;
+    gap: 10px;
+    padding: 12px 14px;
   }
 
   .brand-copy p {
@@ -46,7 +47,10 @@
   }
 
   .status-cluster {
-    justify-content: flex-start;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    justify-content: stretch;
+    gap: 8px;
   }
 
   .workspace-grid {
@@ -68,6 +72,28 @@
     max-height: calc(100vh - 118px);
   }
 
+  .status-card {
+    min-width: 0;
+    padding: 10px 12px;
+  }
+
+  .status-card label {
+    margin-bottom: 4px;
+  }
+
+  .conversation-header {
+    gap: 10px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .conversation-copy p,
+  .hint-text,
+  .composer-preview,
+  .composer-shortcuts {
+    display: none;
+  }
+
   .conversation-header__top,
   .run-banner,
   .composer-toolbar {
@@ -84,6 +110,30 @@
   .conversation-mobile-actions {
     display: flex;
     flex-wrap: wrap;
+  }
+
+  .composer-shell {
+    gap: 8px;
+    padding-bottom: 14px;
+  }
+
+  .composer-card {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .composer-card textarea {
+    min-height: 88px;
+  }
+
+  .composer-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    width: 100%;
+  }
+
+  .composer-controls .btn {
+    width: 100%;
   }
 
   .search-grid {
