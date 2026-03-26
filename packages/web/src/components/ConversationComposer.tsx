@@ -55,6 +55,7 @@ export function ConversationComposer({
 }: ConversationComposerProps) {
     const explicitSelectedAgent =
         !chatUsesDefaultAgent && !chatUsesAutoRoute ? selectedAgent : null;
+    const canSend = composerText.trim().length > 0 && !submitting;
     const agentPickerValue = chatUsesDefaultAgent
         ? INHERIT_DEFAULT_AGENT_SELECTION
         : chatUsesAutoRoute
@@ -71,7 +72,7 @@ export function ConversationComposer({
                 <div className="run-banner">
                     <div>
                         <strong>
-                            {currentActiveRun.status === 'queued'
+                        {currentActiveRun.status === 'queued'
                                 ? 'Run queued'
                                 : 'Run in progress'}
                         </strong>
@@ -99,13 +100,57 @@ export function ConversationComposer({
                 </div>
             ) : (
                 <div className="hint-text">
-                    WillClaw keeps the shell context here. The coding agent
-                    still does the core coding work.
+                    Route the next turn through one agent, auto-routing, or a
+                    shell-side memory search.
                 </div>
             )}
 
             <div className="composer-card">
-                <div className="composer-preview">
+                <div className="composer-controlbar">
+                    <label className="control-stack">
+                        <span>Route</span>
+                        <select
+                            value={agentPickerValue}
+                            onChange={(event) => onAgentChange(event.target.value)}
+                        >
+                            <option value={INHERIT_DEFAULT_AGENT_SELECTION}>
+                                default · {defaultAgentLabel}
+                            </option>
+                            <option value={AUTO_ROUTE_AGENT_SELECTION}>
+                                auto route
+                            </option>
+                            {!selectedAgentAvailable && explicitSelectedAgent ? (
+                                <option value={explicitSelectedAgent}>
+                                    {explicitSelectedAgent} (selected)
+                                </option>
+                            ) : null}
+                            {availableAgents.map((agent) => (
+                                <option key={agent.name} value={agent.name}>
+                                    {agent.name}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="control-stack control-stack--mode">
+                        <span>Exec</span>
+                        <select
+                            value={executionMode}
+                            onChange={(event) =>
+                                onExecutionModeChange(
+                                    event.target.value as
+                                        | 'foreground'
+                                        | 'background',
+                                )
+                            }
+                        >
+                            <option value="foreground">foreground</option>
+                            <option value="background">background</option>
+                        </select>
+                    </label>
+                    <div className="composer-preview">
+                        <span className="composer-preview__label">
+                            Route preview
+                        </span>
                     {composerShowsSearch ? (
                         <>
                             <span className="chip" data-tone="accent">
@@ -164,6 +209,7 @@ export function ConversationComposer({
                         </>
                     )}
                 </div>
+                </div>
                 <textarea
                     placeholder="Ask a coding agent, resume a thread, or use /search for shell-side memory."
                     value={composerText}
@@ -173,16 +219,27 @@ export function ConversationComposer({
                 />
                 <div className="composer-toolbar">
                     <div className="composer-shortcuts">
+                        <span className="hint">Quick route</span>
                         <button
                             className="quiet-btn"
-                            onClick={onStartSearch}
+                            data-active={chatUsesAutoRoute ? 'true' : undefined}
+                            onClick={() =>
+                                onAgentChange(AUTO_ROUTE_AGENT_SELECTION)
+                            }
                             type="button"
                         >
-                            /search
+                            Auto
                         </button>
                         {availableAgents.slice(0, 4).map((agent) => (
                             <button
                                 className="quiet-btn"
+                                data-active={
+                                    !chatUsesDefaultAgent &&
+                                    !chatUsesAutoRoute &&
+                                    selectedAgent === agent.name
+                                        ? 'true'
+                                        : undefined
+                                }
                                 key={agent.name}
                                 onClick={() => onAgentChange(agent.name)}
                                 type="button"
@@ -192,43 +249,16 @@ export function ConversationComposer({
                         ))}
                     </div>
                     <div className="composer-controls">
-                        <select
-                            value={agentPickerValue}
-                            onChange={(event) => onAgentChange(event.target.value)}
+                        <button
+                            className="ghost-btn"
+                            onClick={onStartSearch}
+                            type="button"
                         >
-                            <option value={INHERIT_DEFAULT_AGENT_SELECTION}>
-                                default · {defaultAgentLabel}
-                            </option>
-                            <option value={AUTO_ROUTE_AGENT_SELECTION}>
-                                auto route
-                            </option>
-                            {!selectedAgentAvailable && explicitSelectedAgent ? (
-                                <option value={explicitSelectedAgent}>
-                                    {explicitSelectedAgent} (selected)
-                                </option>
-                            ) : null}
-                            {availableAgents.map((agent) => (
-                                <option key={agent.name} value={agent.name}>
-                                    {agent.name}
-                                </option>
-                            ))}
-                        </select>
-                        <select
-                            value={executionMode}
-                            onChange={(event) =>
-                                onExecutionModeChange(
-                                    event.target.value as
-                                        | 'foreground'
-                                        | 'background',
-                                )
-                            }
-                        >
-                            <option value="foreground">foreground</option>
-                            <option value="background">background</option>
-                        </select>
+                            /search
+                        </button>
                         <button
                             className="btn"
-                            disabled={submitting}
+                            disabled={!canSend}
                             onClick={onSend}
                             type="button"
                         >

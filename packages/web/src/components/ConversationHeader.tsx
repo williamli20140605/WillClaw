@@ -46,7 +46,7 @@ export function ConversationHeader({
         <div className="conversation-header">
             <div className="conversation-header__top">
                 <div className="conversation-copy">
-                    <div className="eyebrow">Web channel</div>
+                    <div className="eyebrow">Thread</div>
                     <h2>{conversationTitle(selectedChat, selectedChatId)}</h2>
                     <p>{conversationSubtitle(selectedChat)}</p>
                 </div>
@@ -89,7 +89,7 @@ export function ConversationHeader({
             </div>
             <div className="conversation-mobile-actions">
                 <button className="btn" onClick={onCreateChat} type="button">
-                    New conversation
+                    New thread
                 </button>
                 <select
                     aria-label="Thread picker"

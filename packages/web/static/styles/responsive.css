@@ -5,8 +5,8 @@
     grid-template-columns: 252px minmax(0, 1fr) 320px;
   }
 
-  .brand-copy p {
-    max-width: 40ch;
+  .brand-trail span:last-child {
+    display: none;
   }
 }
 
@@ -18,12 +18,24 @@
       "inspector inspector";
   }
 
+  .workspace-grid[data-mode="control"] {
+    grid-template-columns: 252px minmax(0, 1fr);
+    grid-template-areas:
+      "sidebar control"
+      "inspector inspector";
+  }
+
   .inspector {
+    position: static;
+    height: auto;
     max-height: none;
   }
 
   .conversation-shell,
+  .control-deck-shell,
   .sidebar {
+    position: static;
+    height: auto;
     max-height: calc(100vh - 116px);
   }
 }
@@ -42,15 +54,23 @@
     padding: 12px 14px;
   }
 
-  .brand-copy p {
+  .brand-trail {
     display: none;
   }
 
-  .status-cluster {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    justify-content: stretch;
-    gap: 8px;
+  .topbar-actions {
+    justify-content: flex-start;
+  }
+
+  .topbar-shell-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-start;
+  }
+
+  .topbar-mode-switch {
+    align-self: flex-start;
   }
 
   .workspace-grid {
@@ -61,15 +81,81 @@
       "inspector";
   }
 
+  .workspace-grid[data-mode="control"] {
+    grid-template-areas:
+      "control"
+      "inspector";
+  }
+
   .sidebar,
   .inspector {
+    height: auto;
     max-height: none;
     min-height: 0;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 124px;
+    left: 10px;
+    bottom: 10px;
+    z-index: 60;
+    width: min(84vw, 320px);
+    height: auto;
+    max-width: calc(100vw - 20px);
+    padding: 14px;
+    max-height: none;
+    border-radius: 18px;
+    transform: translateX(calc(-100% - 20px));
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      transform 180ms ease,
+      opacity 180ms ease;
+    box-shadow: 0 28px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .workspace-grid[data-mobile-sidebar-open="true"] .sidebar {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .shell-nav-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    border: 0;
+    background: rgba(4, 7, 12, 0.7);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+
+  .shell-nav-backdrop[data-open="true"] {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .conversation-shell {
     min-height: calc(100vh - 118px);
     max-height: calc(100vh - 118px);
+  }
+
+  .control-deck-shell {
+    min-height: auto;
+  }
+
+  .control-deck-header,
+  .control-deck-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .control-metric-grid,
+  .control-deck-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .status-card {
@@ -89,7 +175,6 @@
 
   .conversation-copy p,
   .hint-text,
-  .composer-preview,
   .composer-shortcuts {
     display: none;
   }
@@ -122,13 +207,21 @@
     padding: 12px;
   }
 
+  .composer-controlbar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .composer-preview {
+    grid-column: 1 / -1;
+  }
+
   .composer-card textarea {
     min-height: 88px;
   }
 
   .composer-controls {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     width: 100%;
   }
 
@@ -138,6 +231,14 @@
 
   .search-grid {
     grid-template-columns: 1fr;
+  }
+
+  .quick-grid--agents {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sidebar-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -154,6 +255,7 @@
   .sidebar,
   .inspector,
   .conversation-shell,
+  .control-deck-shell,
   .sidebar-section,
   .inspector-panel,
   .composer-card,
@@ -177,18 +279,16 @@
     font-size: 1rem;
   }
 
-  .brand-copy p {
-    display: none;
-  }
-
-  .status-cluster {
+  .topbar-actions {
     width: 100%;
   }
 
-  .status-card,
-  .metric-card {
-    flex: 1 1 140px;
-    min-width: 0;
+  .topbar-shell-toggle {
+    width: 100%;
+  }
+
+  .status-row {
+    min-height: 36px;
   }
 
   .conversation-header,
@@ -209,6 +309,15 @@
   }
 
   .field-option-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .control-metric-grid,
+  .control-deck-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -10,6 +10,18 @@ It is designed for a setup where you want:
 - persistent chat history, tool logs, and workspace memory
 - optional Telegram, Discord, or Feishu entry points
 
+## Documentation
+
+Long-form documentation now lives in [`docs/`](./docs/README.md).
+
+Recommended reading order:
+
+1. [`docs/quick-start.md`](./docs/quick-start.md)
+2. [`docs/configuration.md`](./docs/configuration.md)
+3. [`docs/web-ui.md`](./docs/web-ui.md)
+4. [`docs/cli.md`](./docs/cli.md)
+5. [`docs/architecture.md`](./docs/architecture.md)
+
 ## What It Includes
 
 - Web shell with multi-thread chat, agent picker, route preview, auth, pairing, and runtime inspector

@@ -1,7 +1,7 @@
 export type MessageRole = 'user' | 'assistant' | 'system';
 export type SchedulerResult = 'completed' | 'failed' | 'suppressed';
 export type SearchScope = 'all' | 'messages' | 'files' | 'memory' | 'daily_note';
-export type InspectorTab = 'search' | 'activity' | 'runtime';
+export type InspectorTab = 'overview' | 'search' | 'activity' | 'runtime';
 
 export const AUTH_SCOPE_OPTIONS = [
     'api:read',

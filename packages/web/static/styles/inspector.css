@@ -1,13 +1,20 @@
 /* Inspector-specific framing and navigation */
 
 .inspector-header {
-  padding: 2px 2px 0;
+  display: grid;
+  gap: 12px;
+  padding: 16px 16px 12px;
+}
+
+.inspector-header__copy {
+  display: grid;
+  gap: 4px;
 }
 
 .inspector-header h2 {
-  margin: 0 0 6px;
+  margin: 0;
   color: var(--ink-strong);
-  font-size: 1rem;
+  font-size: 0.98rem;
   letter-spacing: -0.02em;
 }
 
@@ -20,14 +27,15 @@
 
 .inspector-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .inspector-tab {
-  min-height: 36px;
-  border-radius: 11px;
-  padding: 8px 10px;
+  min-height: 34px;
+  width: 100%;
+  border-radius: 10px;
+  padding: 7px 10px;
   background: var(--card-soft);
   border-color: var(--line);
   color: var(--muted-strong);
@@ -43,4 +51,46 @@
 .inspector-body {
   display: grid;
   gap: 12px;
+  align-content: start;
+  padding: 14px;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.overview-card {
+  display: grid;
+  gap: 6px;
+  min-height: 120px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(19, 23, 31, 0.94), rgba(14, 17, 24, 0.94)),
+    var(--card-soft);
+}
+
+.overview-card span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.overview-card strong {
+  color: var(--ink-strong);
+  font-size: 1.2rem;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+}
+
+.overview-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }

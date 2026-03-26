@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import type {
     ActivityInspectorModel,
     RuntimeInspectorModel,
@@ -20,6 +22,7 @@ import { ConversationHeader } from './ConversationHeader.js';
 import { ConversationSidebar } from './ConversationSidebar.js';
 import { ConversationStream } from './ConversationStream.js';
 import { InspectorPanel } from './InspectorPanel.js';
+import { ControlDeck } from './ControlDeck.js';
 import { ShellTopBar } from './ShellTopBar.js';
 
 export interface ShellWorkspaceProps {
@@ -29,11 +32,13 @@ export interface ShellWorkspaceProps {
         availableAgentCount: number;
         handleAuthLogout(): Promise<void>;
         realtimeConnected: boolean;
+        serverAddress: string | undefined;
         taskCount: number;
         threadCount: number;
         tokenId: string | undefined;
     };
     sidebar: {
+        availableAgentCount: number;
         availableAgents: AgentAvailability[];
         chatUsesAutoRoute: boolean;
         chatUsesDefaultAgent: boolean;
@@ -47,12 +52,14 @@ export interface ShellWorkspaceProps {
         handleStartSearch(): void;
         latestAssistantRoute: AssistantRouteMetadata | null;
         queueSummaryByChatId: Map<string, QueueSummary>;
+        realtimeConnected: boolean;
         routePreview: RoutePlan | null;
         selectedAgent: string | null;
         selectedChat: ChatSummary | null;
         selectedChatId: string;
         selectedQueueLeadRun: QueueRunSummary | null;
         serverHost: string | undefined;
+        taskCount: number;
         trackedThreadCount: number;
     };
     conversation: {
@@ -107,6 +114,27 @@ export function ShellWorkspace({
     conversation,
     inspector,
 }: ShellWorkspaceProps) {
+    const [workspaceMode, setWorkspaceMode] = useState<'chat' | 'control'>(
+        'chat',
+    );
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+    function closeMobileNav() {
+        setMobileNavOpen(false);
+    }
+
+    function handleWorkspaceModeChange(mode: 'chat' | 'control') {
+        setWorkspaceMode(mode);
+        setMobileNavOpen(false);
+        if (mode === 'control') {
+            inspector.setInspectorTab('overview');
+            return;
+        }
+        if (inspector.inspectorTab === 'overview') {
+            inspector.setInspectorTab('search');
+        }
+    }
+
     const composer = (
         <ConversationComposer
             availableAgents={conversation.availableAgents}
@@ -160,16 +188,30 @@ export function ShellWorkspace({
                 authRequired={topBar.authRequired}
                 availableAgentCount={topBar.availableAgentCount}
                 realtimeConnected={topBar.realtimeConnected}
+                serverAddress={topBar.serverAddress}
                 taskCount={topBar.taskCount}
                 threadCount={topBar.threadCount}
                 tokenId={topBar.tokenId}
+                mobileNavOpen={mobileNavOpen}
+                workspaceMode={workspaceMode}
                 onLogout={() => {
                     void topBar.handleAuthLogout();
                 }}
+                onShellNavToggle={() => {
+                    setMobileNavOpen((current) => !current);
+                }}
+                onWorkspaceModeChange={handleWorkspaceModeChange}
             />
 
-            <div className="workspace-grid">
-                <section className="panel conversation-shell">
+            <div
+                className="workspace-grid"
+                data-mobile-sidebar-open={mobileNavOpen ? 'true' : undefined}
+                data-mode={workspaceMode}
+            >
+                <section
+                    className="panel conversation-shell"
+                    hidden={workspaceMode === 'control'}
+                >
                     <ConversationHeader
                         currentActiveRun={conversation.currentActiveRun}
                         chatList={sidebar.chatList}
@@ -201,7 +243,39 @@ export function ShellWorkspace({
                     {conversation.messages.length === 0 ? stream : composer}
                 </section>
 
+                <ControlDeck
+                    availableAgentCount={sidebar.availableAgentCount}
+                    chatList={sidebar.chatList}
+                    chatUsesAutoRoute={sidebar.chatUsesAutoRoute}
+                    chatUsesDefaultAgent={sidebar.chatUsesDefaultAgent}
+                    currentActiveRun={sidebar.currentActiveRun}
+                    defaultAgent={sidebar.defaultAgent}
+                    hidden={workspaceMode !== 'control'}
+                    latestAssistantRoute={sidebar.latestAssistantRoute}
+                    realtimeConnected={sidebar.realtimeConnected}
+                    routePreview={sidebar.routePreview}
+                    selectedAgent={sidebar.selectedAgent}
+                    selectedChat={sidebar.selectedChat}
+                    selectedChatId={sidebar.selectedChatId}
+                    selectedQueueLeadRun={sidebar.selectedQueueLeadRun}
+                    taskCount={sidebar.taskCount}
+                    trackedThreadCount={sidebar.trackedThreadCount}
+                    onCreateChat={() => {
+                        sidebar.handleCreateChat();
+                        setWorkspaceMode('chat');
+                    }}
+                    onOpenChatMode={() => handleWorkspaceModeChange('chat')}
+                    onSelectChat={(chatId) => {
+                        sidebar.handleSelectChat(chatId);
+                    }}
+                    onStartSearch={() => {
+                        sidebar.handleStartSearch();
+                        setWorkspaceMode('chat');
+                    }}
+                />
+
                 <ConversationSidebar
+                    availableAgentCount={sidebar.availableAgentCount}
                     availableAgents={sidebar.availableAgents}
                     chatUsesAutoRoute={sidebar.chatUsesAutoRoute}
                     chatUsesDefaultAgent={sidebar.chatUsesDefaultAgent}
@@ -209,19 +283,31 @@ export function ShellWorkspace({
                     currentActiveRun={sidebar.currentActiveRun}
                     defaultAgent={sidebar.defaultAgent}
                     latestAssistantRoute={sidebar.latestAssistantRoute}
-                    onCreateChat={sidebar.handleCreateChat}
-                    onDefaultAgentChange={sidebar.handleDefaultAgentChange}
-                    onSelectAgent={sidebar.handleSelectAgent}
-                    onSelectChat={sidebar.handleSelectChat}
-                    onStartSearch={sidebar.handleStartSearch}
                     queueSummaryByChatId={sidebar.queueSummaryByChatId}
+                    realtimeConnected={sidebar.realtimeConnected}
                     routePreview={sidebar.routePreview}
                     selectedAgent={sidebar.selectedAgent}
                     selectedChat={sidebar.selectedChat}
                     selectedChatId={sidebar.selectedChatId}
                     selectedQueueLeadRun={sidebar.selectedQueueLeadRun}
                     serverHost={sidebar.serverHost}
+                    taskCount={sidebar.taskCount}
                     trackedThreadCount={sidebar.trackedThreadCount}
+                    workspaceMode={workspaceMode}
+                    onCreateChat={() => {
+                        sidebar.handleCreateChat();
+                        closeMobileNav();
+                    }}
+                    onDefaultAgentChange={sidebar.handleDefaultAgentChange}
+                    onSelectAgent={sidebar.handleSelectAgent}
+                    onSelectChat={(chatId) => {
+                        sidebar.handleSelectChat(chatId);
+                        closeMobileNav();
+                    }}
+                    onStartSearch={() => {
+                        sidebar.handleStartSearch();
+                        closeMobileNav();
+                    }}
                 />
 
                 <InspectorPanel
@@ -232,6 +318,15 @@ export function ShellWorkspace({
                     search={inspector.search}
                 />
             </div>
+
+            <button
+                aria-label="Close shell navigation"
+                className="shell-nav-backdrop"
+                data-open={mobileNavOpen ? 'true' : undefined}
+                hidden={!mobileNavOpen}
+                onClick={closeMobileNav}
+                type="button"
+            />
         </main>
     );
 }

@@ -149,11 +149,15 @@ export function useShellController(): ShellControllerState {
                 availableAgentCount: availableAgents.length,
                 handleAuthLogout: accessActions.handleAuthLogout,
                 realtimeConnected: runtime.realtimeConnected,
+                serverAddress: runtime.status
+                    ? `${runtime.status.server.host}:${runtime.status.server.port}`
+                    : undefined,
                 taskCount: totalTasks,
                 threadCount: trackedThreadCount,
                 tokenId: auth.status.tokenId,
             },
             sidebar: {
+                availableAgentCount: availableAgents.length,
                 availableAgents,
                 chatUsesAutoRoute: chat.chatUsesAutoRoute,
                 chatUsesDefaultAgent: chat.chatUsesDefaultAgent,
@@ -168,12 +172,14 @@ export function useShellController(): ShellControllerState {
                 handleStartSearch: conversationActions.handleStartSearch,
                 latestAssistantRoute,
                 queueSummaryByChatId,
+                realtimeConnected: runtime.realtimeConnected,
                 routePreview: runtime.routePreview,
                 selectedAgent: chat.selectedAgent,
                 selectedChat,
                 selectedChatId: chat.selectedChatId,
                 selectedQueueLeadRun,
                 serverHost: runtime.status?.server.host,
+                taskCount: totalTasks,
                 trackedThreadCount,
             },
             conversation: {

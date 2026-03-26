@@ -40,11 +40,10 @@ export function ConversationStream({
         <div className="conversation-stream">
             {messages.length === 0 ? (
                 <div className="empty empty--hero">
-                    <strong>Nothing in this thread yet.</strong>
+                    <strong>No activity in this thread yet.</strong>
                     <p>
-                        Pick an agent in the composer, type a prompt, or use
-                        `/search release plan` to hit WillClaw memory without
-                        invoking a coding agent.
+                        Choose a route, send a prompt, or use `/search` to
+                        query WillClaw memory without launching a coding run.
                     </p>
                 </div>
             ) : (
